@@ -16,6 +16,11 @@ The governing rule, inherited from the corpus methodology:
 
 > A claim must be traceable to evidence, or it remains explicitly unknown or hypothetical.
 
+## Status and next steps
+
+See **[PLAN.md](PLAN.md)** for current state, established hardware facts, and the
+analysis work queued next.
+
 ## Layout
 
 ```text
