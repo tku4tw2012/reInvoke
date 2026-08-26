@@ -1,0 +1,19 @@
+{
+  "content_type": "application/octet-stream",
+  "destination": "originals/harman/invoke/Harman.Kardon.INVOKE.Driver.OTA2.zip",
+  "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/345864257/cb593640-d0e0-4da3-be87-a5f039ffa20f?<redacted-presigned-query>",
+  "final_url_note": "Query string redacted: contained an expiring GitHub presigned signature. source_url is the stable public URL.",
+  "http_etag": "\"0x8D9B9C40E7F976D\"",
+  "http_last_modified": "Tue, 07 Dec 2021 20:56:35 GMT",
+  "http_status": 200,
+  "id": "P0-004b",
+  "kind": "download",
+  "mime": "application/octet-stream",
+  "provenance_page": "https://github.com/coggy9/HKHacking/discussions/3",
+  "retrieved_utc": "2026-08-26T11:58:10.242371Z",
+  "sha1": "35bddd940b351471aadb133eb4d0adb5ca99fabc",
+  "sha256": "f138fb1ea1175830181ca9e2f20509d3d991e709a52b9a970185b128314052cd",
+  "size_bytes": 224985786,
+  "source_url": "https://github.com/coggy9/HKHacking/releases/download/FinalOTA/Harman.Kardon.INVOKE.Driver.OTA2.zip",
+  "status": "DOWNLOADED"
+}

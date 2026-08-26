@@ -1,0 +1,31 @@
+# Bulk artifacts are preserved outside this repository by policy.
+# See docs/acquisition/storage-policy.md
+#
+# The archive root is a sibling directory (~/reinvoke-archive), so these paths
+# should never appear here. They are listed as a defensive guard only.
+originals/
+git-mirrors/
+extracted/
+web-pages/
+wayback/
+sources/
+
+# Never commit large binary payloads.
+*.zip
+*.tgz
+*.tar.gz
+*.tar
+*_IMAGE
+*.img
+*.bin
+*.dll
+*.exe
+
+# Explicitly keep the small extracted text layer, which lives under docs/.
+!docs/bundle-contents/**
+
+# Local noise
+__pycache__/
+*.pyc
+.DS_Store
+*.swp

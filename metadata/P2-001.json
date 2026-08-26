@@ -1,0 +1,11 @@
+{
+  "clone_url": "https://github.com/coggy9/HKHacking.git",
+  "default_branch": "main",
+  "head_commit": "2250b2b8da750fe5a7de3d98e313bb677aadd228",
+  "id": "P2-001",
+  "kind": "git_mirror",
+  "mirror_path": "git-mirrors/community/HKHacking.git",
+  "refs_count": 5,
+  "retrieved_utc": "2026-08-26T03:55:36.688091Z",
+  "status": "MIRRORED"
+}

@@ -1,0 +1,19 @@
+{
+  "content_type": "application/octet-stream",
+  "destination": "originals/harman/invoke/83_IMAGE",
+  "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/345864257/bac76c00-9e17-11eb-9782-38a321c7a5fa?<redacted-presigned-query>",
+  "final_url_note": "Query string redacted: contained an expiring GitHub presigned signature. source_url is the stable public URL.",
+  "http_etag": "\"0x8D9B9C40E13A00C\"",
+  "http_last_modified": "Tue, 07 Dec 2021 20:56:35 GMT",
+  "http_status": 200,
+  "id": "P0-004c",
+  "kind": "download",
+  "mime": "application/octet-stream",
+  "provenance_page": "https://github.com/coggy9/HKHacking/discussions/3",
+  "retrieved_utc": "2026-08-26T11:58:24.820058Z",
+  "sha1": "c2e2a86cf1fd3afae56515c57eea504f15e3cb9b",
+  "sha256": "f59d0a56f5d3d4cc90b146e2433ec32da36239e6c4373813d57fe92e19326cc7",
+  "size_bytes": 107934810,
+  "source_url": "https://github.com/coggy9/HKHacking/releases/download/StockRoot/83_IMAGE",
+  "status": "DOWNLOADED"
+}

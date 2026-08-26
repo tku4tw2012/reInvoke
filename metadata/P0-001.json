@@ -1,0 +1,19 @@
+{
+  "content_type": "application/zip",
+  "destination": "originals/harman/citation/Citation.zip",
+  "extracted_to": "extracted/P0-001",
+  "final_url": "https://www.harmankardon.com/on/demandware.static/-/Sites-masterCatalog_Harman/default/dwb3ecd0ef/downloads/Citation.zip",
+  "http_etag": null,
+  "http_last_modified": "Mon, 07 Feb 2022 20:03:01 GMT",
+  "http_status": 200,
+  "id": "P0-001",
+  "kind": "download",
+  "mime": "application/zip",
+  "provenance_page": "https://www.harmankardon.com/opensource.html",
+  "retrieved_utc": "2026-08-26T03:41:19.044108Z",
+  "sha1": "a739dc5290f3507d57144d16317b7555687e70ec",
+  "sha256": "55686c35febb67ec1da0f6e6e60d097f08d63f7a79b8ca541a34f98fc4c596fc",
+  "size_bytes": 6556,
+  "source_url": "https://www.harmankardon.com/on/demandware.static/-/Sites-masterCatalog_Harman/default/dwb3ecd0ef/downloads/Citation.zip",
+  "status": "DOWNLOADED"
+}
