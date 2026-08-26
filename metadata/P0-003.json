@@ -1,0 +1,12 @@
+{
+  "clone_url": "https://nest-open-source.googlesource.com/manifest_repos/bootloader",
+  "head_commit": "90696b8a88b15c0065e5f7d41b20fbe15eb4e3a5",
+  "id": "P0-003",
+  "kind": "git_mirror",
+  "mirror_path": "git-mirrors/google-nest/bootloader.git",
+  "refs_count": 1,
+  "required_commit": "836ad32e08388e0e4ce8d03fe4f14d2c3ea8ba13",
+  "required_commit_present": true,
+  "retrieved_utc": "2026-08-26T03:41:19.107419Z",
+  "status": "MIRRORED"
+}

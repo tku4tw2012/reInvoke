@@ -1,0 +1,19 @@
+{
+  "content_type": "application/octet-stream",
+  "destination": "originals/harman/invoke/Harman.Kardon.INVOKE.Flashing.zip",
+  "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/345864257/43242100-88ed-11eb-96b8-a9e0f8d8d783?<redacted-presigned-query>",
+  "final_url_note": "Query string redacted: contained an expiring GitHub presigned signature. source_url is the stable public URL.",
+  "http_etag": "\"0x8D9B9C435BBCD7A\"",
+  "http_last_modified": "Tue, 07 Dec 2021 20:57:41 GMT",
+  "http_status": 200,
+  "id": "P0-004a",
+  "kind": "download",
+  "mime": "application/octet-stream",
+  "provenance_page": "https://github.com/coggy9/HKHacking/discussions/3",
+  "retrieved_utc": "2026-08-26T11:57:52.656288Z",
+  "sha1": "9878a39037d591a79aa6322ab267e28eb5a6623f",
+  "sha256": "e47dc15d64a37c0b5226860290bfa5365f98cc6e595a5f23a2f3a7c6e7108d47",
+  "size_bytes": 263308270,
+  "source_url": "https://github.com/coggy9/HKHacking/releases/download/HarmanFlash/Harman.Kardon.INVOKE.Flashing.zip",
+  "status": "DOWNLOADED"
+}

@@ -1,0 +1,83 @@
+To build:
+        Linux: (64/32-bit)
+                “cd usb_workspace_clean”
+                “build/gcc/build_all.sh”
+        # The output is “build/linux/usb_boot”
+
+        Win32:
+        # Use Visual C++ 2012 (or later version) to open and build.
+                “build/msvc/usb_boot_2012.sln”
+        # The output is “build/Win32/usb_boot.exe”
+
+For ramdisk update:
+        # Unzip the ramdisk from 82_IMAGE:
+                ~$ mv 82_IMAGE mini-amp.cpio.gz
+                ~$ chmod 777 mini-amp.cpio.gz
+                ~$ gunzip mini-amp.cpio.gz
+                ~$ mkdir mini-amp-rootfs
+                ~$ cd mini-amp-rootfs
+                ~$ cpio -i --make-directories <../mini-amp.cpio
+        # Now the directory mini-amp-rootfs is the rootfs untared.
+        # Update the rootfs as you want.
+        # Then run below command to regenerate the ramdisk image:
+                ~$ cd mini-amp-rootfs
+                ~$ find . | cpio -o -H newc | gzip > ../mini-amp.cpio.gz
+        # Now the file ../mini-amp.cpio.gz is the updated ramdisk image, copy it
+        # as 82_IMAGE, then run "./gen-cmd.sh" under images directory, get the updated
+        # boot arguments, may need update the command in 79_IMAGE with the new command,
+        # to let the target dongle boot to Linux/ramdisk automatically when connected to PC host.
+
+Build kernel:
+                ~$ cd ${BUILD_TOP}/MRVL/linux-3.8
+                ~$ git checkout 99176664f7cefa3a38157e22bdbcc22cd6bbdf2d //tag dev_tags/yongbing/usb_boot_0519
+                ~$ export PATH=$PATH:$HOME/build/scgerrit_head/MRVL/build_scripts/toplevel_scripts/arm_unknown_toolchain/bin //replace the toolchain with the one exist in your build environment.
+                ~$ export LOCALVERSION="-mrvl"
+                ~$ export ARCH=arm; export CROSS_COMPILE=arm-unknown-linux-gnueabi-
+                ~$ make berlin2cdp_amp_defconfig
+                ~$ make uImage-dtb.berlin2cdp-dongle -j22 //use resulted arch/arm/boot/uImage-dtb.berlin2cdp-dongle as 81_IMAGE
+
+To Run:
+        # Install putty and add the path to environ;
+
+        Linux:
+        # “sudo ./usb_boot 1286 8174 ./ 8141 "putty telnet://127.0.0.1:8141"”
+
+        Windows:
+        # “usb_boot 1286 8174 ./ 8141 "putty telnet://127.0.0.1:8141"” (or just click the run.bat)
+        # The release is for tool only. Please put correct images (bcm_erom.bin.usb  bootloader.img,
+        # drm_erom.img, sysinit.img) under starting directory.
+        # (Windows version of standalone “usb_tool.exe” is included in package under “release”.)
+        # If you want U-Boot execute some commands automatically (like boot to kernel/ramdisk),
+        # just put them in 79_IMAGE as text file, please refer to 79_IMGAE.examples.
+        # The default 79_IMAGE will boot target dongle to linux ramdisk automatically,
+        # if replacing 79_IMAGE with 79_IMAGE.uboot_cmdline, then will stop at U-Boot command prompt.
+
+Known issue: (32-bit version only)
+        # The “libtool” coming w/ libusbhp on some Linux 32-bit machine failed to install the so files
+        # automatically by build script. Simply copy the runtime so file “libusbhp.so.0” from
+        # “build/linux/libusbhp-1.0.2/libusbhp/.libs/libusbhp.so.0” to “/usr/lib/i386-linux-gnu/”. (Need “sudo” privilege)
+
+Burning OTP
+        # When a target dongle is connected to a PC host running the tool,
+        # the target dongle will be automatically boot to Linux/ramdisk,
+        # with ADB service running on the dongle, and the console through
+        # usb-host tool will be lost. Use adb to interact with device at this point.
+                $ adb shell 'mkdir /factory; mount -t yaffs2 /dev/block/mtdblock11 /factory'
+                $ adb push /path/to/otp.files /factory
+                $ adb shell 'chmod 444 /factory/*'
+                $ adb shell
+
+        # Execute following commands to burn OTP
+                export LD_LIBRARY_PATH=/home/galois/lib
+                /home/galois/bin/otp_program otp.pkg /factory/otp.pkg
+                rm /factory/otp.pkg
+                mount -o ro,remount /factory
+                sync
+
+Burn NAND image:
+        # first copy 79_IMAGE.uboot_cmdline as 79_IMAGE, so the target dongle will boot to U-Boot command line and stop for user input.
+        # then copy the NAND image to the working directory, and rename it as 80_IMAGE (or 83_IMAGE, etc).
+        # in U-Boot command line, input command to load image 83_IMAGE and burn to NAND, will erase all NAND (default is 80_IMAGE):
+                MV88DE3100|> usbload 80 0x1200000
+                MV88DE3100|> tftp2nand -m -d 0xA800000 0x1200000
+

@@ -1,0 +1,11 @@
+{
+  "clone_url": "https://github.com/google/adb-sync.git",
+  "default_branch": "master",
+  "head_commit": "09e0abf3fc094237380a2ce392e64d2a05420489",
+  "id": "P2-002",
+  "kind": "git_mirror",
+  "mirror_path": "git-mirrors/google/adb-sync.git",
+  "refs_count": 37,
+  "retrieved_utc": "2026-08-26T03:55:37.138689Z",
+  "status": "MIRRORED"
+}

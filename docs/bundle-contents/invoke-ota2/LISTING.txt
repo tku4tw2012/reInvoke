@@ -1,0 +1,57 @@
+Archive:  reinvoke-archive/originals/harman/invoke/Harman.Kardon.INVOKE.Driver.OTA2.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+    80622  2021-09-16 13:41   Instructions OTA2.pdf
+        0  2021-09-14 11:21   Mrvl_WinUSB_Driver_040114/amd64/
+  1721576  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/amd64/WdfCoInstaller01009.dll
+  1060072  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/amd64/WdfCoInstaller01009_chk.dll
+  1002728  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/amd64/winusbcoinstaller2.dll
+   832744  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/amd64/winusbcoinstaller2_chk.dll
+  2152176  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/amd64/WUDFUpdate_01009.dll
+  1356016  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/amd64/WUDFUpdate_01009_chk.dll
+        0  2021-09-14 11:21   Mrvl_WinUSB_Driver_040114/ia64/
+  2435816  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/ia64/WdfCoInstaller01009.dll
+  1913592  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/ia64/WdfCoInstaller01009_chk.dll
+  1489128  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/ia64/winusbcoinstaller2.dll
+  1382640  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/ia64/winusbcoinstaller2_chk.dll
+  3150568  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/ia64/WUDFUpdate_01009.dll
+  2400496  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/ia64/WUDFUpdate_01009_chk.dll
+    14655  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/Mrvl_WinUSB.cat
+    13708  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/Mrvl_WinUSB.inf
+        0  2021-09-14 11:21   Mrvl_WinUSB_Driver_040114/x86/
+  1461992  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/x86/WdfCoInstaller01009.dll
+   824040  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/x86/WdfCoInstaller01009_chk.dll
+   851176  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/x86/winusbcoinstaller2.dll
+   685288  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/x86/winusbcoinstaller2_chk.dll
+  1837296  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/x86/WUDFUpdate_01009.dll
+  1128176  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/x86/WUDFUpdate_01009_chk.dll
+        5  2021-01-26 07:05   OTA2/06_IMAGE
+        4  2021-01-26 07:05   OTA2/07_IMAGE
+      144  2017-01-16 09:02   OTA2/08_IMAGE
+     4096  2017-01-16 09:02   OTA2/09_IMAGE
+      231  2017-01-16 09:02   OTA2/79_IMAGE
+      557  2017-01-16 09:02   OTA2/79_IMAGE.auto
+      930  2017-01-16 09:02   OTA2/79_IMAGE.examples
+      385  2017-01-16 09:02   OTA2/79_IMAGE.ramdisk_boot
+      231  2017-01-16 09:02   OTA2/79_IMAGE.uboot_cmdline
+  3288888  2017-01-16 09:02   OTA2/81_IMAGE
+ 35497472  2017-01-16 09:02   OTA2/82_IMAGE
+ 69481562  2021-08-23 06:19   OTA2/83_IMAGE
+137694612  2017-01-16 09:03   OTA2/99_IMAGE
+  4581967  2017-01-16 09:03   OTA2/adb
+    24576  2017-01-16 09:03   OTA2/bcm_erom.bin.usb
+   419840  2017-01-16 09:03   OTA2/bootloader.img
+    36864  2017-01-16 09:03   OTA2/drm_erom.img
+      596  2017-01-16 09:03   OTA2/gen-cmd.sh
+   815192  2017-01-16 09:03   OTA2/MSVCP120D.dll
+  1824344  2017-01-16 09:03   OTA2/MSVCR120D.dll
+    81408  2017-01-16 09:03   OTA2/pthreadVC2.dll
+   495616  2017-01-16 09:03   OTA2/putty.exe
+     4660  2017-01-16 09:03   OTA2/README
+       59  2017-01-16 09:03   OTA2/run.bat
+       61  2020-02-18 06:23   OTA2/run.sh
+    24576  2017-01-16 09:03   OTA2/sysinit.img
+    41685  2017-01-16 09:03   OTA2/usb_boot
+   780288  2017-01-16 09:03   OTA2/usb_boot.exe
+---------                     -------
+282895354                     52 files

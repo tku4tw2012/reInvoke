@@ -1,0 +1,11 @@
+{
+  "clone_url": "https://github.com/kinoma/acorn_kernel.git",
+  "default_branch": "master",
+  "head_commit": "3c01bb0b9dd28e3c86c9b90843eae5c105ec50a0",
+  "id": "P1-031",
+  "kind": "git_mirror",
+  "mirror_path": "git-mirrors/kinoma/acorn_kernel.git",
+  "refs_count": 5,
+  "retrieved_utc": "2026-08-26T04:04:15.611489Z",
+  "status": "MIRRORED"
+}

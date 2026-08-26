@@ -1,0 +1,11 @@
+{
+  "clone_url": "https://github.com/kinoma/acorn_uboot.git",
+  "default_branch": "master",
+  "head_commit": "39ae7a3c40dc800391918aa437e4e6224ef5cfb9",
+  "id": "P1-032",
+  "kind": "git_mirror",
+  "mirror_path": "git-mirrors/kinoma/acorn_uboot.git",
+  "refs_count": 6,
+  "retrieved_utc": "2026-08-26T03:54:00.856693Z",
+  "status": "MIRRORED"
+}

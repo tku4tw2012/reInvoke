@@ -1,0 +1,91 @@
+[
+  {
+    "id": "P0-001",
+    "kind": "download",
+    "source_url": "https://www.harmankardon.com/on/demandware.static/-/Sites-masterCatalog_Harman/default/dwb3ecd0ef/downloads/Citation.zip",
+    "provenance_page": "https://www.harmankardon.com/opensource.html",
+    "destination": "originals/harman/citation/Citation.zip",
+    "extract": true
+  },
+  {
+    "id": "P0-002",
+    "kind": "provenance",
+    "source_url": "https://drive.google.com/drive/folders/1jdISUGQQr10kX_MeJ_tWoCLjv1CznoWH?resourcekey=0-DDxaPDf4jphp5EtgzWFQ5g",
+    "provenance_page": "https://support.google.com/product-documentation/answer/10525328?hl=en",
+    "destination": "originals/google/chromecast-nest-oss"
+  },
+  {
+    "id": "P0-003",
+    "kind": "git_mirror",
+    "source_url": "https://nest-open-source.googlesource.com/manifest_repos/bootloader",
+    "destination": "git-mirrors/google-nest/bootloader.git",
+    "required_commit": "836ad32e08388e0e4ce8d03fe4f14d2c3ea8ba13"
+  },
+  {
+    "id": "P0-004a",
+    "kind": "download",
+    "source_url": "https://github.com/coggy9/HKHacking/releases/download/HarmanFlash/Harman.Kardon.INVOKE.Flashing.zip",
+    "provenance_page": "https://github.com/coggy9/HKHacking/discussions/3",
+    "destination": "originals/harman/invoke/Harman.Kardon.INVOKE.Flashing.zip",
+    "extract": false
+  },
+  {
+    "id": "P0-004b",
+    "kind": "download",
+    "source_url": "https://github.com/coggy9/HKHacking/releases/download/FinalOTA/Harman.Kardon.INVOKE.Driver.OTA2.zip",
+    "provenance_page": "https://github.com/coggy9/HKHacking/discussions/3",
+    "destination": "originals/harman/invoke/Harman.Kardon.INVOKE.Driver.OTA2.zip",
+    "extract": false
+  },
+  {
+    "id": "P0-004c",
+    "kind": "download",
+    "source_url": "https://github.com/coggy9/HKHacking/releases/download/StockRoot/83_IMAGE",
+    "provenance_page": "https://github.com/coggy9/HKHacking/discussions/3",
+    "destination": "originals/harman/invoke/83_IMAGE",
+    "extract": false
+  },
+  {
+    "id": "P1-020",
+    "kind": "git_mirror",
+    "source_url": "https://github.com/ValveSoftware/steamlink-sdk.git",
+    "destination": "git-mirrors/valve/steamlink-sdk.git"
+  },
+  {
+    "id": "P1-030",
+    "kind": "git_mirror",
+    "source_url": "https://github.com/Kinoma/kinomajs.git",
+    "destination": "git-mirrors/kinoma/kinomajs.git"
+  },
+  {
+    "id": "P1-031",
+    "kind": "git_mirror",
+    "source_url": "https://github.com/kinoma/acorn_kernel.git",
+    "destination": "git-mirrors/kinoma/acorn_kernel.git"
+  },
+  {
+    "id": "P1-032",
+    "kind": "git_mirror",
+    "source_url": "https://github.com/kinoma/acorn_uboot.git",
+    "destination": "git-mirrors/kinoma/acorn_uboot.git"
+  },
+  {
+    "id": "P1-040",
+    "kind": "provenance",
+    "source_url": "https://kernel.googlesource.com/pub/scm/linux/kernel/git/jszhang/linux-berlin",
+    "destination": "(not mirrored - cite only)",
+    "note": "Mainline Linux maintainer tree. Retention ranking classifies this as cite-only: the code is among the most widely mirrored in existence, and a full mirror is multi-GB. Recorded as provenance instead of cloned."
+  },
+  {
+    "id": "P2-001",
+    "kind": "git_mirror",
+    "source_url": "https://github.com/coggy9/HKHacking.git",
+    "destination": "git-mirrors/community/HKHacking.git"
+  },
+  {
+    "id": "P2-002",
+    "kind": "git_mirror",
+    "source_url": "https://github.com/google/adb-sync.git",
+    "destination": "git-mirrors/google/adb-sync.git"
+  }
+]

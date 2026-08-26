@@ -1,0 +1,57 @@
+Archive:  reinvoke-archive/originals/harman/invoke/Harman.Kardon.INVOKE.Flashing.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+    79190  2021-03-04 10:34   Instructions.pdf
+        5  2021-01-26 07:05   marvell_flash_tool/06_IMAGE
+        4  2021-01-26 07:05   marvell_flash_tool/07_IMAGE
+      144  2017-01-16 09:02   marvell_flash_tool/08_IMAGE
+     4096  2017-01-16 09:02   marvell_flash_tool/09_IMAGE
+      231  2017-01-16 09:02   marvell_flash_tool/79_IMAGE
+      557  2017-01-16 09:02   marvell_flash_tool/79_IMAGE.auto
+      930  2017-01-16 09:02   marvell_flash_tool/79_IMAGE.examples
+      385  2017-01-16 09:02   marvell_flash_tool/79_IMAGE.ramdisk_boot
+      231  2017-01-16 09:02   marvell_flash_tool/79_IMAGE.uboot_cmdline
+  3288888  2017-01-16 09:02   marvell_flash_tool/81_IMAGE
+ 35497472  2017-01-16 09:02   marvell_flash_tool/82_IMAGE
+107934810  2018-10-22 10:52   marvell_flash_tool/83_IMAGE
+137694612  2017-01-16 09:03   marvell_flash_tool/99_IMAGE
+  4581967  2017-01-16 09:03   marvell_flash_tool/adb
+    24576  2017-01-16 09:03   marvell_flash_tool/bcm_erom.bin.usb
+   419840  2017-01-16 09:03   marvell_flash_tool/bootloader.img
+    36864  2017-01-16 09:03   marvell_flash_tool/drm_erom.img
+      596  2017-01-16 09:03   marvell_flash_tool/gen-cmd.sh
+   815192  2017-01-16 09:03   marvell_flash_tool/MSVCP120D.dll
+  1824344  2017-01-16 09:03   marvell_flash_tool/MSVCR120D.dll
+    81408  2017-01-16 09:03   marvell_flash_tool/pthreadVC2.dll
+   495616  2017-01-16 09:03   marvell_flash_tool/putty.exe
+     4660  2017-01-16 09:03   marvell_flash_tool/README
+       59  2017-01-16 09:03   marvell_flash_tool/run.bat
+       61  2020-02-18 06:23   marvell_flash_tool/run.sh
+    24576  2017-01-16 09:03   marvell_flash_tool/sysinit.img
+    41685  2017-01-16 09:03   marvell_flash_tool/usb_boot
+   780288  2017-01-16 09:03   marvell_flash_tool/usb_boot.exe
+        0  2021-01-27 06:46   Mrvl_WinUSB_Driver_040114/amd64/
+  1721576  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/amd64/WdfCoInstaller01009.dll
+  1060072  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/amd64/WdfCoInstaller01009_chk.dll
+  1002728  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/amd64/winusbcoinstaller2.dll
+   832744  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/amd64/winusbcoinstaller2_chk.dll
+  2152176  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/amd64/WUDFUpdate_01009.dll
+  1356016  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/amd64/WUDFUpdate_01009_chk.dll
+        0  2021-01-27 06:46   Mrvl_WinUSB_Driver_040114/ia64/
+  2435816  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/ia64/WdfCoInstaller01009.dll
+  1913592  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/ia64/WdfCoInstaller01009_chk.dll
+  1489128  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/ia64/winusbcoinstaller2.dll
+  1382640  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/ia64/winusbcoinstaller2_chk.dll
+  3150568  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/ia64/WUDFUpdate_01009.dll
+  2400496  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/ia64/WUDFUpdate_01009_chk.dll
+    14655  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/Mrvl_WinUSB.cat
+    13708  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/Mrvl_WinUSB.inf
+        0  2021-01-27 06:46   Mrvl_WinUSB_Driver_040114/x86/
+  1461992  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/x86/WdfCoInstaller01009.dll
+   824040  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/x86/WdfCoInstaller01009_chk.dll
+   851176  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/x86/winusbcoinstaller2.dll
+   685288  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/x86/winusbcoinstaller2_chk.dll
+  1837296  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/x86/WUDFUpdate_01009.dll
+  1128176  2020-08-19 04:44   Mrvl_WinUSB_Driver_040114/x86/WUDFUpdate_01009_chk.dll
+---------                     -------
+321347170                     52 files
