@@ -162,7 +162,25 @@ A number of BG2CDP products use familiar radio and memory components. That does 
 
 No contradiction is established. One is a published audio-system rating; the other is the adapter's nominal V×A rating. Their definitions are not identical.
 
-## Unresolved evidence targets
+## Cortana SDK third-party notices (P0-005)
+
+| Claim | Status | Evidence class | Source |
+|---|---|---|---|
+| A historical Harman page `cortana-sdk-opensource.html` published a Microsoft-authored third-party notices file for the Cortana SDK used by Harman devices | confirmed | observed | [CORTANA-OSS-NOTICES] |
+| The live URL redirects today; two Wayback Machine captures (2023-03-29, 2023-12-03) returned HTTP 200 with the full notices text | confirmed | observed | [CORTANA-OSS-NOTICES] |
+| The file lists third-party components including Expat, RapidJSON, Parson, zlib, curl, Google Breakpad, OpenSSL, Opus (Xiph.Org/Skype), Unicode ICU-adjacent data, and CMake-related code, each with upstream copyright/license text | confirmed | observed | [CORTANA-OSS-NOTICES] |
+| This file is a legal notices/attribution document, not a source-code drop; it establishes which open components Cortana's client SDK depended on but does not itself contain firmware source | confirmed | derived | [CORTANA-OSS-NOTICES] |
+| No Invoke-specific component list (only the generic Cortana SDK notice) is confirmed from this single capture | unknown | — | [CORTANA-OSS-NOTICES] |
+
+**Resolution of P0-005:** previously logged `DISCOVERY_ONLY` / `REDIRECTS_TODAY` in
+the acquisition manifest. Superseded — the live site redirects, but the Wayback
+Machine CDX index has two `200`-status captures of the full page. The
+2023-12-03 capture (digest `WDLMSX77BDCN5DMUQ247HQ3XMHCKQVXR`) was retrieved
+and archived at
+`reinvoke-archive/web-pages/harman-cortana-sdk-opensource-20231203010301.html`
+(SHA-256 `6b2e25ae48c4e3456c1952a2ff13d8013cf978b68f94d7295a741e30aac7696b`).
+
+
 
 ```mermaid
 flowchart TD
@@ -222,6 +240,13 @@ https://fccid.io/APIHKINVOKE/Test-Report/Test-report-3374512.pdf
 ## HKHACK
 `coggy9/HKHacking`, Discussion #3, 2021.  
 https://github.com/coggy9/HKHacking/discussions/3
+
+## CORTANA-OSS-NOTICES
+Microsoft/HARMAN, *Microsoft Cortana SDK for Harman Open Source Components* (third-party notices).  
+Historical URL: https://www.harmankardon.com/cortana-sdk-opensource.html (redirects today).  
+Retrieved via Wayback Machine capture 2023-12-03T01:03:01Z:  
+https://web.archive.org/web/20231203010301/https://www.harmankardon.com/cortana-sdk-opensource.html  
+Archived copy: `reinvoke-archive/web-pages/harman-cortana-sdk-opensource-20231203010301.html`, SHA-256 `6b2e25ae48c4e3456c1952a2ff13d8013cf978b68f94d7295a741e30aac7696b`.
 
 ## LINUX-MARVELL
 Linux kernel documentation, *ARM Marvell SoCs — Berlin family*.  
