@@ -17,6 +17,7 @@ in a fresh session — or from GitHub on the web — without the original conver
 | Storage architecture — repo / archive / cold storage split | **Done** |
 | Publication — firmware mirrored with attribution | **Done** |
 | Analysis — unpack and understand the firmware | **Done** |
+| Hardware validation — donor device(s) available | **Ready to start** — owner confirms multiple donor units are on hand |
 
 ### Where things live
 
@@ -116,40 +117,60 @@ than a patch. **What differs is the single most interesting open question.**
    recorded. LS9 radio lineage was compared, and a concise text/configuration
    layer was added under `docs/bundle-contents/invoke-flashing/phase3-analysis.md`.
 9. **Done:** the two discovery-only sources were checked without acquiring
-   artifacts. The remaining repository action is an optional clean preservation
-   milestone commit after reviewing the uncommitted documentation.
+   artifacts. **Done:** the Phase 3 documentation set (`FINDINGS.md`, corpus
+   ledger/hash updates, `phase3-analysis.md`, `runtime-interface-inventory.md`,
+   `revival-roadmap.md`, `azure-restore-runbook.md`) was committed as the
+   clean preservation milestone.
 
-### Beyond Phase 3 — revival path
+**Phase 3 is fully closed.** All static, firmware-only analysis achievable
+without a physical unit has been completed and committed.
 
-The end goal is **repurposing completeness (L2)**, not an unsupported claim of
-full schematic completeness. See [revival-roadmap.md](docs/revival-roadmap.md).
-The next engineering deliverable is a runtime-interface inventory, now captured
-in [runtime-interface-inventory.md](docs/bundle-contents/invoke-flashing/runtime-interface-inventory.md),
-followed by controlled, read-only observation on a physical sample if one is
-available. No flashing or execution of preserved firmware is part of the
-autonomous work.
-The physical-work gate is specified in
-[hardware-validation-plan.md](docs/hardware-validation-plan.md), which now
-also documents what FCC regulatory teardown photos already establish without
-any physical unit (Micro-USB service port, board topology, no external UART)
-and a no-disassembly fallback path for when the enclosure cannot be opened.
+### Phase 4 — hardware validation (current phase)
 
-**Immediate next steps, in order:**
+Donor device(s) are now available (owner confirms multiple units on hand,
+not currently in front of them). This unblocks
+[hardware-validation-plan.md](docs/hardware-validation-plan.md) and roadmap
+stages 3–4 in [revival-roadmap.md](docs/revival-roadmap.md). The end goal
+remains **repurposing completeness (L2)**, not full schematic completeness.
 
-1. Obtain a donor device (owner-driven; not autonomous).
-2. Regardless of disassembly access, attempt the no-disassembly observations
-   first: adapter/network passive observation, and read-only USB descriptor
-   enumeration on the Micro-USB service port (no vendor commands that could
-   trigger a flash).
-3. If disassembly becomes possible: board photographs, connector pinout via
-   continuity testing (unpowered), then serial console capture and logic
-   analyzer work per `hardware-validation-plan.md`.
-4. Correlate whatever is captured against
-   `runtime-interface-inventory.md` and update it plus the decision-gate
-   section of `hardware-validation-plan.md` with results.
-5. Only after that correlation does the roadmap's stage 5 reuse decision
-   (keep BG2CDP / replace compute / bypass electronics) get made — it should
-   not be guessed ahead of evidence.
+`hardware-validation-plan.md` already documents what FCC regulatory teardown
+photos establish without a physical unit (Micro-USB service port location,
+full board topology, absence of an external UART) and a no-disassembly
+fallback path, in case a specific unit can't be opened at a given time.
+
+**Next steps, in order, once a donor unit is physically in hand:**
+
+1. **Before powering on:** assign the unit a sample ID, photograph enclosure
+   labels and every board (including both sides of the daughterboard and its
+   connector area), record visible IC markings/board revisions, and confirm
+   the power adapter rating. Keep the known-good firmware image + SHA-256
+   manifest offline — do not flash it.
+2. **No-disassembly observations first** (useful regardless of whether the
+   unit will also be opened): measure adapter output unloaded and at the
+   device input; passively observe DHCP/mDNS/UPnP/network behavior on boot;
+   attempt read-only USB descriptor enumeration on the Micro-USB service port
+   (no vendor commands that could trigger a flash); correlate button/LED
+   behavior against `runtime-interface-inventory.md`.
+3. **First powered observations:** capture serial output at 115200 baud if
+   service pads are identified safely; record boot messages, `/proc/mtd`,
+   memory size, network interfaces, and process/service state, all
+   read-only. Do not interrupt boot, write U-Boot environment, mount
+   partitions read-write, or invoke update/recovery commands.
+4. **Interface measurements** (unpowered continuity testing first): map both
+   daughterboard connectors pin-by-pin; identify power, ground, reset,
+   clocks, UART, I2C, SPI, USB, and digital-audio candidates; then use a
+   logic analyzer on suspected buses during ordinary boot and local playback.
+5. **Correlate and record:** update `runtime-interface-inventory.md` and the
+   decision-gate section of `hardware-validation-plan.md` with actual
+   captures, timestamps, probe settings, and sample ID.
+6. **Reuse decision (roadmap stage 5):** only after step 5 gives real
+   evidence — keep BG2CDP / replace compute module / bypass electronics.
+   This should not be guessed ahead of evidence.
+
+Physical measurements, device modification, and firmware flashing require
+explicit human control and are outside autonomous work; documentation,
+correlation of captured evidence against the firmware findings, and decision
+write-ups can be done autonomously once data is provided.
 
 ### Smaller open items
 

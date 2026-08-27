@@ -119,6 +119,28 @@ Each row is intentionally atomic. An LLM should prefer the row's `status` and `e
 | HKI-STOR-006 | Some MTD blocks were reportedly mountable as YAFFS2. | observed | OBS-RUNTIME-3P | medium | [HKHACK] |
 | HKI-STOR-007 | Entire device storage is YAFFS2. | contradicted / do-not-use | — | high | same discussion reports blocks that did not mount as YAFFS2 and SquashFS content elsewhere |
 
+## Firmware image analysis
+
+| Claim ID | Statement | Status | Evidence class | Confidence | Source locator |
+|---|---|---|---|---|---|
+| HKI-FW-001 | `83_IMAGE` contains an outer image header/partition metadata followed by embedded SquashFS members; it is not a raw filesystem. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-002 | The primary `83_IMAGE` root filesystem is SquashFS v4 with gzip compression, at byte offset 18,998,912. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-003 | The primary root filesystem has 4,110 inodes and was created on 2021-04-15 18:58:27 UTC in the standalone variant. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-004 | The two equal-length `83_IMAGE` variants have identical primary tree paths and symlink targets, differing in 11 regular-file contents. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-005 | The standalone `StockRoot` variant identifies itself as `Barracuda_rooted_libre-11.1842.0`. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-006 | The standalone `StockRoot` variant enables ADB at boot and enables the USB ACM instance in `init.rc`. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-007 | The standalone `StockRoot` variant adds loopback entries for four OTA service hostnames. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-008 | The standalone `StockRoot` variant changes firewall behavior for SSH/WAMP access relative to the Flashing.zip variant. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-009 | `81_IMAGE` is an uncompressed ARM Linux 3.8.13-mrvl U-Boot legacy `uImage`. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-010 | `82_IMAGE` is a gzip-wrapped `newc` cpio initrd whose startup script mounts the `factory_setting`, `app`, and `localstorage` partitions and enables USB `acm,adb`. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-011 | `99_IMAGE` contains an older gzip-compressed SquashFS v4 LS9 image with Marvell `w8887`/`sd8887` radio firmware and calibration files. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-012 | `81_IMAGE` embeds Linux 3.8.13-mrvl metadata identifying the Marvell BG2CDP/berlin2cdp platform and Berlin subsystem drivers. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-013 | `82_IMAGE` is used as a RAM-root initrd whose startup script mounts `factory_setting`, `app`, and `localstorage`, enables USB `acm,adb`, and launches `/home/galois/run.sh`. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-014 | The normal `83_IMAGE` rootfs contains RedBend OTA configuration targeting `bootimgs` and `rootfs` MTD partitions. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-015 | The OTA configuration records recovery-kernel operation, installer type settings, and a no-reboot policy for the RB_UA installer. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-016 | The exact A/B boot-slot selection and rollback algorithm is not established by the preserved scripts/configuration. | unknown | UNKNOWN | high | [PHASE3-FINDINGS] |
+| HKI-FW-017 | The newer normal rootfs carries Invoke-era `sd8887` firmware and July 2016 LS9 calibration profiles, while `99_IMAGE` carries older May 2016 LS9 calibration data and broader generic Marvell firmware inventory. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+
 ## Contradiction / caution register
 
 ### C-001: exact SoC confidence
@@ -161,6 +183,12 @@ flowchart TD
 ```
 
 # Bibliography
+
+## PHASE3-FINDINGS
+
+Project-local Phase 3 firmware analysis, `FINDINGS.md`, including hashes,
+magic inspection, SquashFS metadata, and extracted-tree comparison of the
+preserved `83_IMAGE` variants.
 
 ## HARMAN-SPEC
 HARMAN International Industries, *Harman Kardon Invoke Specification Sheet*, 2017.  
