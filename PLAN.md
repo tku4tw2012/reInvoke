@@ -16,7 +16,7 @@ in a fresh session — or from GitHub on the web — without the original conver
 | Acquisition — locate and retrieve artifacts | **Done** |
 | Storage architecture — repo / archive / cold storage split | **Done** |
 | Publication — firmware mirrored with attribution | **Done** |
-| Analysis — unpack and understand the firmware | **Not started** |
+| Analysis — unpack and understand the firmware | **Done** |
 
 ### Where things live
 
@@ -99,26 +99,68 @@ than a patch. **What differs is the single most interesting open question.**
 
 ### Phase 3 — analysis (the main work)
 
-1. **Identify `83_IMAGE`'s format.** 192 MB `rootfs` partition; expect squashfs, UBI,
-   or a Marvell container. Start with `binwalk`, `file`, and magic-number inspection.
+1. **Identify `83_IMAGE`'s format.** **Done:** Marvell/Berlin container with two
+   gzip-compressed SquashFS v4 members.
 2. **Extract the root filesystem** into `reinvoke-archive/extracted/`, never into the repo.
-3. **Diff the two variants.** Once mounted or unpacked, compare trees rather than raw
-   bytes — this should reveal exactly what `StockRoot` modified.
-4. **Examine `81`/`82`/`99_IMAGE`.** `82_IMAGE` (35 MB) is referenced as the initrd by
-   `gen-cmd.sh`; `99_IMAGE` is 138 MB and unidentified.
-5. **Write `FINDINGS.md`** — this is the project's own analytical output, distinct from
-   the inherited corpus.
-6. **Update `docs/corpus/02_CLAIM_EVIDENCE_LEDGER.md`** with confirmed claims, using the
-   existing evidence classes and confidence vocabulary.
+   **Done.**
+3. **Diff the two variants.** **Done:** identical tree shape; 11 regular-file content
+   changes documented in `FINDINGS.md`.
+4. **Examine `81`/`82`/`99_IMAGE`.** **Done:** 81 is the ARM uImage kernel, 82 is the
+   gzip/cpio initrd, and 99 is an older LS9 SquashFS/component image.
+5. **Write `FINDINGS.md`** — **Done.**
+6. **Update `docs/corpus/02_CLAIM_EVIDENCE_LEDGER.md`** — **Done.**
+7. **Done:** boot/update correlation linked initrd startup, kernel/device-tree strings,
+   LS9 radio firmware/configuration, and RedBend OTA paths.
+8. **Done:** static slot-selection search found OTA targets and U-Boot environment
+   references but no direct active/inactive selector; the unresolved status is
+   recorded. LS9 radio lineage was compared, and a concise text/configuration
+   layer was added under `docs/bundle-contents/invoke-flashing/phase3-analysis.md`.
+9. **Done:** the two discovery-only sources were checked without acquiring
+   artifacts. The remaining repository action is an optional clean preservation
+   milestone commit after reviewing the uncommitted documentation.
+
+### Beyond Phase 3 — revival path
+
+The end goal is **repurposing completeness (L2)**, not an unsupported claim of
+full schematic completeness. See [revival-roadmap.md](docs/revival-roadmap.md).
+The next engineering deliverable is a runtime-interface inventory, now captured
+in [runtime-interface-inventory.md](docs/bundle-contents/invoke-flashing/runtime-interface-inventory.md),
+followed by controlled, read-only observation on a physical sample if one is
+available. No flashing or execution of preserved firmware is part of the
+autonomous work.
+The physical-work gate is specified in
+[hardware-validation-plan.md](docs/hardware-validation-plan.md), which now
+also documents what FCC regulatory teardown photos already establish without
+any physical unit (Micro-USB service port, board topology, no external UART)
+and a no-disassembly fallback path for when the enclosure cannot be opened.
+
+**Immediate next steps, in order:**
+
+1. Obtain a donor device (owner-driven; not autonomous).
+2. Regardless of disassembly access, attempt the no-disassembly observations
+   first: adapter/network passive observation, and read-only USB descriptor
+   enumeration on the Micro-USB service port (no vendor commands that could
+   trigger a flash).
+3. If disassembly becomes possible: board photographs, connector pinout via
+   continuity testing (unpowered), then serial console capture and logic
+   analyzer work per `hardware-validation-plan.md`.
+4. Correlate whatever is captured against
+   `runtime-interface-inventory.md` and update it plus the decision-gate
+   section of `hardware-validation-plan.md` with results.
+5. Only after that correlation does the roadmap's stage 5 reuse decision
+   (keep BG2CDP / replace compute / bypass electronics) get made — it should
+   not be guessed ahead of evidence.
 
 ### Smaller open items
 
-- **Azure restore runbook** — deferred by decision. Roughly:
-  `az storage blob download-batch --account-name <storage-account> -s archive -d .`
-  then verify against `metadata/`. Should be written down before it is needed.
+- **Azure restore runbook** — **documented:**
+  [azure-restore-runbook.md](docs/acquisition/azure-restore-runbook.md).
 - **`P0-002`** — Google/Nest Chromecast OSS Drive folder, still `DISCOVERY_ONLY`.
-  `resourcekey`-gated, no Wayback capture; the highest-risk unacquired item.
-- **`P0-005`** — historical Harman `cortana-sdk-opensource.html`, not yet crawled.
+  The folder title is externally observable, but unauthenticated contents were
+  not exposed and no artifact was acquired.
+- **`P0-005`** — historical Harman `cortana-sdk-opensource.html`, still
+  `DISCOVERY_ONLY`; current site access returns 403/redirect and no artifact
+  was acquired.
 - **Regenerate `docs/corpus/99_CORPUS_HASHES.md`** whenever a corpus document changes.
 
 ---
