@@ -148,13 +148,25 @@ Also archive the complete discussion page above.
 ```yaml
 id: P0-005
 priority: P0
-status: REDIRECTS_TODAY
+status: ACQUIRED
 kind: historical_web_target
 historical_url: "https://www.harmankardon.com/cortana-sdk-opensource.html"
 current_parent: "https://www.harmankardon.com/opensource.html"
-destination: wayback/harman/cortana-sdk-opensource/
+destination: reinvoke-archive/web-pages/harman-cortana-sdk-opensource-20231203010301.html
 action: WAYBACK_CDX_ENUMERATE_ALL_CAPTURES_AND_LINKS
 ```
+
+Resolved: the live URL still redirects (`REDIRECTS_TODAY` was accurate for
+direct access), but the Wayback Machine CDX index
+(`http://web.archive.org/cdx/search/cdx?url=harmankardon.com/cortana-sdk-opensource.html&output=json`)
+has two `200`-status captures (2023-03-29, 2023-12-03). The 2023-12-03
+capture was retrieved and archived; SHA-256
+`6b2e25ae48c4e3456c1952a2ff13d8013cf978b68f94d7295a741e30aac7696b`. It is a
+Microsoft-authored third-party notices file for the Cortana SDK (Expat,
+RapidJSON, Parson, zlib, curl, Breakpad, OpenSSL, Opus, and related
+components), not source code. See
+`docs/corpus/02_CLAIM_EVIDENCE_LEDGER.md` §"Cortana SDK third-party notices
+(P0-005)" for the full claim breakdown.
 
 Parse every historical capture for:
 

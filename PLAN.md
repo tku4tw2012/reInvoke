@@ -179,9 +179,13 @@ write-ups can be done autonomously once data is provided.
 - **`P0-002`** — Google/Nest Chromecast OSS Drive folder, still `DISCOVERY_ONLY`.
   The folder title is externally observable, but unauthenticated contents were
   not exposed and no artifact was acquired.
-- **`P0-005`** — historical Harman `cortana-sdk-opensource.html`, still
-  `DISCOVERY_ONLY`; current site access returns 403/redirect and no artifact
-  was acquired.
+- **`P0-005`** — historical Harman `cortana-sdk-opensource.html` — **resolved,
+  ACQUIRED.** The live URL still redirects, but a Wayback Machine capture
+  (2023-12-03, HTTP 200) was found and archived. It is a Microsoft-authored
+  third-party notices file for the Cortana SDK (Expat, RapidJSON, Parson,
+  zlib, curl, Breakpad, OpenSSL, Opus, etc.), not source code. See
+  `docs/corpus/02_CLAIM_EVIDENCE_LEDGER.md` and the updated entry in
+  `docs/acquisition/invoke_berlin_artifact_acquisition_manifest.md`.
 - **Regenerate `docs/corpus/99_CORPUS_HASHES.md`** whenever a corpus document changes.
 
 ---
