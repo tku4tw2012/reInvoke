@@ -227,6 +227,26 @@ write-ups can be done autonomously once data is provided.
   `docs/acquisition/invoke_berlin_artifact_acquisition_manifest.md`.
 - **Regenerate `docs/corpus/99_CORPUS_HASHES.md`** whenever a corpus document changes.
 
+### Open software work, no hardware required
+
+- **MCU register capture.** The bring-up order is known; the register writes
+  are not. Two routes are described in
+  [mcu-boundary.md](docs/emulation/mcu-boundary.md). The cleaner one needs
+  `i2c-stub` loaded, which requires root. Never expose the host's real
+  `/dev/i2c-*` to this firmware.
+- **Volume setter arguments.** `com.harman.volumeSet` and `volumeAdjust` need
+  an ALSA mixer exposing the per-stream control names before they will accept
+  input. The names and topology are already documented.
+- **Bluetooth transport arguments.** The transport procedures block without an
+  HCI adapter in the sandbox.
+- **Boot-slot selection.** Still unresolved. `bootimgs`/`bootimgs-B` and
+  `tz_en`/`tz_en-B` exist, but no preserved script maps `fw_env.config` entries
+  to an active slot, and `rootfs` has no B partition. `mtd_exec` and
+  `flash_bootloader` in the final build have not been disassembled.
+- **USB download-mode feasibility.** No BootROM, OTP, or secure-boot source
+  exists in the corpus, so this cannot be settled by analysis. It is a
+  measurement, gated by the observation procedure.
+
 ---
 
 ## 4. Working rules
