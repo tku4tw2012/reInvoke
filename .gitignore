@@ -9,6 +9,7 @@ extracted/
 web-pages/
 wayback/
 sources/
+/emulation/
 
 # Never commit large binary payloads.
 *.zip
@@ -29,4 +30,3 @@ __pycache__/
 *.pyc
 .DS_Store
 *.swp
-emulation/
