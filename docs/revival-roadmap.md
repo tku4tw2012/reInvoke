@@ -16,20 +16,38 @@ the useful hardware.
 Acquire, hash, mirror, classify, and extract the firmware without executing or
 flashing it. Maintain the claim/evidence ledger and keep binaries outside Git.
 
-### 2. Software boundary map — complete for static evidence
+### 2. Software boundary map — complete, and substantially exceeded
 
 Documented boot, storage, OTA, services, ports, IPC, audio, Bluetooth, Wi-Fi,
-MCU, and UI boundaries from static evidence. The hardware-side transport and
-electrical details remain unproven.
+MCU, and UI boundaries from static evidence. Two results go beyond a static
+map.
+
+The control plane was reconstituted off-device. The service bus is WAMP over
+MsgPack routed by `bonefish`, and the device's own ARM binaries now run under
+emulation on an x86 host, answering calls from a third-party client. See
+`docs/emulation/control-plane-emulation.md`.
+
+Harman's final firmware was recovered and analysed. `Barracuda_libre-12.2134.0`
+removes Cortana and Spotify and adds a Wi-Fi blocker, converting the product
+into a local Bluetooth speaker. See
+`docs/bundle-contents/invoke-ota2/ota2-analysis.md`.
+
+The hardware-side transport and electrical details remain unproven.
 
 ### 3. Safe observation on one physical sample — ready to start
 
-Donor device(s) are available. Assign a sample ID and collect board/connector
-photographs, labels, and non-invasive power/continuity measurements. Capture
-serial boot output and read-only runtime observations. Do not flash until a
-recovery and image-integrity procedure is independently established. See
-`docs/hardware-validation-plan.md` for the full procedure and the
-no-disassembly fallback path if a given unit cannot be opened.
+Donor device(s) are available. The full non-invasive procedure is in
+`docs/no-disassembly-observation-procedure.md`, ordered so the cheapest and
+most decisive observations come first.
+
+Because Harman's own final build already targets Bluetooth-speaker operation,
+the first question is which firmware a unit carries and whether it pairs and
+plays audio. A unit that does is already close to the end goal. Only after
+that does USB download-mode probing matter, and that probe is a hard gate on
+any RAM-boot work.
+
+Do not flash until a recovery and image-integrity procedure is independently
+established.
 
 ### 4. Interface validation
 

@@ -1,0 +1,23 @@
+{
+  "content_type": "application/pdf",
+  "destination": "originals/fcc/APIHKINVOKE/User-Manual__Users-Manual-3374517.pdf",
+  "exhibit_date": "2017-07-27",
+  "exhibit_type": "Users Manual",
+  "fcc_document_id": "3374517",
+  "fcc_id": "APIHKINVOKE",
+  "final_url": "https://fccid.io/m/e6bda895d5edce41c4a0f54eb553c981e65e320ec848accd77ccffd058264626.pdf",
+  "final_url_note": "Content-addressed fccid.io mirror URL (filename is the file SHA-256). No query string; stable public exhibit URL is source_url.",
+  "http_status": 200,
+  "id": "FCC-APIHKINVOKE-user-manual-3374517",
+  "kind": "download",
+  "mime": "application/pdf",
+  "note": "Byte-identical duplicate of Users Manual 3374805 from another application filing.",
+  "provenance_page": "https://fccid.io/APIHKINVOKE/User-Manual/Users-Manual-3374517",
+  "retrieved_utc": "2026-08-28T23:31:30Z",
+  "sha1": "fc4c6140550f2937b675aeceda98e47edc6fff4f",
+  "sha256": "e6bda895d5edce41c4a0f54eb553c981e65e320ec848accd77ccffd058264626",
+  "size_bytes": 5848122,
+  "source_url": "https://fccid.io/APIHKINVOKE/User-Manual/Users-Manual-3374517.pdf",
+  "status": "DOWNLOADED",
+  "title": "Users Manual (second application filing)"
+}

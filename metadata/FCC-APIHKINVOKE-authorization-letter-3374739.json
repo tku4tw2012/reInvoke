@@ -1,0 +1,23 @@
+{
+  "content_type": "application/pdf",
+  "destination": "originals/fcc/APIHKINVOKE/Letter__Authorization-Letter-3374739.pdf",
+  "exhibit_date": "2017-04-28",
+  "exhibit_type": "Cover Letter(s)",
+  "fcc_document_id": "3374739",
+  "fcc_id": "APIHKINVOKE",
+  "final_url": "https://fccid.io/m/02d97c5f6e49bb37d2ed6806b17005cc9decdbe20deb23e7c5af2e30a5fca840.pdf",
+  "final_url_note": "Content-addressed fccid.io mirror URL (filename is the file SHA-256). No query string; stable public exhibit URL is source_url.",
+  "http_status": 200,
+  "id": "FCC-APIHKINVOKE-authorization-letter-3374739",
+  "kind": "download",
+  "mime": "application/pdf",
+  "note": "Grantee authorization of the test-lab agent.",
+  "provenance_page": "https://fccid.io/APIHKINVOKE/Letter/Authorization-Letter-3374739",
+  "retrieved_utc": "2026-08-28T23:30:38Z",
+  "sha1": "63eac6caa9cc6ce1114d7f80b70ed1dfe70498f9",
+  "sha256": "02d97c5f6e49bb37d2ed6806b17005cc9decdbe20deb23e7c5af2e30a5fca840",
+  "size_bytes": 226417,
+  "source_url": "https://fccid.io/APIHKINVOKE/Letter/Authorization-Letter-3374739.pdf",
+  "status": "DOWNLOADED",
+  "title": "Authorization (Agent) Letter"
+}

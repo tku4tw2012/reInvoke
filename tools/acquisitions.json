@@ -71,10 +71,20 @@
   },
   {
     "id": "P1-040",
-    "kind": "provenance",
+    "kind": "git_sparse",
     "source_url": "https://kernel.googlesource.com/pub/scm/linux/kernel/git/jszhang/linux-berlin",
-    "destination": "(not mirrored - cite only)",
-    "note": "Mainline Linux maintainer tree. Retention ranking classifies this as cite-only: the code is among the most widely mirrored in existence, and a full mirror is multi-GB. Recorded as provenance instead of cloned."
+    "destination": "git-mirrors/linux/linux-berlin-sparse",
+    "depth": 1,
+    "sparse_paths": [
+      "arch/arm/boot/dts",
+      "arch/arm/mach-berlin",
+      "drivers/clk/berlin",
+      "drivers/pinctrl/berlin",
+      "drivers/soc/berlin",
+      "sound/soc/berlin",
+      "Documentation/devicetree/bindings"
+    ],
+    "note": "Mainline Linux maintainer tree. Previously ranked cite-only because a full mirror is multi-GB. That ranking weighed size against the whole tree rather than against the Berlin subset, which is the de facto pinmux, clock, and board documentation for this SoC family. Acquired instead as a shallow blobless sparse checkout (~44 MB). Note that sound/soc/berlin and drivers/soc/berlin do not exist upstream, and the tree carries berlin2cd (BG2CD) but no BG2CDP board file; both absences are themselves evidence."
   },
   {
     "id": "P2-001",

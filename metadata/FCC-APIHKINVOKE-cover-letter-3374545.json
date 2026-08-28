@@ -1,0 +1,23 @@
+{
+  "content_type": "application/pdf",
+  "destination": "originals/fcc/APIHKINVOKE/Letter__Cover-Letter-3374545.pdf",
+  "exhibit_date": "2017-04-28",
+  "exhibit_type": "Cover Letter(s)",
+  "fcc_document_id": "3374545",
+  "fcc_id": "APIHKINVOKE",
+  "final_url": "https://fccid.io/m/6b642cb371a5782a6780f5b1c82468b6e65355b4044ac8c435781bf1e765371c.pdf",
+  "final_url_note": "Content-addressed fccid.io mirror URL (filename is the file SHA-256). No query string; stable public exhibit URL is source_url.",
+  "http_status": 200,
+  "id": "FCC-APIHKINVOKE-cover-letter-3374545",
+  "kind": "download",
+  "mime": "application/pdf",
+  "note": "Filing cover letter.",
+  "provenance_page": "https://fccid.io/APIHKINVOKE/Letter/Cover-Letter-3374545",
+  "retrieved_utc": "2026-08-28T23:30:49Z",
+  "sha1": "6c83a0e0b7bbe81cf1173756c822daf698993fad",
+  "sha256": "6b642cb371a5782a6780f5b1c82468b6e65355b4044ac8c435781bf1e765371c",
+  "size_bytes": 94101,
+  "source_url": "https://fccid.io/APIHKINVOKE/Letter/Cover-Letter-3374545.pdf",
+  "status": "DOWNLOADED",
+  "title": "Cover Letter"
+}

@@ -1,8 +1,8 @@
 ---
 corpus_id: hki-hardware
 title: Harman Kardon Invoke Hardware Corpus
-version: "0.2"
-date: "2026-08-25"
+version: "0.3"
+date: "2026-08-28"
 status: working-research-corpus
 format_goal: LLM-ingestion
 canonical_order:
@@ -10,6 +10,8 @@ canonical_order:
   - 01_CANONICAL_HARDWARE_BASELINE.md
   - 02_CLAIM_EVIDENCE_LEDGER.md
   - 03_RESEARCH_FRAMEWORK_AND_CRITIQUE.md
+  - 04_FCC_EXHIBIT_INVENTORY.md
+  - 05_SIBLING_SOURCE_CROSSINDEX.md
 ---
 
 # Harman Kardon Invoke Hardware Corpus
@@ -40,6 +42,8 @@ This corpus deliberately distinguishes:
 | `01_CANONICAL_HARDWARE_BASELINE.md` | Current hardware facts and only narrowly justified inferences | canonical working baseline |
 | `02_CLAIM_EVIDENCE_LEDGER.md` | Atomic claims, evidence locators, confidence, contradictions, unknowns | evidentiary |
 | `03_RESEARCH_FRAMEWORK_AND_CRITIQUE.md` | Research architecture, priorities, decision gates, critique | exploratory / non-canonical |
+| `04_FCC_EXHIBIT_INVENTORY.md` | Held FCC exhibits, hashes, and what each establishes | evidentiary |
+| `05_SIBLING_SOURCE_CROSSINDEX.md` | Findings transferred from mirrored Berlin-family source trees | evidentiary |
 
 ## Recommended ingestion behavior
 
