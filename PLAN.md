@@ -17,7 +17,32 @@ in a fresh session — or from GitHub on the web — without the original conver
 | Storage architecture — repo / archive / cold storage split | **Done** |
 | Publication — firmware mirrored with attribution | **Done** |
 | Analysis — unpack and understand the firmware | **Done** |
-| Hardware validation — donor device(s) available | **Ready to start** — owner confirms multiple donor units are on hand |
+| Control-plane emulation — device userland runs off-device | **Done** — see [control-plane-emulation.md](docs/emulation/control-plane-emulation.md) |
+| Evidence closure — FCC exhibits, OTA2, sibling cross-index | **Done** |
+| Hardware validation — donor device(s) available | **Ready to start** — procedure in [no-disassembly-observation-procedure.md](docs/no-disassembly-observation-procedure.md) |
+
+### The finding that reframes the project
+
+Harman's final firmware, `Barracuda_libre-12.2134.0` in the OTA2 bundle, is an
+end-of-life conversion. Cortana, the Cortana harness, Spotify, and the Skype
+call library are removed. `oobe-ui` and a `wifi-blocker` service are added.
+
+Harman shipped a version of this device that is a local Bluetooth speaker with
+the cloud assistant taken out. The project's stated end goal, repurposing
+completeness, may therefore be partly reachable on stock software rather than
+by replacing it. Confirming which firmware a physical unit carries is now the
+highest-value observation, which is why it leads the hardware procedure.
+
+### The control plane is solved
+
+The device's service bus is WAMP over MsgPack, routed by `bonefish`, an
+open-source router that ships in the rootfs. Both the router and its client
+services have been run on an x86 host under `qemu-user` in a rootless sandbox.
+A third-party client joined the bus and successfully called
+`com.harman.musicMuteToggle`, which changed real service state.
+
+This means the audio control surface can be exercised, and its message shapes
+recovered, without a physical unit and without any risk to one.
 
 ### Where things live
 
@@ -82,17 +107,23 @@ A serial console at 115200 baud and a RAM-disk recovery path with a shell as ini
 `VID_1286` (Marvell) with `PID_8100` / `PID_8101`, plus `VID_8086` with
 `PID_e001` / `PID_c001` / `PID_d001`. These identify the SoC in USB boot / recovery mode.
 
-### The two `83_IMAGE` variants
+### The three `83_IMAGE` variants
 
-Both are exactly **107,934,810 bytes** but differ in **83,800,608 bytes (77.64%)**.
+Two are exactly **107,934,810 bytes** but differ in **83,800,608 bytes (77.64%)**.
+A third, newer rootfs was recovered from the OTA2 bundle.
 
-| Variant | SHA-256 |
-|---|---|
-| `StockRoot` release asset | `f59d0a56f5d3d4cc90b146e2433ec32da36239e6c4373813d57fe92e19326cc7` |
-| Inside `Flashing.zip` | `90a4f54d7c92f55ea20f6d63f89caae5f7738b62dec4913bded0fd7816ec9a1c` |
+| Variant | Build tag | SHA-256 |
+|---|---|---|
+| `StockRoot` release asset | `Barracuda_rooted_libre-11.1842.0` | `f59d0a56f5d3d4cc90b146e2433ec32da36239e6c4373813d57fe92e19326cc7` |
+| Inside `Flashing.zip` | `Barracuda_libre-11.1842.0` | `90a4f54d7c92f55ea20f6d63f89caae5f7738b62dec4913bded0fd7816ec9a1c` |
+| Inside `OTA2.zip` | `Barracuda_libre-12.2134.0` | `b2e12178...` (see OTA2 analysis) |
 
-Identical length with ~78% differing content suggests a same-size rootfs rebuild rather
-than a patch. **What differs is the single most interesting open question.**
+The first two differ by a SquashFS rebuild plus 11 deliberate file changes; the
+`StockRoot` copy is a rooted variant. That question is closed.
+
+The third is a genuinely newer 2021 build on the stock lineage, and it is the
+most consequential artifact in the archive. See
+[ota2-analysis.md](docs/bundle-contents/invoke-ota2/ota2-analysis.md).
 
 ---
 
@@ -127,18 +158,26 @@ without a physical unit has been completed and committed.
 
 ### Phase 4 — hardware validation (current phase)
 
-Donor device(s) are now available (owner confirms multiple units on hand,
-not currently in front of them). This unblocks
-[hardware-validation-plan.md](docs/hardware-validation-plan.md) and roadmap
-stages 3–4 in [revival-roadmap.md](docs/revival-roadmap.md). The end goal
-remains **repurposing completeness (L2)**, not full schematic completeness.
+A donor device is now physically in hand and will not be opened. The operator
+procedure is [no-disassembly-observation-procedure.md](docs/no-disassembly-observation-procedure.md),
+which supersedes the ordering in `hardware-validation-plan.md` for units that
+stay closed. The end goal remains **repurposing completeness (L2)**, not full
+schematic completeness.
 
-`hardware-validation-plan.md` already documents what FCC regulatory teardown
-photos establish without a physical unit (Micro-USB service port location,
-full board topology, absence of an external UART) and a no-disassembly
-fallback path, in case a specific unit can't be opened at a given time.
+The FCC exhibit set for `APIHKINVOKE` is now held locally under
+`originals/fcc/` in the archive, with provenance sidecars in `metadata/`. Until
+this session those claims cited evidence the project did not possess.
 
-**Next steps, in order, once a donor unit is physically in hand:**
+**The two observations that matter most:**
+
+1. Does the unit pair over Bluetooth and play audio? Harman's final firmware
+   is already a Bluetooth-speaker build, so a working unit may substantially
+   satisfy the end goal with no intervention.
+2. Does the Micro-USB service port ever expose `1286:8100` or `1286:8101`?
+   That is a hard gate on every RAM-boot path. If it never appears without
+   opening the case, that avenue is closed and the result should be recorded.
+
+**Remaining steps, once those two are answered:**
 
 1. **Before powering on:** assign the unit a sample ID, photograph enclosure
    labels and every board (including both sides of the daughterboard and its

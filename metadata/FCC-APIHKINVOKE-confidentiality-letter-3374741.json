@@ -1,0 +1,23 @@
+{
+  "content_type": "application/pdf",
+  "destination": "originals/fcc/APIHKINVOKE/Letter__confidentiality-letter-3374741.pdf",
+  "exhibit_date": "2017-04-28",
+  "exhibit_type": "Cover Letter(s)",
+  "fcc_document_id": "3374741",
+  "fcc_id": "APIHKINVOKE",
+  "final_url": "https://fccid.io/m/9f6988115d8dfde876a8324773870138954a96e6cef35764165eff476a78a9a3.pdf",
+  "final_url_note": "Content-addressed fccid.io mirror URL (filename is the file SHA-256). No query string; stable public exhibit URL is source_url.",
+  "http_status": 200,
+  "id": "FCC-APIHKINVOKE-confidentiality-letter-3374741",
+  "kind": "download",
+  "mime": "application/pdf",
+  "note": "Byte-identical duplicate of Confidentiality Letter 3374546 from the second application filing.",
+  "provenance_page": "https://fccid.io/APIHKINVOKE/Letter/confidentiality-letter-3374741",
+  "retrieved_utc": "2026-08-28T23:30:45Z",
+  "sha1": "7ba7835b6323bf4e0447144eb01ea7e0e3afea8b",
+  "sha256": "9f6988115d8dfde876a8324773870138954a96e6cef35764165eff476a78a9a3",
+  "size_bytes": 323772,
+  "source_url": "https://fccid.io/APIHKINVOKE/Letter/confidentiality-letter-3374741.pdf",
+  "status": "DOWNLOADED",
+  "title": "Confidentiality Request Letter (second application filing)"
+}

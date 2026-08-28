@@ -1,0 +1,23 @@
+{
+  "content_type": "application/pdf",
+  "destination": "originals/fcc/APIHKINVOKE/Label__Label-3374817.pdf",
+  "exhibit_date": "2017-04-28",
+  "exhibit_type": "ID Label/Location Info",
+  "fcc_document_id": "3374817",
+  "fcc_id": "APIHKINVOKE",
+  "final_url": "https://fccid.io/m/8672c9f755ac6e8c732e6277cbf71cbe2111927e483cc5efa27514dba04d8a4c.pdf",
+  "final_url_note": "Content-addressed fccid.io mirror URL (filename is the file SHA-256). No query string; stable public exhibit URL is source_url.",
+  "http_status": 200,
+  "id": "FCC-APIHKINVOKE-label-3374817",
+  "kind": "download",
+  "mime": "application/pdf",
+  "note": "FCC ID label artwork and its placement on the product.",
+  "provenance_page": "https://fccid.io/APIHKINVOKE/Label/Label-3374817",
+  "retrieved_utc": "2026-08-28T23:30:35Z",
+  "sha1": "194d172a52f792eb05e9b9e101eb235a48f2067c",
+  "sha256": "8672c9f755ac6e8c732e6277cbf71cbe2111927e483cc5efa27514dba04d8a4c",
+  "size_bytes": 1081238,
+  "source_url": "https://fccid.io/APIHKINVOKE/Label/Label-3374817.pdf",
+  "status": "DOWNLOADED",
+  "title": "Label and Label Location"
+}

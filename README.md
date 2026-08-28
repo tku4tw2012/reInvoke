@@ -26,12 +26,28 @@ analysis work queued next.
 ```text
 reInvoke/
 ├── docs/
-│   ├── corpus/            Hardware baseline, claim/evidence ledger, methodology
+│   ├── corpus/            Hardware baseline, claim/evidence ledger, FCC inventory, cross-index
 │   ├── acquisition/       Artifact manifest, retention ranking, storage policy
-│   └── bundle-contents/   Extracted text layer + full listings of firmware bundles
+│   ├── bundle-contents/   Extracted text layer + full listings of firmware bundles
+│   ├── emulation/         Running the device's own userland off-device
+│   └── journal.md         Dated record of work, findings, and corrections
 ├── metadata/              Provenance sidecars: source URL, UTC time, SHA-256, size
 └── tools/                 Acquisition tooling
 ```
+
+## Notable results
+
+The device's control plane is a WAMP message bus routed by `bonefish`, an
+open-source router that ships in the firmware. Because the router and every
+service are ordinary ARM executables, the whole control plane runs on a
+workstation under emulation, and a third-party client can call its procedures
+and change state. See [control-plane emulation](docs/emulation/control-plane-emulation.md).
+
+Harman's final firmware, `Barracuda_libre-12.2134.0`, removes Cortana and
+Spotify and adds a Wi-Fi blocker, converting the product into a local
+Bluetooth speaker. The repurposed device the project set out to describe was,
+in part, shipped by the vendor. See
+[OTA2 analysis](docs/bundle-contents/invoke-ota2/ota2-analysis.md).
 
 ## Three-tier storage model
 

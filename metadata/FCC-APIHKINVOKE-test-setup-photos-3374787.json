@@ -1,0 +1,23 @@
+{
+  "content_type": "application/pdf",
+  "destination": "originals/fcc/APIHKINVOKE/Test-Setup-Photos__Test-setup-Photos-3374787.pdf",
+  "exhibit_date": "2017-07-27",
+  "exhibit_type": "Test Setup Photos",
+  "fcc_document_id": "3374787",
+  "fcc_id": "APIHKINVOKE",
+  "final_url": "https://fccid.io/m/483be0de2cdccf0c159648a5b160eef4478475ecc485d07dc38ba8ba69ca8403.pdf",
+  "final_url_note": "Content-addressed fccid.io mirror URL (filename is the file SHA-256). No query string; stable public exhibit URL is source_url.",
+  "http_status": 200,
+  "id": "FCC-APIHKINVOKE-test-setup-photos-3374787",
+  "kind": "download",
+  "mime": "application/pdf",
+  "note": "Byte-identical duplicate of Test Setup Photos 3374511 from the second application filing.",
+  "provenance_page": "https://fccid.io/APIHKINVOKE/Test-Setup-Photos/Test-setup-Photos-3374787",
+  "retrieved_utc": "2026-08-28T23:31:15Z",
+  "sha1": "17df01f64ad846695679963eda8c29a00569c07e",
+  "sha256": "483be0de2cdccf0c159648a5b160eef4478475ecc485d07dc38ba8ba69ca8403",
+  "size_bytes": 451137,
+  "source_url": "https://fccid.io/APIHKINVOKE/Test-Setup-Photos/Test-setup-Photos-3374787.pdf",
+  "status": "DOWNLOADED",
+  "title": "Test Setup Photos (second application filing)"
+}

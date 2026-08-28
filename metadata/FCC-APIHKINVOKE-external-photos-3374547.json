@@ -1,0 +1,23 @@
+{
+  "content_type": "application/pdf",
+  "destination": "originals/fcc/APIHKINVOKE/External-Photos__External-Photos-3374547.pdf",
+  "exhibit_date": "2017-07-27",
+  "exhibit_type": "External Photos",
+  "fcc_document_id": "3374547",
+  "fcc_id": "APIHKINVOKE",
+  "final_url": "https://fccid.io/m/684bacf1d145f4a3d781ef11edeaa049b69979eec3051d754e198a274237d7f6.pdf",
+  "final_url_note": "Content-addressed fccid.io mirror URL (filename is the file SHA-256). No query string; stable public exhibit URL is source_url.",
+  "http_status": 200,
+  "id": "FCC-APIHKINVOKE-external-photos-3374547",
+  "kind": "download",
+  "mime": "application/pdf",
+  "note": "External appearance and enclosure of the finished product.",
+  "provenance_page": "https://fccid.io/APIHKINVOKE/External-Photos/External-Photos-3374547",
+  "retrieved_utc": "2026-08-28T23:30:28Z",
+  "sha1": "19ea465579d0c272dc82f33a743dcf40809e70c1",
+  "sha256": "684bacf1d145f4a3d781ef11edeaa049b69979eec3051d754e198a274237d7f6",
+  "size_bytes": 974531,
+  "source_url": "https://fccid.io/APIHKINVOKE/External-Photos/External-Photos-3374547.pdf",
+  "status": "DOWNLOADED",
+  "title": "External Photos"
+}

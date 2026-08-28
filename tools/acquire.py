@@ -190,6 +190,79 @@ def acquire_git(item: dict) -> dict:
     return metadata
 
 
+def acquire_git_sparse(item: dict) -> dict:
+    """Acquire only the relevant subset of an upstream tree too large to mirror.
+
+    Some sources are ranked cite-only purely on size while still containing a
+    small, directly relevant subset. A shallow, blobless, path-filtered
+    checkout keeps the cost proportional to the evidence actually needed and
+    keeps the acquisition reproducible instead of a manual one-off.
+    """
+    destination = ROOT / item["destination"]
+    sparse_paths = item.get("sparse_paths", [])
+    metadata = {
+        "id": item["id"],
+        "kind": item["kind"],
+        "clone_url": item["source_url"],
+        "retrieved_utc": now(),
+        "checkout_path": str(destination.relative_to(ROOT)),
+        "sparse_paths_requested": sparse_paths,
+        "depth": item.get("depth", 1),
+    }
+    if not sparse_paths:
+        metadata.update(status="FAILED", error="git_sparse requires a non-empty sparse_paths list")
+        write_metadata(item, metadata)
+        return metadata
+    if destination.exists():
+        metadata["status"] = "SKIPPED_EXISTING"
+        write_metadata(item, metadata)
+        return metadata
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    clone = [
+        "git", "clone",
+        "--depth", str(item.get("depth", 1)),
+        "--filter=blob:none", "--sparse",
+        item["source_url"], str(destination),
+    ]
+    try:
+        result = subprocess.run(clone, capture_output=True, text=True, check=False, timeout=1800, env=env)
+        if result.returncode:
+            raise RuntimeError(result.stderr.strip() or f"git exited {result.returncode}")
+        subprocess.run(["git", "-C", str(destination), "sparse-checkout", "set", *sparse_paths],
+                       capture_output=True, text=True, check=True, timeout=300, env=env)
+        head = subprocess.run(["git", "-C", str(destination), "rev-parse", "HEAD"],
+                              capture_output=True, text=True, check=True, timeout=30)
+        metadata.update(status="MIRRORED", head_commit=head.stdout.strip())
+        # Record which requested paths actually exist upstream. A path that resolves to
+        # nothing is evidence about the upstream tree, not a silent acquisition failure.
+        metadata["sparse_paths_present"] = [p for p in sparse_paths if (destination / p).exists()]
+    except Exception as error:
+        metadata.update(status="FAILED", error=f"{type(error).__name__}: {error}")
+        shutil.rmtree(destination, ignore_errors=True)
+    write_metadata(item, metadata)
+    return metadata
+
+
+def acquire_provenance(item: dict) -> dict:
+    return {
+        "id": item["id"],
+        "kind": item["kind"],
+        "status": "DISCOVERY_ONLY",
+        "source_url": item["source_url"],
+        "retrieved_utc": now(),
+    }
+
+
+ACQUIRERS = {
+    "download": acquire_download,
+    "git_mirror": acquire_git,
+    "git_sparse": acquire_git_sparse,
+    "provenance": acquire_provenance,
+}
+
+
 def main() -> int:
     global ROOT
     parser = argparse.ArgumentParser()
@@ -205,12 +278,11 @@ def main() -> int:
     print(f"metadata:     {METADATA}")
     items = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
     for item in items:
-        result = acquire_download(item) if item["kind"] == "download" else (
-            acquire_git(item) if item["kind"] == "git_mirror" else {
-                "id": item["id"], "status": "DISCOVERY_ONLY",
-                "source_url": item["source_url"], "retrieved_utc": now(),
-            }
-        )
+        acquirer = ACQUIRERS.get(item["kind"])
+        if acquirer is None:
+            print(f"{item['id']}: UNKNOWN_KIND {item['kind']}")
+            continue
+        result = acquirer(item)
         if item["kind"] == "provenance":
             write_metadata(item, result)
         print(f"{result['id']}: {result['status']}")

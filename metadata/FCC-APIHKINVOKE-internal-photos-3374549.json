@@ -1,0 +1,23 @@
+{
+  "content_type": "application/pdf",
+  "destination": "originals/fcc/APIHKINVOKE/Internal-Photos__Internal-photos-3374549.pdf",
+  "exhibit_date": "2017-07-27",
+  "exhibit_type": "Internal Photos",
+  "fcc_document_id": "3374549",
+  "fcc_id": "APIHKINVOKE",
+  "final_url": "https://fccid.io/m/bd9ad8dbda90b5ae76454a06545369b75b79b19265896388414e80b64d56ef61.pdf",
+  "final_url_note": "Content-addressed fccid.io mirror URL (filename is the file SHA-256). No query string; stable public exhibit URL is source_url.",
+  "http_status": 200,
+  "id": "FCC-APIHKINVOKE-internal-photos-3374549",
+  "kind": "download",
+  "mime": "application/pdf",
+  "note": "Byte-identical duplicate of Internal Photos 3374744 from the second application filing under the same FCC ID.",
+  "provenance_page": "https://fccid.io/APIHKINVOKE/Internal-Photos/Internal-photos-3374549",
+  "retrieved_utc": "2026-08-28T23:30:25Z",
+  "sha1": "ec23179c3afea7752df1661acc94ef5a5604578a",
+  "sha256": "bd9ad8dbda90b5ae76454a06545369b75b79b19265896388414e80b64d56ef61",
+  "size_bytes": 3425929,
+  "source_url": "https://fccid.io/APIHKINVOKE/Internal-Photos/Internal-photos-3374549.pdf",
+  "status": "DOWNLOADED",
+  "title": "Internal Photos (second application filing)"
+}
