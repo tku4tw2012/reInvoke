@@ -115,13 +115,34 @@ Whether a physical unit ever exposes Marvell USB download mode without opening
 the case. No BootROM, OTP, or secure-boot source exists anywhere in the corpus,
 so this cannot be settled by analysis and remains a measurement.
 
-The MCU's I2C slave addresses and register semantics. Emulation reaches the
-bring-up sequence, including IO expander initialization, amplifier and DAC
-muting, DSP power-on, and DAC initialization, but capturing register-level
-traffic needs an I2C shim that answers rather than a placeholder file.
-
 Argument shapes for the volume setters and the Bluetooth transport calls, both
 blocked on sandbox dependencies rather than on protocol knowledge.
 
 The daughterboard connector pinout, which no amount of software analysis can
 resolve.
+
+### The MCU I2C capture
+
+Recorded separately because it was the session's last blocked item and it came
+unblocked.
+
+The bring-up order was recoverable from the service's own log messages, but the
+register traffic was not, because the transfers fail against a placeholder
+device. Reading the `I2C_RDWR` structures out of the emulator's memory failed
+twice before working. The first attempt hit a permissions wall, since
+`ptrace_scope` is 1 and only a parent may read a process's memory, so the
+capture had to spawn the sandbox itself. The second attempt read the right
+process at the wrong addresses, because `qemu-user` relocates the guest and
+trace addresses need `guest_base` applied. The third attempt read the right
+addresses too late, since the request structs are stack locals that are
+overwritten as soon as the call returns.
+
+Polling during the bring-up window, with the base derived from where the guest
+ELF landed, produced a stable set of transactions across three runs: three
+slave addresses, `0x20` during IO expander initialization and muting, `0x4c`
+receiving ten register writes during DAC initialization, and `0x36` in six-byte
+frames after the analogue settle. See
+[mcu-boundary.md](emulation/mcu-boundary.md).
+
+The device identities behind those addresses are deliberately not claimed. An
+access pattern narrows a device class; it does not name a part.

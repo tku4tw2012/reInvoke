@@ -229,11 +229,12 @@ write-ups can be done autonomously once data is provided.
 
 ### Open software work, no hardware required
 
-- **MCU register capture.** The bring-up order is known; the register writes
-  are not. Two routes are described in
-  [mcu-boundary.md](docs/emulation/mcu-boundary.md). The cleaner one needs
-  `i2c-stub` loaded, which requires root. Never expose the host's real
-  `/dev/i2c-*` to this firmware.
+- **MCU register capture.** **Done.** Three I2C slave addresses and their
+  bring-up register writes recovered under emulation and attributed to stages.
+  See [mcu-boundary.md](docs/emulation/mcu-boundary.md). Device identities are
+  not claimed. Loading `i2c-stub` would exercise branches a failing bus never
+  reaches, and needs root. Never expose the host's real `/dev/i2c-*` to this
+  firmware.
 - **Volume setter arguments.** `com.harman.volumeSet` and `volumeAdjust` need
   an ALSA mixer exposing the per-stream control names before they will accept
   input. The names and topology are already documented.

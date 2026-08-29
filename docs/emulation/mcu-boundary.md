@@ -111,35 +111,101 @@ The service also attempts to remove `/tmp/reg01.conf` through `/tmp/reg03.conf`
 at startup, indicating three register configuration files are staged somewhere
 in normal operation. Their contents are not present in the rootfs.
 
+## Recovered I2C transactions
+
+Captured by running `mcu-interface` under emulation and decoding the
+`I2C_RDWR` request structures out of the emulator's memory. `qemu-user`
+relocates the guest, so trace addresses were shifted by `guest_base`, derived
+at runtime from where the guest ELF landed. The binary is `ET_EXEC` with its
+first `LOAD` at `0x10000`, so the base is the mapped address minus `0x10000`.
+
+Three slave addresses appear, each aligned to a distinct bring-up stage:
+
+| Stage in service log | Slave | Direction | Data |
+|---|---|---|---|
+| `io_expander_initialize()` | `0x20` | write | `03 00` |
+| mute amp and dac | `0x20` | write | `01` |
+| mute amp and dac | `0x20` | read | `00` |
+| `DAC_initialize()` | `0x4c` | write | `00 00` |
+| `DAC_initialize()` | `0x4c` | write | `01 11` |
+| `DAC_initialize()` | `0x4c` | write | `0d 10` |
+| `DAC_initialize()` | `0x4c` | write | `25 08` |
+| `DAC_initialize()` | `0x4c` | write | `41 04` |
+| `DAC_initialize()` | `0x4c` | write | `41 07` |
+| `DAC_initialize()` | `0x4c` | write | `08 3f` |
+| `DAC_initialize()` | `0x4c` | write | `28 00` |
+| `DAC_initialize()` | `0x4c` | write | `3d 30` |
+| `DAC_initialize()` | `0x4c` | write | `3e 30` |
+| after the two-second settle | `0x36` | write | `01 f7 7f 40 01 00` |
+| after the two-second settle | `0x36` | write | `23 00 00 00 6c ba` |
+| after the two-second settle | `0x36` | write | `25 f7 7f 40 01 00` |
+| after the two-second settle | `0x36` | write | `26 00 00 00 00 00` |
+
+Three independent runs produced the same transaction set. The `0x20` and
+`0x36` payloads vary slightly between runs in the bytes that look like
+pointers or counters, which is expected for values assembled at runtime.
+
+## Reading the transactions
+
+The following are interpretations. The table above is the evidence.
+
+`0x20` is addressed during `io_expander_initialize()` and again while muting.
+Its access pattern is a one-byte register pointer followed by a one-byte
+read, and `0x20` is the base address of the common PCA9555 and TCA6416 style
+I2C GPIO expanders. Taken together this supports reading `0x20` as the IO
+expander, with the amplifier and DAC mute lines behind expander pins rather
+than behind codec registers. The first write, `03 00`, addresses what would be
+the configuration register for port 1 on that device family.
+
+`0x4c` receives ten two-byte writes during `DAC_initialize()`, which is the
+register-plus-value form used by most audio codecs. The registers touched are
+`0x00`, `0x01`, `0x08`, `0x0d`, `0x25`, `0x28`, `0x3d`, `0x3e`, and `0x41`
+twice with two different values, consistent with a staged power-up.
+
+`0x36` is written only after the two-second settle, in six-byte frames whose
+first byte varies while the remainder looks like a payload. That framing
+differs from both the expander and the codec, and its timing places it after
+the analogue path has stabilised.
+
+No part numbers are claimed for any of the three. Address plus access pattern
+narrows the device class; it does not identify a part.
+
 ## What is not established
 
-The I2C slave addresses of the IO expander, amplifier, DAC, DSP, and the MCU
-itself. These are not recoverable from strings and were not captured.
+The identity of the devices at `0x20`, `0x36`, and `0x4c`. Their access
+patterns and bring-up positions narrow the device classes, but no part number
+is claimed for any of them.
 
-The register maps behind each bring-up stage. The sequence order is known; the
-specific register writes are not.
+Whether the recovered register writes are complete. Emulation captures what the
+service attempts when every transfer fails. A device that acknowledged would
+change subsequent behaviour, so conditional paths may not have been exercised.
+
+The register maps behind each write. Register indices and values are recorded;
+their meanings are not documented anywhere in the corpus.
 
 The GPIO line numbers used for the MCU interrupt and handshake.
 
 The exact MCU part number. Firmware size and command set are consistent with a
 small microcontroller, but no identification is claimed.
 
-## Recovering the register traffic
+## Refining this further
 
-Two viable approaches, neither yet completed.
+Loading the kernel's `i2c-stub` module would create a harmless virtual bus that
+acknowledges transfers, letting the service proceed past its retry paths and
+exercise branches that a failing bus never reaches. That requires root.
 
-Load the kernel's `i2c-stub` module to create a harmless virtual I2C bus, bind
-it into the sandbox as `/dev/i2c-0`, and let `mcu-interface` transact against it
-normally. Transfers would then succeed and the register state can be read back.
-This requires root to load the module.
+A warning that applies to any such work. The host used here has real
+`/dev/i2c-*` devices belonging to its own SMBus and GPU. The sandbox must keep
+shimming that path. Exposing a real I2C bus to firmware that expects to write
+amplifier and DAC registers risks writing to unrelated hardware.
 
-Alternatively, resolve the qemu guest base address and decode the `I2C_RDWR`
-request structures directly out of the emulator's memory. A first attempt read
-`/proc/<pid>/mem` at raw guest addresses and recovered nothing, because guest
-addresses require the base offset applied before they are valid host addresses.
+## Reproducing the capture
 
-A warning for either approach. The host used for this work has real
-`/dev/i2c-*` devices belonging to its own SMBus and GPU. The sandbox must
-continue to shim that path. Exposing the host's real I2C bus to firmware that
-expects to write amplifier and DAC registers risks writing to unrelated
-hardware.
+The capture script lives outside the repository at
+`reinvoke-archive/emulation/mcu-i2c-capture.py`, alongside the sandbox it
+drives. It spawns the sandbox itself, because `ptrace_scope` restricts memory
+reads to descendant processes.
+
+```bash
+python3 reinvoke-archive/emulation/mcu-i2c-capture.py
+```
