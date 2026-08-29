@@ -241,8 +241,10 @@ write-ups can be done autonomously once data is provided.
   playback controls plus microphone mute, and `volumeSet`, `volumeAdjust`, and
   `musicMuteSet` work end to end. All three take the value first and stream
   name second.
-- **Bluetooth transport arguments.** Needs a full BlueZ stack inside the
-  sandbox, not merely an adapter on the host.
+- **Bluetooth transport arguments.** Blocked on an HCI transport, not on BlueZ.
+  The firmware uses Bluedroid over the kernel Bluetooth subsystem, so the
+  sandbox needs an HCI device and `/dev/rfkill` rather than `bluetoothd` and
+  D-Bus. See [bluetooth-stack.md](docs/emulation/bluetooth-stack.md).
 - **Update-state semantics.** **Done.** `mtd_exec setbootflags` toggles the first
   marker in the persistent `fw_stat` MTD partition between update-required
   (`qeru`) and no-update (`puon`). See

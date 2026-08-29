@@ -134,8 +134,9 @@ Whether a physical unit ever exposes Marvell USB download mode without opening
 the case. No BootROM, OTP, or secure-boot source exists anywhere in the corpus,
 so this cannot be settled by analysis and remains a measurement.
 
-Argument shapes for the Bluetooth transport calls. These need a full BlueZ
-stack inside the sandbox, not an adapter on the host.
+Argument shapes for the Bluetooth transport calls. These need an HCI transport
+inside the sandbox. The earlier claim that they need BlueZ was wrong; see the
+correction below.
 
 The daughterboard connector pinout, which no amount of software analysis can
 resolve.
@@ -239,3 +240,24 @@ This establishes an update gate, not active-slot selection. The recovery
 configuration targets `bootimgs` and `rootfs`, but preserved artifacts still do
 not map a marker to a specific active or inactive image. See
 [boot-update-state.md](emulation/boot-update-state.md).
+
+### A wrong claim about the Bluetooth stack
+
+Three documents stated that recovering the Bluetooth transport arguments needed
+BlueZ and a D-Bus session inside the sandbox. That was wrong, and it was wrong
+in the most expensive way: it named a concrete blocker that would have sent the
+next session building an environment nothing in this firmware talks to.
+
+`usr/bin/bluetooth` links neither `libbluetooth` nor `libdbus`. It links the
+Android HAL libraries, and the rootfs carries `bluetooth.default.so`,
+`libbt-vendor.so`, a Marvell `bt8xxx.ko` driver, and `sd8887_bt_a2_new.bin`
+controller firmware. The stack is Bluedroid.
+
+The real boundary is the kernel Bluetooth subsystem. `libbt-vendor.so` opens
+`/dev/rfkill` and waits for an `hci%d` interface, so the sandbox needs an HCI
+transport rather than a session bus. See
+[bluetooth-stack.md](emulation/bluetooth-stack.md).
+
+The error came from pattern-matching Linux Bluetooth to BlueZ instead of
+reading the binary's dependencies. It is the same failure mode recorded earlier
+in this journal: fluent, specific, and unverified.

@@ -212,7 +212,8 @@ Tested against the final firmware with a third-party MsgPack client.
 | `com.harman.deviceNameGet` | No reply within timeout |
 
 The remaining failures are environmental. Bluetooth procedures block because
-the sandbox has neither a BlueZ daemon nor an HCI adapter.
+the sandbox has no HCI transport. See
+[bluetooth-stack.md](bluetooth-stack.md).
 
 ## Limits of this method
 
@@ -232,9 +233,9 @@ configuration: `music`, `call`, `voice`, `system`, `timer`, and `mic`. The
 library is ARM EABI5 hard-float and requires only `GLIBC_2.4`, so it loads
 against the firmware's glibc 2.23. No host or guest glibc upgrade is required.
 
-The Bluetooth transport procedures need a working BlueZ stack, which means
-`bluetoothd` and a D-Bus session inside the sandbox, not merely an adapter on
-the host. Loading `hci_vhci` does not address that.
+The Bluetooth transport procedures need an HCI transport. An earlier version of
+this document said they need BlueZ and D-Bus, which is incorrect: this firmware
+uses Bluedroid. See [bluetooth-stack.md](bluetooth-stack.md).
 
 The same shim answers raw `I2C_RDWR`, which `i2c-stub` cannot provide. See
 [mcu-boundary.md](mcu-boundary.md). This demonstrates that a targeted guest
