@@ -6,7 +6,7 @@ map, not proof that any service is safe to expose on a modern network.
 | Boundary | Evidence | Current interpretation |
 |---|---|---|
 | Message bus | `logwrapper bonefish -r default -t 9999 -w 9998 -d` in `system-manager` | A `bonefish` WAMP router owns both ports: realm `default`, rawsocket on 9999, WebSocket on 9998 |
-| MCU control | `mcu-interface 127.0.0.1 9999`; `MCUInterface::register_wamp` symbols in the binary | A WAMP *client* dialing the router, not a listener on 9999. Reaches the MCU over `/dev/i2c-0` with sysfs GPIO handshake. See [mcu-boundary.md](../../emulation/mcu-boundary.md) |
+| MCU control | `mcu-interface 127.0.0.1 9999`; `MCUInterface::register_wamp` symbols in the binary | A WAMP *client* dialing the router, not a listener on 9999. Reaches three I2C peers on `/dev/i2c-0` at `0x20`, `0x36`, and `0x4c` with sysfs GPIO handshake. See [mcu-boundary.md](../../emulation/mcu-boundary.md) |
 | Audio/UI | `audio-ui 127.0.0.1 9999 $boot_mode $run_mode` | Another WAMP client of the same router; the shared argument is the router endpoint |
 | DSP | `dsp-client`, `com.harman.dsp.*` URIs | WAMP client exposing DSP volume, mic, and version procedures |
 | Network services | Firewall rules for 22, 9998, 9999, HTTPS, UDP 48301, DHCP, mDNS | Recovery/setup and maintenance surface; authentication semantics unresolved |
