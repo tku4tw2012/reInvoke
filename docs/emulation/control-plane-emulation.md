@@ -130,12 +130,24 @@ This is the first end-to-end demonstration that the Invoke's audio control
 surface can be driven by a client Harman did not write, using only preserved
 software.
 
-`volumeSet`, `volumeAdjust`, and `musicMuteSet` return
-`wamp.error.runtime_error` in the current sandbox. The cause is visible in the
-service log: `snd_mixer_attach()` fails because the sandbox has no mixer
-carrying the expected control names. Mute toggling succeeds because it is
-tracked in service state, while volume changes must reach ALSA. This is an
-environment limitation, not evidence that the procedures are unusable.
+The initial sandbox could not run `volumeSet`, `volumeAdjust`, or
+`musicMuteSet`. `qemu-user` returned `ENOSYS` for ALSA control ioctls before
+they reached the host driver. A guest-side ARM `LD_PRELOAD` shim now supplies
+the required card, element-list, element-info, read, write, and event
+subscription operations. `audio-ui` initializes without ALSA errors and all
+three procedures work end to end.
+
+The exact positional payloads are value first, stream name second:
+
+```json
+{"volumeSet": [30, "music"],
+ "volumeAdjust": [5, "music"],
+ "musicMuteSet": [true, "music"]}
+```
+
+`volumeSet` returned `[30, "music"]`; `volumeAdjust` returned `[35, "music"]`;
+and `musicMuteSet` returned `[true, "music"]`. Each response also carried the
+updated full volume state. Follow-up `volumeGet` calls confirmed every change.
 
 ## The final firmware on the bus
 
@@ -193,18 +205,41 @@ Tested against the final firmware with a third-party MsgPack client.
 | `com.harman.stateGet` | Returns full stream state |
 | `com.harman.volumeGet` | Returns per-stream volume and mute |
 | `com.harman.musicMuteToggle` | Succeeds and mutates state |
-| `com.harman.volumeSet` | `wamp.error.runtime_error` |
+| `com.harman.volumeSet` | Succeeds with `[value, stream]` |
+| `com.harman.volumeAdjust` | Succeeds with `[delta, stream]` |
+| `com.harman.musicMuteSet` | Succeeds with `[boolean, stream]` |
 | `com.harman.bluetooth.*` | No reply within timeout |
 | `com.harman.deviceNameGet` | No reply within timeout |
 
-The failures are environmental and each has an identified cause. Volume
-setters need an ALSA mixer exposing the per-stream control names, which the
-sandbox does not provide. The Bluetooth procedures block because BlueZ has no
-HCI adapter to talk to. Neither result indicates a protocol problem, and
-neither should be read as evidence that the calls fail on real hardware.
+The remaining failures are environmental. Bluetooth procedures block because
+the sandbox has neither a BlueZ daemon nor an HCI adapter.
 
-Restoring those two dependencies, a mixer with matching control names and a
-Bluetooth adapter, is the obvious next increment.
+## Limits of this method
+
+Two kernel-facing interfaces initially blocked recovery under `qemu-user`.
+Both were overcome above the emulator with a guest-side ioctl shim.
+
+`qemu-user` does not implement the ALSA control ioctls. Tracing `amixer` inside
+the sandbox shows `SNDRV_CTL_IOCTL_CARD_INFO` (`0x81785501`) returning `ENOSYS`.
+Loading `snd-aloop` on the host made a Loopback card appear at card 1, which is
+exactly where the device's `asound.conf` expects its DSP, and the device can see
+`/proc/asound/cards` and every node under `/dev/snd`. None of that helps,
+because the emulator refuses the ioctl before the driver is ever reached.
+
+The ARM preload library intercepts `ioctl()` inside the guest, before qemu sees
+it. Its synthetic control card exposes the six names in the preserved ALSA
+configuration: `music`, `call`, `voice`, `system`, `timer`, and `mic`. The
+library is ARM EABI5 hard-float and requires only `GLIBC_2.4`, so it loads
+against the firmware's glibc 2.23. No host or guest glibc upgrade is required.
+
+The Bluetooth transport procedures need a working BlueZ stack, which means
+`bluetoothd` and a D-Bus session inside the sandbox, not merely an adapter on
+the host. Loading `hci_vhci` does not address that.
+
+The same shim answers raw `I2C_RDWR`, which `i2c-stub` cannot provide. See
+[mcu-boundary.md](mcu-boundary.md). This demonstrates that a targeted guest
+interposer can extend qemu-user when the missing behavior is a narrow syscall
+boundary. Full-system emulation was not required.
 
 ## Audio topology
 
@@ -255,6 +290,7 @@ Established by execution:
 - The control plane is reproducible off-device with no hardware access.
 - The transport is WAMP over MsgPack rawsocket on port 9999.
 - The audio control surface responds to third-party calls and changes state.
+- The volume and mute setters use value-first positional arguments.
 - The full ALSA routing, including DSP format and per-stream controls, is
   documented in preserved configuration.
 
@@ -262,17 +298,25 @@ Not established:
 
 - Whether the same calls drive real speakers on real hardware. Emulation
   exercises the software path only.
-- The argument shapes of `volumeSet` and `volumeAdjust`, which need a working
-  mixer before they will accept input.
 - Anything about the daughterboard connector, electrical behaviour, or the
   MCU's physical I2C wiring. Those remain measurements, not inferences.
 
 ## Reproducing this
 
 ```bash
-EMU=reinvoke-archive/emulation
-$EMU/run.sh /usr/bin/bonefish -r default -t 9999 -w 9998 -d &
-$EMU/run.sh /usr/bin/audio-ui 127.0.0.1 9999 normal normal &
+arm-linux-gnueabihf-gcc -shared -fPIC -O2 -Wall -Wextra -Werror \
+  -o ../reinvoke-archive/emulation/invoke-ioctl-shim.so \
+  tools/emulation/invoke-ioctl-shim.c
+
+unshare --user --map-root-user --net
+ip link set lo up
+
+tools/emulation/run-final-shim.sh \
+  /usr/bin/bonefish -r default -t 9999 -w 9998 -d &
+tools/emulation/run-final-shim.sh /usr/bin/audio-ui 127.0.0.1 9999 &
 ```
 
-Then connect a MsgPack WAMP client to `127.0.0.1:9999`, realm `default`.
+Run the MsgPack WAMP client from that same shell and network namespace,
+connecting to `127.0.0.1:9999`, realm `default`. The launcher refuses to run in
+the workstation's initial network namespace because `bonefish` listens on all
+interfaces.

@@ -109,14 +109,33 @@ Volume of analysis scales confident error as efficiently as it scales insight.
 The evidence rule is what separates the two, and running the software turned
 out to be the fastest way to enforce it.
 
+### The owner's unit
+
+The physical unit runs the final build, `Barracuda_libre-12.2134.0`. That
+settles what would otherwise have been the first hardware question and makes
+the emulation work directly applicable, since the sandbox runs the same
+binaries the device runs.
+
+Analysis of that build's reachable surface is in
+[final-firmware-control-surface.md](emulation/final-firmware-control-surface.md).
+The short version is that the control API exists and is fully documented, but on
+stock firmware it listens on all interfaces and is blocked externally by the
+firewall. `adbd` is present but not started, and the debug gate reads a DCT
+record from the factory-setting partition. That partition is writable-mounted,
+but the record's format and authentication remain unresolved.
+
+The observation procedure now carries explicit predictions derived from that
+analysis, so the hardware session either confirms or falsifies them rather than
+being fitted to whatever is observed.
+
 ### Still unresolved
 
 Whether a physical unit ever exposes Marvell USB download mode without opening
 the case. No BootROM, OTP, or secure-boot source exists anywhere in the corpus,
 so this cannot be settled by analysis and remains a measurement.
 
-Argument shapes for the volume setters and the Bluetooth transport calls, both
-blocked on sandbox dependencies rather than on protocol knowledge.
+Argument shapes for the Bluetooth transport calls. These need a full BlueZ
+stack inside the sandbox, not an adapter on the host.
 
 The daughterboard connector pinout, which no amount of software analysis can
 resolve.
@@ -146,3 +165,77 @@ frames after the analogue settle. See
 
 The device identities behind those addresses are deliberately not claimed. An
 access pattern narrows a device class; it does not name a part.
+
+### Three suggestions that did not survive contact
+
+Worth recording, because each was stated with more confidence than it deserved
+and each was cheap to test.
+
+Loading `i2c-stub` was proposed as the clean way to give the MCU service a bus
+that answers. It cannot. The module implements SMBus only, reports no
+`I2C_FUNC_I2C`, and rejects the raw `I2C_RDWR` transfers this firmware uses.
+The initial `modprobe` also failed outright, because the module needs
+`chip_addr` to instantiate anything, which was only knowable once the addresses
+had already been recovered by other means.
+
+Loading `snd-aloop` was proposed to make the volume setters work. The Loopback
+card appears exactly where the device expects its DSP, and the sandbox sees
+every relevant node, but `qemu-user` never forwards the ioctl.
+
+`chmod 666` on a device node was suggested for the stub bus and was the wrong
+instinct. The node was instead scoped to a group the user already held, which
+avoids both world access and touching the host's real I2C buses. Worth noting
+that the conventional fix, an `i2c` group with a subsystem-wide udev rule,
+would have been broader than the sloppy thing it replaced.
+
+### The ioctl boundary is now under test control
+
+The cross-compiler changed the answer to two emulator limitations. Both raw
+I2C and ALSA control failed at `ioctl()`, after the application had assembled
+the complete request but before a host driver could act on it. An ARM
+`LD_PRELOAD` library can intercept that shared boundary inside the guest.
+
+The first build loaded but depended on `dlsym@GLIBC_2.34`, newer than the
+firmware's glibc 2.23. Forwarding unhandled requests with a direct
+`SYS_ioctl` syscall removed that dependency. The rebuilt ARM EABI5 library
+requires only `GLIBC_2.4`; changing either host or firmware glibc was
+unnecessary.
+
+On the MCU path, the shim answers raw `I2C_RDWR` against a synthetic register
+file. All 30 startup transactions now succeed. The acknowledged reads expose
+the IO expander's state progression from `0x00` through `0x02`, `0x03`, and
+`0x13`, while preserving the previously captured DAC and six-byte messages.
+
+On the audio path, the shim supplies the control-card and mixer-element ioctls
+that qemu-user omits. `audio-ui` initializes `music`, `call`, `voice`, `system`,
+`timer`, and the `mic` mute control without ALSA errors. This made the real WAMP
+setters executable and recovered their exact positional contract:
+
+```json
+{"volumeSet": [30, "music"],
+ "volumeAdjust": [5, "music"],
+ "musicMuteSet": [true, "music"]}
+```
+
+The order is value first, stream second. Starting at music volume 50, the calls
+returned 30, then 35, then mute state 1. Independent `volumeGet` calls confirmed
+each transition. Full-system emulation is no longer required for these two
+boundaries.
+
+### The update flag is not the boot slot
+
+Disassembly closed another ambiguity. `/usr/bin/mtd_exec setbootflags` reads
+2,832 bytes from the MTD partition labelled `fw_stat`, toggles its first word,
+stages the complete record through `/run/stat`, and writes it back. `/run` is
+tmpfs, so the file is staging rather than persistent state.
+
+The two first-word markers are reversed-looking ASCII. `qeru` means
+update-required and `puon` means no-update, confirmed by the binary's messages
+and the recovery loader's comparison. The normal client invokes
+`setbootflags`, waits 50 milliseconds, syncs, and enters its reboot path. The
+recovery updater toggles the marker back on completion.
+
+This establishes an update gate, not active-slot selection. The recovery
+configuration targets `bootimgs` and `rootfs`, but preserved artifacts still do
+not map a marker to a specific active or inactive image. See
+[boot-update-state.md](emulation/boot-update-state.md).

@@ -176,9 +176,10 @@ The identity of the devices at `0x20`, `0x36`, and `0x4c`. Their access
 patterns and bring-up positions narrow the device classes, but no part number
 is claimed for any of them.
 
-Whether the recovered register writes are complete. Emulation captures what the
-service attempts when every transfer fails. A device that acknowledged would
-change subsequent behaviour, so conditional paths may not have been exercised.
+Whether the recovered register writes match real-device responses. Both the
+failing-bus trace and an acknowledged synthetic-bus trace are captured. The
+synthetic register file returns coherent values, but it does not model the
+unknown physical parts.
 
 The register maps behind each write. Register indices and values are recorded;
 their meanings are not documented anywhere in the corpus.
@@ -190,22 +191,62 @@ small microcontroller, but no identification is claimed.
 
 ## Refining this further
 
-Loading the kernel's `i2c-stub` module would create a harmless virtual bus that
-acknowledges transfers, letting the service proceed past its retry paths and
-exercise branches that a failing bus never reaches. That requires root.
+An earlier version of this document suggested loading the kernel's `i2c-stub`
+module to provide a bus that acknowledges transfers. That was tried and does
+not work, for a reason worth recording so it is not attempted again.
+
+`i2c-stub` implements only the SMBus protocol. Querying its capabilities with
+`I2C_FUNCS` returns `0x0c7f0000`, which sets the `I2C_FUNC_SMBUS_*` bits but
+not `I2C_FUNC_I2C`. Since `mcu-interface` issues raw `I2C_RDWR` transfers, the
+stub rejects every one of them and the service behaves exactly as it does
+against a placeholder file.
+
+The viable route was an `LD_PRELOAD` shim built for ARM that intercepts
+`ioctl()` inside the guest, answers `I2C_RDWR` with synthetic responses, and
+logs the exchange. It is now implemented and verified. All 30 bring-up messages
+return success without binding any real I2C device into the sandbox.
+
+The acknowledged trace confirms the startup writes from the failing-bus
+capture and adds coherent expander reads. Register `0x01` at address `0x20`
+progresses through `0x00`, `0x02`, `0x03`, and `0x13` as the service sets mute
+and power-control bits. The DAC still receives ten writes at `0x4c`, followed
+by four six-byte messages at `0x36`.
+
+The shim was compiled with Ubuntu's `arm-linux-gnueabihf-gcc`. An initial
+implementation used `dlsym` and accidentally required `GLIBC_2.34`. Replacing
+that forwarding path with `syscall(SYS_ioctl, ...)` reduced the requirement to
+`GLIBC_2.4`, compatible with the firmware's glibc 2.23. Installing or upgrading
+glibc is neither needed nor recommended.
 
 A warning that applies to any such work. The host used here has real
-`/dev/i2c-*` devices belonging to its own SMBus and GPU. The sandbox must keep
-shimming that path. Exposing a real I2C bus to firmware that expects to write
-amplifier and DAC registers risks writing to unrelated hardware.
+`/dev/i2c-*` devices belonging to its own SMBus and GPU. The failed kernel-stub
+experiment exposed only `/dev/i2c-12`, scoped to a group rather than made
+world-writable. The successful shim uses `/dev/null` only as an openable
+placeholder; every I2C ioctl is handled inside the ARM guest. Never bind a real
+bus into this sandbox. Firmware that expects to write amplifier and DAC
+registers would be writing to unrelated hardware.
 
 ## Reproducing the capture
 
-The capture script lives outside the repository at
+The failing-bus capture script lives outside the repository at
 `reinvoke-archive/emulation/mcu-i2c-capture.py`, alongside the sandbox it
 drives. It spawns the sandbox itself, because `ptrace_scope` restricts memory
 reads to descendant processes.
 
 ```bash
 python3 reinvoke-archive/emulation/mcu-i2c-capture.py
+```
+
+The acknowledged-bus shim source and launcher are versioned under
+`tools/emulation/`. Build the ARM library into the sibling archive, then run
+the MCU service:
+
+```bash
+arm-linux-gnueabihf-gcc -shared -fPIC -O2 -Wall -Wextra -Werror \
+  -o ../reinvoke-archive/emulation/invoke-ioctl-shim.so \
+  tools/emulation/invoke-ioctl-shim.c
+
+unshare --user --map-root-user --net -- \
+  bash -c 'ip link set lo up && tools/emulation/run-final-shim.sh \
+    /usr/bin/mcu-interface 127.0.0.1 9999'
 ```
