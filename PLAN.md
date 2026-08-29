@@ -3,7 +3,7 @@
 Current state, established facts, and next steps. This file exists so work can resume
 in a fresh session — or from GitHub on the web — without the original conversation.
 
-**Last updated:** 2026-08-26
+**Last updated:** 2026-08-28
 
 ---
 
@@ -48,8 +48,8 @@ recovered, without a physical unit and without any risk to one.
 
 ```text
 ~/<workspace>/
-├── reinvoke/           1.5 MB   this Git repository
-└── reinvoke-archive/   4.9 GB   bulk payloads, NOT under Git control
+├── reinvoke/           about 3.5 MB this Git repository
+└── reinvoke-archive/   about 7.3 GB bulk payloads, NOT under Git control
     ├── originals/      569 MB   firmware, byte-for-byte as retrieved
     ├── git-mirrors/    4.3 GB   bare mirrors of donor source trees
     ├── extracted/               unpacked material, incl. binaries kept out of the repo
@@ -232,18 +232,24 @@ write-ups can be done autonomously once data is provided.
 - **MCU register capture.** **Done.** Three I2C slave addresses and their
   bring-up register writes recovered under emulation and attributed to stages.
   See [mcu-boundary.md](docs/emulation/mcu-boundary.md). Device identities are
-  not claimed. Loading `i2c-stub` would exercise branches a failing bus never
-  reaches, and needs root. Never expose the host's real `/dev/i2c-*` to this
-  firmware.
-- **Volume setter arguments.** `com.harman.volumeSet` and `volumeAdjust` need
-  an ALSA mixer exposing the per-stream control names before they will accept
-  input. The names and topology are already documented.
-- **Bluetooth transport arguments.** The transport procedures block without an
-  HCI adapter in the sandbox.
-- **Boot-slot selection.** Still unresolved. `bootimgs`/`bootimgs-B` and
-  `tz_en`/`tz_en-B` exist, but no preserved script maps `fw_env.config` entries
-  to an active slot, and `rootfs` has no B partition. `mtd_exec` and
-  `flash_bootloader` in the final build have not been disassembled.
+  not claimed. **Acknowledged emulation is done:** an ARM guest-side ioctl shim
+  now answers raw `I2C_RDWR` without exposing a host bus. All 30 startup
+  messages succeed, including coherent expander reads. `i2c-stub` cannot do
+  this because it implements SMBus rather than raw I2C.
+- **Volume setter arguments.** **Done.** A guest-side shim now supplies the ALSA
+  control ioctls missing from `qemu-user`. The final `audio-ui` initializes all
+  playback controls plus microphone mute, and `volumeSet`, `volumeAdjust`, and
+  `musicMuteSet` work end to end. All three take the value first and stream
+  name second.
+- **Bluetooth transport arguments.** Needs a full BlueZ stack inside the
+  sandbox, not merely an adapter on the host.
+- **Update-state semantics.** **Done.** `mtd_exec setbootflags` toggles the first
+  marker in the persistent `fw_stat` MTD partition between update-required
+  (`qeru`) and no-update (`puon`). See
+  [boot-update-state.md](docs/emulation/boot-update-state.md).
+- **Boot-slot selection.** Still unresolved. The recovery updater targets
+  `bootimgs` and `rootfs`, but no preserved state maps those writes to a
+  specific active/inactive slot.
 - **USB download-mode feasibility.** No BootROM, OTP, or secure-boot source
   exists in the corpus, so this cannot be settled by analysis. It is a
   measurement, gated by the observation procedure.
@@ -254,8 +260,8 @@ write-ups can be done autonomously once data is provided.
 
 1. **Originals are never modified.** No repacking, no recompression. Recorded SHA-256
    values are the integrity anchor.
-2. **Nothing is executed or flashed.** Tooling downloads, mirrors, hashes, extracts,
-   indexes, and documents only.
+2. **No physical device is modified or flashed.** ARM binaries run only from a
+   copied rootfs in a rootless sandbox. Preserved originals remain read-only.
 3. **Git holds what was written, not what was downloaded.** Analysis, notes, metadata,
    and small text artifacts belong here; bytes belong in Tier 2 or 3.
    Litmus test: *would I ever read this in a diff?*
