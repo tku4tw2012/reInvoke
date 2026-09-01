@@ -23,17 +23,18 @@ in a fresh session — or from GitHub on the web — without the original conver
 
 ### The finding that reframes the project
 
-Harman's final firmware, `Barracuda_libre-12.2134.0` in the OTA2 bundle, is an
-end-of-life conversion. Cortana, the Cortana harness, Spotify, and the Skype
-call library are removed. `oobe-ui` and a `wifi-blocker` service are added.
+Harman's final firmware, `Barracuda_libre-12.2134.0` in the OTA2 bundle, removes
+Cortana, the Cortana harness, Spotify, and the Skype call library. It adds
+`oobe-ui` and a `wifi-blocker` service.
 
-Harman shipped a version of this device that is a local Bluetooth speaker with
-the cloud assistant taken out. The project's stated end goal, repurposing
-completeness, may therefore be partly reachable on stock software rather than
-by replacing it. Confirming which firmware a physical unit carries is now the
-highest-value observation, which is why it leads the hardware procedure.
+Artifact-backed finding: Harman shipped a firmware line whose service set is
+consistent with a local Bluetooth-speaker role after the cloud assistant was
+removed. Inference: the project's stated end goal, repurposing completeness, may
+therefore be partly reachable on stock software rather than by replacing it.
+Confirming which firmware a physical unit carries remains the highest-value
+observation, which is why it leads the hardware procedure.
 
-### The control plane is solved
+### The control-plane emulation result
 
 The device's service bus is WAMP over MsgPack, routed by `bonefish`, an
 open-source router that ships in the rootfs. Both the router and its client
@@ -41,8 +42,49 @@ services have been run on an x86 host under `qemu-user` in a rootless sandbox.
 A third-party client joined the bus and successfully called
 `com.harman.musicMuteToggle`, which changed real service state.
 
-This means the audio control surface can be exercised, and its message shapes
-recovered, without a physical unit and without any risk to one.
+This verifies the software control path under emulation. It does not verify
+speaker output, Bluetooth transport behaviour, daughterboard wiring, or physical
+I2C device identities.
+
+### Evidence classification used below
+
+- **Verified facts** are directly observed from held artifacts, hash checks, or
+  reproduced execution logs.
+- **Artifact-backed findings** are conclusions supported by those artifacts but
+  not yet measured on a physical unit.
+- **Inference** is explicitly marked when it transfers meaning from names,
+  ordering, sibling sources, or plausible system design rather than direct
+  Invoke measurement.
+
+### Current evidence split
+
+Verified facts:
+
+- OTA2 contains `Barracuda_libre-12.2134.0`; its rootfs removes the Cortana,
+  Spotify, and Skype components listed above and adds `oobe-ui` plus
+  `wifi-blocker`.
+- The firmware artifacts, FCC exhibits, and acquisition sidecars named in this
+  repository are held or mirrored as documented and hash checked where hashes are
+  recorded.
+- The WAMP router and selected services run under `qemu-user`, and audio
+  volume/mute calls changed emulated service state.
+
+Artifact-backed findings:
+
+- The final firmware service set is consistent with Harman converting the
+  product to a local Bluetooth-speaker role.
+- The local WAMP bus is a real control surface inside the firmware, but stock
+  network reachability is blocked by firewall rules unless the debug path is
+  active.
+- The MCU startup path issues the recorded raw I2C transactions under emulation.
+
+Inference:
+
+- Stock final firmware may satisfy part of repurposing completeness before any
+  replacement firmware work.
+- Device-class readings for the I2C addresses and the likely utility of a
+  virtual HCI adapter remain engineering hypotheses pending physical or
+  transport-level tests.
 
 ### Where things live
 
@@ -106,6 +148,12 @@ A serial console at 115200 baud and a RAM-disk recovery path with a shell as ini
 
 `VID_1286` (Marvell) with `PID_8100` / `PID_8101`, plus `VID_8086` with
 `PID_e001` / `PID_c001` / `PID_d001`. These identify the SoC in USB boot / recovery mode.
+
+The same INF also declares `PID_8174` as
+`"Marvell(R) WTP: Tools package USB Driver for BG2CDP Boot Device"`, and
+`marvell_flash_tool/run.sh` targets `usb_boot 1286 8174`. This is the identifier
+the Invoke actually presents; `8100` / `8101` are for Monahans parts and were
+never observed on this unit.
 
 ### The three `83_IMAGE` variants
 
@@ -173,9 +221,12 @@ this session those claims cited evidence the project did not possess.
 1. Does the unit pair over Bluetooth and play audio? Harman's final firmware
    is already a Bluetooth-speaker build, so a working unit may substantially
    satisfy the end goal with no intervention.
-2. Does the Micro-USB service port ever expose `1286:8100` or `1286:8101`?
-   That is a hard gate on every RAM-boot path. If it never appears without
-   opening the case, that avenue is closed and the result should be recorded.
+2. Does the Micro-USB service port expose a Marvell boot endpoint?
+   **Answered 2026-09-01: yes.** The unit presents `1286:8174`, the BG2CDP Boot
+   Device, for roughly four seconds on every power-on. `usb_boot` reaches it,
+   claims the interface, and completes a signed handshake. Details and the
+   verified service-mode entry are in [usb-service-mode.md](docs/usb-service-mode.md).
+   The RAM-boot avenue is open without opening the case.
 
 **Remaining steps, once those two are answered:**
 
@@ -229,22 +280,24 @@ write-ups can be done autonomously once data is provided.
 
 ### Open software work, no hardware required
 
-- **MCU register capture.** **Done.** Three I2C slave addresses and their
-  bring-up register writes recovered under emulation and attributed to stages.
-  See [mcu-boundary.md](docs/emulation/mcu-boundary.md). Device identities are
-  not claimed. **Acknowledged emulation is done:** an ARM guest-side ioctl shim
-  now answers raw `I2C_RDWR` without exposing a host bus. All 30 startup
-  messages succeed, including coherent expander reads. `i2c-stub` cannot do
-  this because it implements SMBus rather than raw I2C.
+- **MCU register capture.** **Done as an emulation trace.** Three I2C slave
+  addresses and their bring-up writes were recovered under emulation and aligned
+  to service log stages. See [mcu-boundary.md](docs/emulation/mcu-boundary.md).
+  Current limit: no physical I2C bus was accessed, no real-device responses were
+  captured, and no part identities are claimed. The ARM guest-side ioctl shim
+  answers raw `I2C_RDWR` without exposing a host bus; `i2c-stub` cannot do this
+  because it implements SMBus rather than raw I2C.
 - **Volume setter arguments.** **Done.** A guest-side shim now supplies the ALSA
   control ioctls missing from `qemu-user`. The final `audio-ui` initializes all
   playback controls plus microphone mute, and `volumeSet`, `volumeAdjust`, and
   `musicMuteSet` work end to end. All three take the value first and stream
   name second.
-- **Bluetooth transport arguments.** Blocked on an HCI transport, not on BlueZ.
-  The firmware uses Bluedroid over the kernel Bluetooth subsystem, so the
-  sandbox needs an HCI device and `/dev/rfkill` rather than `bluetoothd` and
-  D-Bus. See [bluetooth-stack.md](docs/emulation/bluetooth-stack.md).
+- **Bluetooth transport arguments.** Blocked on an HCI transport, not on BlueZ
+  user-space services. The examined Bluetooth service uses Bluedroid over the
+  kernel Bluetooth subsystem, so the sandbox needs an HCI device and `/dev/rfkill`
+  rather than `bluetoothd` and D-Bus. Current limit: Bluetooth procedures are
+  registered on the bus but have not been exercised through an emulated HCI
+  adapter or a paired peer. See [bluetooth-stack.md](docs/emulation/bluetooth-stack.md).
 - **Update-state semantics.** **Done.** `mtd_exec setbootflags` toggles the first
   marker in the persistent `fw_stat` MTD partition between update-required
   (`qeru`) and no-update (`puon`). See
