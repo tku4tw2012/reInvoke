@@ -129,8 +129,8 @@ Identifiers of interest:
 
 | Vendor:Product | Meaning |
 |---|---|
-| `1286:8100` or `1286:8101` | Marvell BootROM USB download mode |
-| `1286:8174` | Post-handoff ramdisk gadget with ADB |
+| `1286:8100` or `1286:8101` | Marvell BootROM download mode for Monahans P/L parts |
+| `1286:8174` | **BG2CDP Boot Device.** Verified: this unit presents this ID for roughly four seconds on every power-on, and `marvell_flash_tool/run.sh` targets exactly `usb_boot 1286 8174`. `Mrvl_WinUSB.inf` names it `"Marvell(R) WTP: Tools package USB Driver for BG2CDP Boot Device"`. It is the boot endpoint, not a post-handoff gadget |
 | `????:0d02` | The normal runtime gadget. `init.rc` sets this product ID with the string `MRVL USB SDK`. Expected on a booted unit |
 | Anything else | Record verbatim |
 
@@ -140,14 +140,15 @@ Record the full descriptor, not just the identifier:
 lsusb -v -d <vid>:<pid> 2>/dev/null | head -40
 ```
 
-Do not hold buttons during power-on in this procedure. One reachable control can
-invoke factory reset, and the effects of other boot-time combinations are not
-yet established.
+Do not hold random buttons during power-on. One reachable control can invoke
+factory reset. The documented service-mode entry is recorded in
+[usb-service-mode.md](./usb-service-mode.md) and is the only button sequence
+that should be attempted.
 
-If `1286:8100` or `1286:8101` appears during an ordinary boot, the RAM-download
-path is externally reachable. If it does not appear, record that normal boot
-does not expose it. That negative result does not prove that opening the case is
-required; safe button-triggered entry remains untested.
+The `1286:8174` window appears on ordinary power-on, so the RAM-download
+endpoint is externally reachable without opening the case. A normal power-on
+window is not sufficient on its own: the BootROM performs a short handshake and
+falls through to NAND unless download mode is armed.
 
 ## Step 6: If a normal gadget appears
 
