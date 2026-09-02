@@ -1,4 +1,32 @@
-# Harman Kardon Invoke → USB console: research brief + GitHub Copilot plan
+---
+title: Fable 5 Invoke USB console research brief
+description: Provisional external synthesis retained for claim review and source discovery
+author: Fable 5
+ms.date: 2026-09-02
+ms.topic: concept
+---
+
+<!-- markdownlint-disable-file -->
+
+> [!CAUTION]
+> This memo was generated outside this project by Fable 5. It is preserved as
+> provisional research, not as operational guidance or canonical evidence.
+> Validate every claim against the [project plan](../../../PLAN.md), the
+> [USB hardware record](../../usb-service-mode.md), and the
+> [claim evidence ledger](../../corpus/02_CLAIM_EVIDENCE_LEDGER.md).
+
+## Review disposition
+
+| Memo claim | Canonical status |
+|---|---|
+| The USB path reaches U-Boot on this unit | Contradicted by sixteen observed `0xFE` enumerations; community success applies only to other units |
+| `1286:8001` is a known Invoke USB stage | Unsupported by retained artifacts or either reviewed open host implementation |
+| The boot sequence has exactly five re-enumerations | Unverified because no complete successful raw trace is published |
+| The Invoke has 256 MiB NAND | Unresolved because third-party runtime output conflicts with the 512 MiB recovery partition string |
+| Loading `82_IMAGE` alone starts RAM Linux | Incomplete; the retained vendor procedure loads both `81_IMAGE` and `82_IMAGE` |
+
+The imported source text follows. Its embedded prompts and instructions must not
+be installed or executed without separate evidence review.
 
 *Scope: repurposing a post-final-update (Bluetooth-only) Invoke as open hardware. Not restoring Cortana. Personal device, personal use.*
 
