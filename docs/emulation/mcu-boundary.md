@@ -1,16 +1,55 @@
-# MCU Boundary
+---
+title: MCU boundary
+description: Recovered I2C behavior and evidence limits at the Invoke companion-MCU boundary
+ms.date: 2026-09-02
+ms.topic: concept
+---
 
-What the companion microcontroller is, how the main SoC talks to it, and the
-order in which it brings the audio hardware up. Derived from static analysis of
-the preserved rootfs and from running `mcu-interface` under emulation.
+What the companion-MCU boundary looks like from the preserved rootfs and from
+running `mcu-interface` under emulation: the host-side transport, the observed
+startup transaction order, and the limits of that evidence.
 
 No physical unit was involved. No real I2C bus was accessed.
 
+## Evidence classification
+
+Verified facts:
+
+* The held rootfs contains `usr/bin/mcu-interface` and
+  `usr/share/mcu/cortana_mcu.bin`.
+* `mcu-interface` opens `/dev/i2c-0`, uses raw `I2C_RDWR`, and refers to sysfs
+  GPIO paths and `/dev/mem`.
+* Under emulation, the service emits the bring-up log shown below and registers
+  MCU-related WAMP procedures after startup.
+
+Artifact-backed findings:
+
+* The emulated startup path issues writes to I2C addresses `0x20`, `0x4c`, and
+  `0x36`, aligned to the service log stages recorded below.
+* The guest-side ioctl shim can acknowledge the raw `I2C_RDWR` calls without
+  exposing a host bus, allowing the service to progress through startup.
+
+Inference:
+
+* The likely roles of `0x20`, `0x4c`, and `0x36` are inferred from address,
+  access pattern, and timing. No device part number is established.
+* The Linux bus-to-SoC base-address mapping is transferred from sibling
+  Berlin-family source and has not been confirmed on Invoke hardware.
+
+Current limits:
+
+* The trace is not a physical bus capture.
+* Synthetic acknowledgements do not prove that the same values are accepted by
+  the real devices.
+* Register meanings, GPIO line numbers, and exact MCU/device identities remain
+  unresolved.
+
 ## What the MCU is
 
-A separate microcontroller from the Marvell SoC, reached over I2C. The host
-side is `usr/bin/mcu-interface`, an ARM executable that opens `/dev/i2c-0` and
-drives interrupt and handshake lines through the sysfs GPIO interface.
+The preserved software treats the peer as a separate microcontroller from the
+Marvell SoC, reached over I2C. The host side is `usr/bin/mcu-interface`, an ARM
+executable that opens `/dev/i2c-0` and drives interrupt and handshake lines
+through the sysfs GPIO interface.
 
 Its firmware ships inside the rootfs at `usr/share/mcu/cortana_mcu.bin`, 13,312
 bytes. The running service reports the version it expects:
@@ -25,9 +64,10 @@ field across the product's shipping life.
 
 ## Why it matters
 
-The MCU gates the audio path. The host cannot produce sound by writing to ALSA
-alone, because the amplifier, DAC, and DSP are held in a muted or unpowered
-state until the MCU is commanded otherwise.
+The preserved software model places the MCU at the audio bring-up boundary. The
+host-side service mutes and powers amplifier, DAC, and DSP stages before the
+audio path is considered ready, so ALSA control alone is not treated as
+sufficient by the stock software.
 
 The recovered WAMP control surface reflects this. `com.harman.vui.muteampcontrol`,
 `com.harman.vui.mutedaccontrol`, and `com.harman.vui.powerdspcontrol` are the
@@ -71,15 +111,15 @@ The image also contains I2C status and error strings (`i2c_stat`, `i2c_t!`,
 `i2c_r_c!`, `i2c_r_a!`, `i2c_err1`, `i2c_err2`), consistent with the MCU acting
 as an I2C peripheral that reports transfer state.
 
-The host carries a matching firmware update path over WAMP:
+The host carries an apparent firmware update path over WAMP:
 `com.harman.vui.requestmcuupgrade`, `startmcuupgrade`, `sendfirmwaredata`, and
 `mcuupgraderesult`.
 
 ## Observed bring-up sequence
 
-Captured by running `mcu-interface` under emulation with a placeholder file
-standing in for `/dev/i2c-0`. Every transfer fails harmlessly, but the service
-still announces each stage in order:
+Observed by running `mcu-interface` under emulation with a placeholder file
+standing in for `/dev/i2c-0`. In this trace every transfer fails harmlessly, but
+the service still announces each stage in order:
 
 ```text
 mcu_interface start io_expander_initialize()
@@ -104,8 +144,9 @@ Read plainly, the power-on order is:
 After that the service starts an interrupt poll thread on a GPIO line, connects
 to the WAMP router, and registers its procedures.
 
-The mute-first ordering is a deliberate pop-suppression design. Any replacement
-control software should preserve it.
+Inference: the mute-first ordering is consistent with pop suppression. Any
+replacement control software should preserve the ordering unless physical
+measurement proves another safe sequence.
 
 The service also attempts to remove `/tmp/reg01.conf` through `/tmp/reg03.conf`
 at startup, indicating three register configuration files are staged somewhere
@@ -201,13 +242,14 @@ not `I2C_FUNC_I2C`. Since `mcu-interface` issues raw `I2C_RDWR` transfers, the
 stub rejects every one of them and the service behaves exactly as it does
 against a placeholder file.
 
-The viable route was an `LD_PRELOAD` shim built for ARM that intercepts
+The viable emulation route was an `LD_PRELOAD` shim built for ARM that intercepts
 `ioctl()` inside the guest, answers `I2C_RDWR` with synthetic responses, and
-logs the exchange. It is now implemented and verified. All 30 bring-up messages
-return success without binding any real I2C device into the sandbox.
+logs the exchange. It is implemented and reproduced for the emulated startup
+path. All 30 bring-up messages return success without binding any real I2C
+device into the sandbox.
 
-The acknowledged trace confirms the startup writes from the failing-bus
-capture and adds coherent expander reads. Register `0x01` at address `0x20`
+The acknowledged trace reproduces the startup writes from the failing-bus
+capture and adds synthetic coherent reads. Register `0x01` at address `0x20`
 progresses through `0x00`, `0x02`, `0x03`, and `0x13` as the service sets mute
 and power-control bits. The DAC still receives ten writes at `0x4c`, followed
 by four six-byte messages at `0x36`.

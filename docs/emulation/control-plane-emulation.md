@@ -1,4 +1,9 @@
-# Control Plane Emulation
+---
+title: Control-plane emulation
+description: Reproducing the Invoke WAMP control plane safely under qemu-user
+ms.date: 2026-09-02
+ms.topic: concept
+---
 
 Results from running the Invoke's own userland binaries on an x86 host under
 `qemu-user` ARM emulation, with the device's WAMP router live and answering
@@ -6,6 +11,40 @@ calls. No physical unit was involved and no hardware was at risk.
 
 This document records what was executed, what the device software actually
 did, and which prior claims it corrected.
+
+## Evidence classification
+
+Verified facts:
+
+* The preserved rootfs contains the binaries, configuration, and WAMP router
+  described here.
+* `bonefish`, `audio-ui`, `oobe-ui`, and `bluetooth` from the final firmware
+  have been run under `qemu-user` in a rootless sandbox.
+* A third-party MsgPack WAMP client successfully called the audio procedures
+  listed in the results table and observed the returned state changes.
+
+Artifact-backed findings:
+
+* The final firmware advertises a local media-control service surface on the
+  WAMP bus: volume, mute, shutdown, pairing, and Bluetooth transport procedure
+  names are registered by preserved binaries.
+* Guest-side syscall interposition is sufficient for the ALSA control path and
+  for acknowledging the raw I2C startup path under emulation.
+
+Inference:
+
+* Treating the final firmware as a stock repurposing route is an engineering
+  direction supported by the service set, not yet a measured physical-device
+  result.
+
+Current limits:
+
+* Emulation verifies software state changes, not acoustic output on real
+  hardware.
+* Bluetooth procedures register but do not complete without an HCI transport and
+  paired media session.
+* The I2C trace is an emulated startup trace with synthetic responses; it is not
+  a physical bus capture.
 
 ## Why this was possible
 
@@ -188,9 +227,11 @@ Procedures registered by the final build:
 | `com.harman.extStateUpdate` | audio-ui |
 | `com.harman.demoIntro` | audio-ui |
 
-That set is a complete media-player control surface: pairing, transport,
-track selection, repeat and shuffle, volume, mute, and shutdown. It is the
-practical API for treating an Invoke as a controllable Bluetooth speaker.
+That set advertises a media-player control surface: pairing, transport, track
+selection, repeat and shuffle, volume, mute, and shutdown. The volume and mute
+procedures have been exercised under emulation; the Bluetooth procedures are
+registered but still blocked by the missing HCI transport. This is the practical
+API candidate for treating an Invoke as a controllable Bluetooth speaker.
 
 One vestige is worth recording. The `bluetooth` service still subscribes to
 `com.cortana.device.nameChanged` even though every Cortana binary was removed,
@@ -211,8 +252,9 @@ Tested against the final firmware with a third-party MsgPack client.
 | `com.harman.bluetooth.*` | No reply within timeout |
 | `com.harman.deviceNameGet` | No reply within timeout |
 
-The remaining failures are environmental. Bluetooth procedures block because
-the sandbox has no HCI transport. See
+The remaining failures are environmental within the current sandbox: Bluetooth
+procedures block because the sandbox has no HCI transport or paired media
+session. See
 [bluetooth-stack.md](bluetooth-stack.md).
 
 ## Limits of this method
@@ -234,13 +276,15 @@ library is ARM EABI5 hard-float and requires only `GLIBC_2.4`, so it loads
 against the firmware's glibc 2.23. No host or guest glibc upgrade is required.
 
 The Bluetooth transport procedures need an HCI transport. An earlier version of
-this document said they need BlueZ and D-Bus, which is incorrect: this firmware
-uses Bluedroid. See [bluetooth-stack.md](bluetooth-stack.md).
+this document said they need BlueZ and D-Bus, which is incorrect for the
+examined service: it uses Bluedroid through the kernel Bluetooth subsystem. See
+[bluetooth-stack.md](bluetooth-stack.md).
 
 The same shim answers raw `I2C_RDWR`, which `i2c-stub` cannot provide. See
 [mcu-boundary.md](mcu-boundary.md). This demonstrates that a targeted guest
-interposer can extend qemu-user when the missing behavior is a narrow syscall
-boundary. Full-system emulation was not required.
+interposer can extend qemu-user for the observed startup path when the missing
+behavior is a narrow syscall boundary. Full-system emulation was not required
+for the audio-control and MCU-startup results recorded here.
 
 ## Audio topology
 
@@ -286,11 +330,13 @@ volume implementation.
 
 ## What this establishes and what it does not
 
-Established by execution:
+Verified by execution:
 
-- The control plane is reproducible off-device with no hardware access.
+- The control plane is reproducible off-device with no hardware access for the
+  service paths tested here.
 - The transport is WAMP over MsgPack rawsocket on port 9999.
-- The audio control surface responds to third-party calls and changes state.
+- The audio volume/mute control surface responds to third-party calls and
+  changes software state.
 - The volume and mute setters use value-first positional arguments.
 - The full ALSA routing, including DSP format and per-stream controls, is
   documented in preserved configuration.
@@ -301,6 +347,7 @@ Not established:
   exercises the software path only.
 - Anything about the daughterboard connector, electrical behaviour, or the
   MCU's physical I2C wiring. Those remain measurements, not inferences.
+- Bluetooth transport behavior under emulation or on a paired physical unit.
 
 ## Reproducing this
 

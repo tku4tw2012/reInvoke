@@ -1,12 +1,42 @@
-# Local Control Surface of the Final Firmware
+---
+title: Local control surface of the final firmware
+description: Reachability and evidence boundaries for the final Invoke firmware services
+ms.date: 2026-09-02
+ms.topic: concept
+---
 
-What can and cannot be reached on an Invoke running `Barracuda_libre-12.2134.0`,
-the last build Harman shipped. The owner's unit is confirmed to be on this
-build.
+What can and cannot be reached in the preserved `Barracuda_libre-12.2134.0`
+build. The physical unit's exact installed version has not been read.
 
 Everything below is static analysis of the preserved rootfs, corroborated by
 running the same binaries under emulation. None of it has been tested against
 the physical unit.
+
+## Evidence classification
+
+Verified facts:
+
+* The held final firmware rootfs contains the services, firewall rules, USB
+  gadget configuration, and `dctflag` references quoted below.
+* Under emulation, final-firmware services join the WAMP bus and register the
+  procedures listed in the control-plane document.
+* Audio volume and mute procedures have been called successfully under
+  emulation.
+
+Artifact-backed findings:
+
+* The stock external network surface blocks direct access to WAMP ports 9998
+  and 9999 unless a debug flag path changes the firewall branch.
+* `adbd` is present and configured as a USB gadget function, but the daemon is
+  disabled in the preserved init configuration.
+* Bluetooth is the only stock user-facing control path currently supported by
+  the evidence.
+
+Inference:
+
+* A RAM-booted or otherwise locally executed helper could expose the WAMP API
+  without changing the engineering direction. Whether that path is reachable on
+  a closed unit depends on USB observation.
 
 ## Summary
 
@@ -22,7 +52,7 @@ treats as its decisive gate.
 
 ## What the services expose
 
-The WAMP bus carries a complete media control API. See
+The WAMP bus carries an advertised media control API. See
 [control-plane-emulation.md](control-plane-emulation.md) for the recovered
 procedures, which include pairing, transport control, track selection, volume,
 mute, and shutdown.
@@ -127,8 +157,9 @@ Bluetooth is the supported path. Pairing and A2DP playback need no
 modification, and AVRCP transport controls map onto the same operations the
 internal API exposes.
 
-The WAMP API is real and fully documented, but on stock firmware it is reachable
-only from software already running on the device.
+The WAMP API is real as a service interface, but only the audio state-changing
+procedures have been exercised under emulation. On stock firmware it appears
+reachable only from software already running on the device.
 
 Every route to that API requires code execution: a RAM boot over USB download
 mode, or a modified rootfs. Both are gated by whether the BootROM downloader can
@@ -138,18 +169,18 @@ the corpus.
 
 ## Capability versus access
 
-The evidence supports separating two questions. The first is whether the
-hardware can be more than a Bluetooth speaker. Confidence is high: it is an ARM
-Linux computer with Wi-Fi and Bluetooth radios, USB gadget support, microphone
-and DSP audio paths, persistent storage, and a local service bus whose volume
-and mute procedures now run under emulation.
+The evidence supports separating two questions. The first is what capabilities
+the software and hardware advertise: an ARM Linux system with Wi-Fi and
+Bluetooth radios, USB gadget configuration, microphone and DSP audio paths,
+persistent storage, and a local service bus whose volume and mute procedures run
+under emulation.
 
 The second question is whether those capabilities can be reached
-non-destructively on a closed unit. Confidence is moderate because the answer
-depends on USB observation. An unexpected ADB response would provide immediate
-local execution. A reachable Marvell downloader could support a RAM-only
-environment without writing NAND. If neither path appears, the stock external
-surface offers little beyond Bluetooth.
+non-destructively on a closed unit. That answer is unresolved; it depends on USB
+observation. An unexpected ADB response would provide
+immediate local execution. A reachable Marvell downloader could support a
+RAM-only environment without writing NAND. If neither path appears, the stock
+external surface offers little beyond Bluetooth.
 
 Plausible outcomes after safe code execution include a network-controlled
 speaker, a USB audio endpoint, a local automation target, or a custom voice

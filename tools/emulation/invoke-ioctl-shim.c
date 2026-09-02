@@ -4,10 +4,10 @@
  *
  * Guest-side ioctl emulation for the Harman Kardon Invoke userland.
  *
- * qemu-user does not implement the ALSA control ioctls used by audio-ui, and
- * Linux i2c-stub cannot serve the raw I2C_RDWR messages used by mcu-interface.
- * Preloading this ARM library handles both boundaries without exposing a real
- * host I2C bus.
+ * qemu-user does not implement the ALSA and HCI management ioctls used by the
+ * firmware, and Linux i2c-stub cannot serve mcu-interface raw I2C_RDWR
+ * messages. Preloading this ARM library handles those boundaries without
+ * exposing a real host I2C bus or Bluetooth controller.
  */
 
 #define _GNU_SOURCE
@@ -34,8 +34,55 @@
 #define I2C_FUNC_I2C 0x00000001
 #define I2C_FUNC_SMBUS_EMUL 0x0eff0008
 
+#define HCIDEVUP _IOW('H', 201, int)
+#define HCIGETDEVLIST _IOR('H', 210, int)
+#define HCIGETDEVINFO _IOR('H', 211, int)
+
+#define HCI_DEVICE_ID 0
+#define HCI_DEVICE_UP 0x00000001
+
 #define CONTROL_COUNT 6
 #define REGISTER_COUNT 128
+
+struct hci_dev_req {
+    uint16_t dev_id;
+    uint32_t dev_opt;
+};
+
+struct hci_dev_list_req {
+    uint16_t dev_num;
+    struct hci_dev_req dev_req[];
+};
+
+struct hci_dev_stats {
+    uint32_t err_rx;
+    uint32_t err_tx;
+    uint32_t cmd_tx;
+    uint32_t evt_rx;
+    uint32_t acl_tx;
+    uint32_t acl_rx;
+    uint32_t sco_tx;
+    uint32_t sco_rx;
+    uint32_t byte_rx;
+    uint32_t byte_tx;
+};
+
+struct hci_dev_info {
+    uint16_t dev_id;
+    char name[8];
+    uint8_t bdaddr[6];
+    uint32_t flags;
+    uint8_t type;
+    uint8_t features[8];
+    uint32_t pkt_type;
+    uint32_t link_policy;
+    uint32_t link_mode;
+    uint16_t acl_mtu;
+    uint16_t acl_pkts;
+    uint16_t sco_mtu;
+    uint16_t sco_pkts;
+    struct hci_dev_stats stat;
+};
 
 struct i2c_msg {
     uint16_t addr;
@@ -138,6 +185,42 @@ static void serve_i2c_message(struct i2c_msg *message)
     }
 }
 
+static int serve_hci_device_list(struct hci_dev_list_req *list)
+{
+    if (!list) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (list->dev_num > 0) {
+        list->dev_req[0].dev_id = HCI_DEVICE_ID;
+        list->dev_req[0].dev_opt = HCI_DEVICE_UP;
+    }
+    list->dev_num = 1;
+    fprintf(log_file, "HCI device-list hci%d\n", HCI_DEVICE_ID);
+    return 0;
+}
+
+static int serve_hci_device_info(struct hci_dev_info *info)
+{
+    if (!info) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (info->dev_id != HCI_DEVICE_ID) {
+        errno = ENODEV;
+        return -1;
+    }
+
+    memset(info, 0, sizeof(*info));
+    info->dev_id = HCI_DEVICE_ID;
+    strcpy(info->name, "hci0");
+    info->flags = HCI_DEVICE_UP;
+    fprintf(log_file, "HCI device-info hci%d\n", HCI_DEVICE_ID);
+    return 0;
+}
+
 int ioctl(int fd, unsigned long request, ...)
 {
     va_list arguments;
@@ -149,6 +232,20 @@ int ioctl(int fd, unsigned long request, ...)
     va_end(arguments);
 
     switch (request) {
+    case HCIGETDEVLIST:
+        return serve_hci_device_list(arg);
+
+    case HCIGETDEVINFO:
+        return serve_hci_device_info(arg);
+
+    case HCIDEVUP:
+        if ((unsigned)(uintptr_t)arg != HCI_DEVICE_ID) {
+            errno = ENODEV;
+            return -1;
+        }
+        fprintf(log_file, "HCI device-up hci%d\n", HCI_DEVICE_ID);
+        return 0;
+
     case I2C_FUNCS:
         *(unsigned long *)arg = I2C_FUNC_I2C | I2C_FUNC_SMBUS_EMUL;
         return 0;
