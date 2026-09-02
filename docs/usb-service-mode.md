@@ -161,7 +161,8 @@ invalidating NAND, which is outside the safe boundary of this work.
 
 Phase 2 includes a console proxy: bytes arriving on interrupt IN `0x82` are
 stripped of the `i*m*g*r*q*` markers and forwarded to the TCP client, and client
-input is sent back on interrupt OUT `0x02`. That path is confirmed working here.
+input is sent back on interrupt OUT `0x02`. Both directions are confirmed
+working here.
 
 Before requesting an image, the device emits an ASCII string that reaches the
 console:
@@ -171,10 +172,23 @@ one target device connected.
  424091892ef47412 target device disconnected.
 ```
 
-`424091892ef47412` was byte-identical across all fourteen attempts, so it is a
-stable identifier rather than a per-boot nonce. The exchange is therefore not a
-randomised challenge, which leaves open the possibility that a static response
-image is the correct answer.
+`424091892ef47412` was byte-identical across every attempt, so it is a stable
+identifier rather than a per-boot nonce. The exchange is therefore not a
+randomised challenge.
+
+Host-to-device input also reaches the hardware. With keystrokes fed
+continuously so they were waiting when the window opened, `usb_boot` logged:
+
+```text
+tcp_server_func, 891: sending \n, len 1 to dongle.
+cb_intr_out, 456: actual data wrote 1
+```
+
+The device accepted the byte and answered nothing. It emitted no banner, no
+countdown, and no prompt, and it exited at the same point regardless. Whatever
+is running at this stage is not an interactive console, which rules out the
+theory that a request for image type `0x08` indicates a live U-Boot executing
+`usbload 8` with an interruptible autoboot.
 
 ## Failure signature and what it means
 
@@ -190,30 +204,89 @@ mid-transfer. On any non-zero status `cb_data_recv` calls `request_exit(2)` and
 tears the session down.
 
 A disconnect after an image is expected between boot phases, so the transfer
-error alone does not prove rejection. What does indicate a problem is that the
-device returns to the same request every time rather than advancing to the next
-image in the chain.
+error alone does not prove rejection. Two observations point at a timeout rather
+than a data-dependent rejection:
+
+- Every cycle lasts four to five seconds from attach to disconnect, measured
+  across many attempts. A validation failure would be expected to vary with the
+  work done; a fixed interval looks like a timer.
+- The device returns to the same request every time instead of advancing to the
+  next image in the chain.
+
+The host side of the exchange is complete and correctly framed. `cb_img_write`
+sends every block, calls `fclose`, and sends no trailing completion marker,
+which matches the protocol as documented. The transfer itself is not the
+problem.
+
+## What 08_IMAGE and 09_IMAGE contain
+
+Both are vendor-signed records sharing a common layout:
+
+```text
+08_IMAGE  01 00 00 00  6a e7 03 00  ...   144 bytes
+09_IMAGE  01 00 00 00  37 c2 00 13  ...  4096 bytes
+```
+
+The first word is a version of 1 in both. The second differs: `0x0003e76a` in
+`08_IMAGE` and `0x1300c237` in `09_IMAGE`. The remainder is high-entropy binary
+consistent with a signature or key material.
+
+The unit's announced identifier `424091892ef47412` does not appear in
+`08_IMAGE` in either byte order, and no four-byte or eight-byte prefix of it
+matches at any offset. The file is therefore not bound to this unit, and the
+copy being served is the vendor's own unmodified blob. Missing signing material
+is not what is blocking progress.
+
+## Documented entry procedures disagree
+
+Three sources describe entry, and they differ in ways that matter:
+
+| Source | Sequence |
+|---|---|
+| Vendor `Instructions.pdf`, Process 2 | Hold Reset, repower, four MicOff presses, hold until the U-Boot console appears |
+| Vendor `Instructions.pdf`, Process 1 | Hold Reset, repower, four MicOff presses, release once the panel turns yellow |
+| Community ARM flasher README | Hold Reset, repower, release roughly four seconds after yellow appears, no MicOff presses at all |
+
+The ARM flasher also sequences the host differently: it puts the unit into
+service mode first, starts the tool, opens the console, and connects the USB
+cable last. Every attempt here kept USB connected throughout, which may change
+how the device enumerates.
+
+Attempts so far, all ending in subclass 254:
+
+| Variant | Outcome |
+|---|---|
+| Reset held, four MicOff, released early | Three enumerate cycles, then normal boot |
+| Reset held, four MicOff, held throughout | Yellow, fourteen retry cycles, then white, then chime |
+| Same, with keystrokes fed to the console | Byte delivered and accepted, no response, same exit |
+
+Untried: releasing Reset immediately after yellow, omitting the MicOff presses
+entirely, and connecting USB only after the unit is already in service mode.
 
 ## Untested next steps
 
-None have been run, and all are RAM-only with no NAND writes:
+The most promising remaining variables are procedural rather than host-side,
+because the three documented entry procedures disagree. None writes to NAND:
 
-1. **Interrupt an autoboot countdown.** U-Boot's `usbload N` command requests
-   image type `N`, so a request for `0x08` is consistent with U-Boot already
-   running and executing an update check rather than with the mask ROM. If that
-   is what is happening, the console proxy is connected to a live U-Boot, and a
-   keypress during an autoboot countdown would drop it to a prompt. The
-   `interrupt-autoboot.py` helper feeds newlines continuously so keys are
-   already waiting when the short USB window opens. Newlines are harmless: an
-   empty command at a prompt, and any key stops a countdown. The full path is
-   verified end to end, with keystrokes confirmed arriving at `usb_boot`.
-2. **Remove `08_IMAGE`** so the request cannot be satisfied. Expected to be
-   equivalent to running no tool at all, so this is mainly a control.
-3. **Serve `bcm_erom.bin.usb` as `08_IMAGE`.** Weaker than it first appears: the
-   iROM path sends the bootstrap with no size header, whereas the Phase 2 path
-   prepends the eight-byte header, so the device would likely misparse it.
+1. **Release Reset as soon as the panel turns yellow.** Both Process 1 of the
+   vendor document and the community ARM flasher say to release at that point.
+   Only Process 2 says to keep holding, and holding is what has been tried.
+2. **Omit the MicOff presses.** The ARM flasher reports success with Reset and
+   power alone.
+3. **Connect USB last.** Enter service mode first, start the tool, then plug in
+   the cable. Every attempt so far had USB connected throughout.
 
-All require a power cycle, since the window only opens at boot.
+Two host-side variants remain available through `start-session.sh`, though both
+are weaker leads now that the served `08_IMAGE` is known to be the vendor's own
+unmodified blob:
+
+- `absent` removes `08_IMAGE` so the request cannot be satisfied. Mainly a
+  control.
+- `erom` serves `bcm_erom.bin.usb` in its place. Likely to misparse, since the
+  iROM path sends that file with no size header while Phase 2 prepends one.
+
+Ruled out by direct test: interrupting an autoboot countdown. A keystroke was
+delivered and accepted with no response, so nothing interactive is listening.
 
 ## Arming download mode
 
