@@ -5,7 +5,8 @@ the final `Barracuda_libre-12.2134.0` build.
 
 Reached: the Marvell boot endpoint enumerates, `usb_boot` claims the interface,
 and a full image request and transfer completes. Not reached: interface subclass
-`0xFF`, and therefore no U-Boot console.
+`0xFF`, and therefore no U-Boot console. Sixteen descriptor captures across
+normal boots and confirmed service-mode entries all report subclass `0xFE`.
 
 This document records what the Micro-USB port actually exposes, how far the
 download path can be driven without opening the enclosure, where that path
@@ -190,6 +191,41 @@ is running at this stage is not an interactive console, which rules out the
 theory that a request for image type `0x08` indicates a live U-Boot executing
 `usbload 8` with an interruptible autoboot.
 
+## The descriptor, captured
+
+The boot window is too short to run `lsusb -v` by hand, so a udev rule was used
+to dump the descriptor automatically on attach. Captured 2026-09-01:
+
+```text
+idVendor=1286  idProduct=8174  bcdDevice=0001  speed=480  version=2.00
+manufacturer=Marvell   product=BG2CD S/N:12345678A   serial=S/N:12345678A
+bDeviceClass=ff   bDeviceSubClass=fe   bDeviceProtocol=ff
+bNumConfigurations=1   bNumInterfaces=1
+
+interface 3-1.2:1.0
+  bInterfaceNumber=00   bAlternateSetting=0
+  bInterfaceClass=ff    bInterfaceSubClass=fe   bInterfaceProtocol=ff
+  bNumEndpoints=04
+  ep_01 Bulk       addr=01 maxpacket=0200
+  ep_02 Interrupt  addr=02 maxpacket=0200
+```
+
+This closes a question that looked promising. The original `usb_boot` reads
+`bDeviceSubClass` from the device descriptor, at offset 5, loaded from
+`-0xbb(%rbp)` after `libusb_get_device_descriptor`. The community ARM
+reimplementation instead reads `bInterfaceSubClass` from interface 0. Those are
+different bytes, so a device reporting `0xFE` in one and `0xFF` in the other
+would explain the whole failure and would mean the ARM tool could succeed where
+this one cannot.
+
+**Both fields read `0xFE` on this unit.** There is no discrepancy, and the ARM
+tool would skip the iROM path for exactly the same reason. Changing tools is not
+a path forward.
+
+The endpoint layout matches the documented protocol: bulk `0x01` for image data
+and interrupt `0x02` for console input, with the IN counterparts `0x81` and
+`0x82`.
+
 ## Failure signature and what it means
 
 Every cycle ends identically. The image is delivered in full and correctly
@@ -260,33 +296,107 @@ Attempts so far, all ending in subclass 254:
 | Reset held, four MicOff, held throughout | Yellow, fourteen retry cycles, then white, then chime |
 | Same, with keystrokes fed to the console | Byte delivered and accepted, no response, same exit |
 
-Untried: releasing Reset immediately after yellow, omitting the MicOff presses
-entirely, and connecting USB only after the unit is already in service mode.
+### All three procedures were tried, with identical results
+
+Those variants have now been tested on this unit:
+
+| Variant | Result |
+|---|---|
+| USB connected throughout, Reset held, four MicOff presses, held through yellow | Subclass 254, repeated requests for `08_IMAGE` |
+| Same, with keystrokes fed to the console | Byte delivered and accepted, no response, subclass 254 |
+| Reset and power only, no MicOff presses | Panel never turned yellow at all |
+| Reset, four MicOff presses, released at yellow, USB connected last while still yellow | Subclass 254, repeated requests for `08_IMAGE` |
+
+Two conclusions follow. First, on this unit the four MicOff presses are
+required: Reset and power alone never produce the yellow indication, which
+contradicts the ARM flasher README. Second, the entry procedure is not the
+variable that controls the subclass. Every documented sequence, including
+connecting USB while the panel was still yellow, produced subclass 254.
+
+## External reports
+
+Primary community evidence confirms that the RAM-boot path has worked:
+
+- In [HKHacking Discussion #3](https://github.com/coggy9/HKHacking/discussions/3),
+  `rbeesley` reported: "success booting into u-boot ... And now I have an ADB
+  shell." The report used Windows for the device connection after building the
+  image in WSL.
+- In [HKHacking Discussion #11](https://github.com/coggy9/HKHacking/discussions/11),
+  `baccccccc` reported a failure nearly identical to this unit: the panel turned
+  yellow, the console repeatedly printed `one target device connected`,
+  a stable hexadecimal identifier, `i*m*g*r*q`, and `target device
+  disconnected`, then the unit booted normally. No resolution was posted.
+- The later
+  [ARM flasher project](https://github.com/jryruegas92/hk-invoke-arm-flasher)
+  reports a successful flash on a bricked unit. Its exact procedure differs
+  from Harman's PDF: enter service mode with power and Reset only, release Reset
+  after yellow, start the tool and console, then connect Micro-USB last to a
+  direct Raspberry Pi 4 USB 2.0 port.
+
+The public successes prove the path exists, but do not prove that every NAND or
+firmware state enters iROM identically. The successful ARM test began with an
+old, effectively bricked unit that had missed the final OTA. This unit has a
+valid NAND boot chain and boots the final Bluetooth firmware normally. That is
+a concrete difference, but there is not yet enough evidence to say it causes
+subclass 254 instead of 255.
+
+USB topology is another concrete difference. The ARM success used a direct
+Raspberry Pi 4 USB-A 2.0 port. Its author reports that an Ubuntu-hosted Dell
+behind a USB-C adapter sent the initial bootstrap and then stalled, while docks,
+virtual machines, and USB passthrough were less reliable. This Mac mini exposes
+the external port through one internal EHCI hub. That may matter after iROM
+starts, but it does not explain why the initial descriptor is subclass 254.
 
 ## Untested next steps
 
-The most promising remaining variables are procedural rather than host-side,
-because the three documented entry procedures disagree. None writes to NAND:
+Three candidate explanations have been eliminated by direct measurement:
 
-1. **Release Reset as soon as the panel turns yellow.** Both Process 1 of the
-   vendor document and the community ARM flasher say to release at that point.
-   Only Process 2 says to keep holding, and holding is what has been tried.
-2. **Omit the MicOff presses.** The ARM flasher reports success with Reset and
-   power alone.
-3. **Connect USB last.** Enter service mode first, start the tool, then plug in
-   the cable. Every attempt so far had USB connected throughout.
+- **Entry procedure.** All documented sequences were tried, including holding
+  Reset through yellow, releasing at yellow, omitting MicOff entirely, and
+  connecting USB last while the panel was still yellow. Every one gives `0xFE`.
+- **Tool choice.** The original binary reads `bDeviceSubClass` while the
+  community ARM reimplementation reads `bInterfaceSubClass`. Both bytes read
+  `0xFE` here, so the ARM tool would skip the iROM path identically.
+- **Autoboot countdown.** A keystroke was delivered and accepted with no
+  response, so nothing interactive is listening.
 
-Two host-side variants remain available through `start-session.sh`, though both
-are weaker leads now that the served `08_IMAGE` is known to be the vendor's own
-unmodified blob:
+Sixteen descriptor captures were taken across normal boots and confirmed
+service-mode entries. Every one reported `bDeviceSubClass=fe`,
+`bInterfaceSubClass=fe`, and `iInterface="DEFAULT"`, and every session requested
+image type `0x08`. No capture ever showed `0xFF`, and the U-Boot prompt never
+appeared. The yellow indication changes how many times the device retries, but
+not the USB identity it presents.
+
+The leading explanation is that the mask ROM only holds the USB download path
+open when the NAND boot chain fails to validate. On a unit with intact NAND the
+mask ROM hands off, and the bootloader presents its own update endpoint at
+subclass `0xFE` requesting image type `0x08`. The `"DEFAULT"` interface string
+is consistent with this: the descriptor labels the mode as the ordinary one, not
+a recovery or download mode. Supporting evidence:
+
+- The successful ARM flash began with a unit that had missed the final OTA and
+  could not complete setup, so its boot chain was not in a healthy state.
+- The 2021 report in Discussion #11 came from a unit that booted normally to
+  Cortana and produced this unit's exact symptoms. It was never resolved.
+- This unit boots the final Bluetooth firmware normally and shows the same
+  symptoms.
+
+Against it: `rbeesley` reported reaching U-Boot and an ADB shell in Discussion
+#3 while doing development, though that report does not say whether the unit had
+already been modified.
+
+If the explanation is correct, reaching subclass `0xFF` on a healthy unit would
+require invalidating the NAND boot chain. That is a destructive write and is
+outside the safe boundary of this work.
+
+Two host-side variants remain available through `start-session.sh`. Both are
+weak leads, since the served `08_IMAGE` is the vendor's own unmodified blob and
+carries no trace of this unit's identifier:
 
 - `absent` removes `08_IMAGE` so the request cannot be satisfied. Mainly a
-  control.
+  control, to confirm the request is not itself what triggers the disconnect.
 - `erom` serves `bcm_erom.bin.usb` in its place. Likely to misparse, since the
   iROM path sends that file with no size header while Phase 2 prepends one.
-
-Ruled out by direct test: interrupting an autoboot countdown. A keystroke was
-delivered and accepted with no response, so nothing interactive is listening.
 
 ## Arming download mode
 

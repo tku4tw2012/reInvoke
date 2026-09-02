@@ -12,7 +12,8 @@ separately.
 
 | File | Purpose |
 |---|---|
-| `99-marvell-invoke.rules` | udev rule granting unprivileged access to the Marvell boot endpoint, so the flasher need not run as root |
+| `99-marvell-invoke.rules` | udev rule granting unprivileged access to the Marvell boot endpoint, and triggering descriptor capture on attach |
+| `capture-descriptor.sh` | Dumps the full USB descriptor when the device appears. The boot window is only a few seconds, too short to run `lsusb -v` by hand |
 | `uboot-console.py` | Console client for the `usb_boot` TCP relay. Strips telnet negotiation, logs the transcript, and forwards commands from a FIFO |
 | `start-session.sh` | Brings up `usb_boot` and the console client, and refuses to run if flashable images are staged |
 
@@ -24,6 +25,10 @@ Install the udev rule once:
 sudo cp 99-marvell-invoke.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 ```
+
+The rule also runs `capture-descriptor.sh` on attach, which appends the full
+descriptor to `/tmp/invoke-descriptor.log`. Edit the path in the rule if the
+tooling lives elsewhere.
 
 Stage a working directory containing `usb_boot`, `bcm_erom.bin.usb`,
 `bootloader.img`, `sysinit.img`, `drm_erom.img`, the numbered protocol files,
