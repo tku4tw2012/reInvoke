@@ -1,4 +1,9 @@
-# Marvell BG2CDP boot device (Harman Kardon Invoke) - allow non-root libusb access
+# Marvell BG2CDP boot device (Harman Kardon Invoke)
+# Grant non-root libusb access so usb_boot need not run as root.
 SUBSYSTEM=="usb", ATTR{idVendor}=="1286", ATTR{idProduct}=="8174", MODE="0666"
 SUBSYSTEM=="usb", ATTR{idVendor}=="1286", ATTR{idProduct}=="8100", MODE="0666"
 SUBSYSTEM=="usb", ATTR{idVendor}=="1286", ATTR{idProduct}=="8101", MODE="0666"
+
+# Capture the descriptor on attach. The boot window is only a few seconds, which
+# is too short to run lsusb by hand.
+SUBSYSTEM=="usb", ACTION=="add", ATTR{idVendor}=="1286", RUN+="/opt/invoke-boot/capture-descriptor.sh $env{BUSNUM} $env{DEVNUM}"
