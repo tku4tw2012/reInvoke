@@ -62,6 +62,21 @@ Send a command to the prompt:
 echo 'printenv' > /tmp/uboot_cmd
 ```
 
+## Interrupting an autoboot countdown
+
+`interrupt-autoboot.py` feeds harmless newlines into the console FIFO so
+keystrokes are already waiting when the brief USB window opens. Start it, then
+power cycle:
+
+```bash
+python3 interrupt-autoboot.py 180
+```
+
+This is aimed at the case where the device's request for image type `0x08`
+comes from a running U-Boot executing `usbload 8`, rather than from the mask
+ROM. If an autoboot countdown is in progress, a keypress drops it to a prompt.
+Only newlines are sent, which are empty commands at a prompt.
+
 ## Why the console client is required
 
 `usb_boot` blocks at `wait for connection on port: 8141` and does not watch USB
