@@ -26,6 +26,7 @@ sources/
 !docs/bundle-contents/**
 
 # Local noise
+.copilot-bt-emulation/
 __pycache__/
 *.pyc
 .DS_Store

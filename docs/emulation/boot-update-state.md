@@ -1,7 +1,32 @@
-# Boot and Update State
+---
+title: Boot and update state
+description: Recovered persistent update markers and unresolved boot-slot behavior
+ms.date: 2026-09-02
+ms.topic: reference
+---
 
 Static disassembly of the final firmware establishes how its persistent update
 marker changes. It does not yet establish active-slot selection.
+
+## Evidence classification
+
+Verified facts:
+
+* `usr/bin/mtd_exec` in the held final firmware accepts `setbootflags`.
+* The code reads a 2,832-byte `fw_stat` record and rewrites its first word
+  between the two marker values shown below.
+* The preserved recovery-side code also checks the `qeru` marker.
+
+Artifact-backed findings:
+
+* `fw_stat` is an update gate, not a normal file-backed setting.
+* Any persistent edit must preserve the rest of the status record and go through
+  the firmware's MTD write path.
+
+Inference:
+
+* The normal update cycle described below is inferred from the normal-firmware
+  and recovery-firmware callers. Active-slot selection remains unresolved.
 
 ## Command surface
 

@@ -1,8 +1,14 @@
-# Bluetooth Stack
+---
+title: Bluetooth stack
+description: Evidence and emulation boundaries for the Invoke Bluedroid stack
+ms.date: 2026-09-02
+ms.topic: concept
+---
 
-The final firmware does not use BlueZ. Recording this because earlier documents
-in this repository claimed it did, and that claim shaped a wrong conclusion
-about what emulation would require.
+The examined Bluetooth service in the final firmware does not use the BlueZ
+user-space path (`bluetoothd`/D-Bus). Recording this because earlier documents
+in this repository treated BlueZ as the missing component, which shaped a wrong
+conclusion about what emulation would require.
 
 ## What the firmware actually uses
 
@@ -28,6 +34,28 @@ Android hardware abstraction layer:
 D-Bus is present in the rootfs and used elsewhere in the product, but the
 Bluetooth service does not depend on it.
 
+## Evidence classification
+
+Verified facts:
+
+* `usr/bin/bluetooth` and its linked libraries are present in the held final
+  firmware rootfs.
+* The service references Bluedroid strings, `/data/misc/bluedroid/.a2dp_data`,
+  `/dev/rfkill`, and HCI error vocabulary.
+* The rootfs carries the Marvell SDIO Bluetooth driver and controller firmware
+  listed above.
+
+Artifact-backed findings:
+
+* The emulation boundary is below the WAMP procedure layer and above or at the
+  kernel Bluetooth subsystem: the service needs an HCI interface and rfkill
+  behaviour, not a BlueZ daemon.
+
+Inference:
+
+* A host-created virtual HCI adapter is the plausible next emulation substitute.
+  That has not yet been tested with this Bluedroid stack.
+
 ## The real emulation boundary
 
 `libbt-vendor.so` opens `/dev/rfkill` and waits for an `hci%d` interface. That
@@ -39,7 +67,17 @@ Consequences for the sandbox:
 * `bluetoothd` and a D-Bus session would not help, because nothing calls them.
 * The Marvell SDIO driver cannot load, because `qemu-user` runs no guest kernel.
 * A virtual HCI adapter from the host's `hci_vhci` module is the plausible
-  substitute, since Bluedroid speaks HCI directly.
+  substitute to test, since Bluedroid speaks HCI directly.
+
+## Experimental HCI management shim
+
+`tools/emulation/invoke-ioctl-shim.c` can now return one synthetic, active
+`hci0` device for `HCIGETDEVLIST`, `HCIGETDEVINFO`, and `HCIDEVUP`. The library
+compiles for ARM against `GLIBC_2.4`.
+
+This is management-plane scaffolding only. It does not emulate HCI commands,
+events, ACL traffic, pairing, media transport, or `/dev/rfkill`. No Bluetooth
+procedure has completed through this shim.
 
 ## What is unresolved
 
@@ -53,6 +91,10 @@ separate created adapter and must never drive the host's own controller.
 Whether the transport procedures can be exercised without a peer device. Even
 with an adapter present, `bluetooth.resume`, `pause`, `next`, and `skipTo`
 operate on an active media session.
+
+No Bluetooth procedure has yet been shown to complete under emulation. Current
+evidence is limited to service registration on the WAMP bus and static/runtime
+evidence for the stack boundary.
 
 ## Practical assessment
 
