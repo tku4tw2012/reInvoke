@@ -97,5 +97,12 @@
     "kind": "git_mirror",
     "source_url": "https://github.com/google/adb-sync.git",
     "destination": "git-mirrors/google/adb-sync.git"
+  },
+  {
+    "id": "P2-003",
+    "kind": "git_mirror",
+    "source_url": "https://github.com/jryruegas92/hk-invoke-arm-flasher.git",
+    "destination": "git-mirrors/community/hk-invoke-arm-flasher.git",
+    "required_commit": "63444e82cc5274abe31ec49ad55ee552b50b64b3"
   }
 ]

@@ -1,0 +1,15 @@
+{
+  "clone_url": "https://github.com/jryruegas92/hk-invoke-arm-flasher.git",
+  "default_branch": "main",
+  "head_commit": "63444e82cc5274abe31ec49ad55ee552b50b64b3",
+  "id": "P2-003",
+  "kind": "git_mirror",
+  "license": "MIT",
+  "license_sha256": "b530a682ae4dcc0f2d7a1d222e7375b8dea94ea98580d757c30523cf3518fa11",
+  "mirror_path": "git-mirrors/community/hk-invoke-arm-flasher.git",
+  "refs_count": 1,
+  "required_commit": "63444e82cc5274abe31ec49ad55ee552b50b64b3",
+  "retrieved_utc": "2026-09-02T16:06:16Z",
+  "source_sha256": "1dcee95d828026727760cb7f32699ef7ba40ccc69e258a5b961b5f42b0e1c2db",
+  "status": "MIRRORED"
+}

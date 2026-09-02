@@ -1,0 +1,2 @@
+# Grant the dedicated Wireshark capture group access to usbmon devices.
+KERNEL=="usbmon[0-9]*", GROUP="wireshark", MODE="0640"
