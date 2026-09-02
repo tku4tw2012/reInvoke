@@ -196,16 +196,24 @@ image in the chain.
 
 ## Untested next steps
 
-Neither has been run, and both are RAM-only with no NAND writes:
+None have been run, and all are RAM-only with no NAND writes:
 
-1. Remove `08_IMAGE` from the working directory. The tool will log
-   `failed to open image file`. If the device then requests a different type,
-   the current `08_IMAGE` is the wrong response for this unit's request.
-2. Stage a copy of `bcm_erom.bin.usb` as `08_IMAGE`. If the bootloader is
-   asking for the iROM bootstrap under a different type code, it should
-   progress to requesting `0x02`, `0x03`, or `0x05`.
+1. **Interrupt an autoboot countdown.** U-Boot's `usbload N` command requests
+   image type `N`, so a request for `0x08` is consistent with U-Boot already
+   running and executing an update check rather than with the mask ROM. If that
+   is what is happening, the console proxy is connected to a live U-Boot, and a
+   keypress during an autoboot countdown would drop it to a prompt. The
+   `interrupt-autoboot.py` helper feeds newlines continuously so keys are
+   already waiting when the short USB window opens. Newlines are harmless: an
+   empty command at a prompt, and any key stops a countdown. The full path is
+   verified end to end, with keystrokes confirmed arriving at `usb_boot`.
+2. **Remove `08_IMAGE`** so the request cannot be satisfied. Expected to be
+   equivalent to running no tool at all, so this is mainly a control.
+3. **Serve `bcm_erom.bin.usb` as `08_IMAGE`.** Weaker than it first appears: the
+   iROM path sends the bootstrap with no size header, whereas the Phase 2 path
+   prepends the eight-byte header, so the device would likely misparse it.
 
-Both require a power cycle to test, since the window only opens at boot.
+All require a power cycle, since the window only opens at boot.
 
 ## Arming download mode
 
