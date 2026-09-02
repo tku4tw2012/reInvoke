@@ -24,7 +24,7 @@ in a fresh session — or from GitHub on the web — without the original conver
 | Analysis — unpack and understand the firmware | **Done** |
 | Control-plane emulation — device userland runs off-device | **Done** — see [control-plane-emulation.md](docs/emulation/control-plane-emulation.md) |
 | Evidence closure — FCC exhibits, OTA2, sibling cross-index | **Done** |
-| Hardware validation — donor device(s) available | **In progress** — Bluetooth works; USB boundary measured; closed-unit controls remain |
+| Hardware validation — donor device(s) available | **In progress** — Bluetooth works; **interactive U-Boot console reached over USB** via yellow service mode, see [uboot-access.md](docs/uboot-access.md); NAND healthy and mapped read-only; firmware version still unread |
 
 ### The finding that reframes the project
 
@@ -240,6 +240,10 @@ this session those claims cited evidence the project did not possess.
    a sustained retry loop, but not a captured subclass change, so no U-Boot
    console has been reached. Details are in
    [usb-service-mode.md](docs/usb-service-mode.md).
+
+Host preparation is complete for the next controls: ADB 1.0.41, libusb 1.0.25,
+bus-specific usbmon capture, timestamped attempt bundles, and a native x86-64
+build of the pinned open-source flasher at commit `63444e82`.
 
 **Remaining steps, once those two are answered:**
 

@@ -5,14 +5,18 @@ ms.date: 2026-09-02
 ms.topic: troubleshooting
 ---
 
-Status: partially verified on hardware, 2026-09-01, on unit `myInvoke-1`.
-The installed firmware version has not been read from the device. Its
-Bluetooth-only behavior is consistent with the final firmware line.
+Status: superseded in part on 2026-09-02. An interactive U-Boot console **has
+been reached** on unit `myInvoke-1` through the yellow service mode. See
+[uboot-access.md](uboot-access.md) for the verified procedure and the board,
+NAND, and SPI facts read from the prompt.
 
-Reached: the Marvell boot endpoint enumerates, `usb_boot` claims the interface,
-and the host reports a complete `08_IMAGE` transfer. Not reached: device
-subclass `0xFF`, the host tool's iROM bootstrap branch, or a U-Boot console.
-Sixteen descriptor captures all report device and interface subclass `0xFE`.
+The sections below remain accurate for the ordinary power-on path, where the
+device requests `08_IMAGE` and no console appears. The earlier conclusion that
+subclass `0xFE` blocks progress was incomplete: the decisive variable is the
+image-request sequence the device issues, not the subclass alone.
+
+The installed firmware version has still not been read from the device. Its
+Bluetooth-only behavior is consistent with the final firmware line.
 
 This document records what the Micro-USB port actually exposes, how far the
 download path can be driven without opening the enclosure, where that path
@@ -53,6 +57,11 @@ required before any negative result means anything.
 
 `usb_boot` is an x86-64 ELF binary and runs natively on a 64-bit Linux host. It
 links against `libusb-1.0`, `libudev`, and `libpthread`.
+
+The open-source `jryruegas92/hk-invoke-arm-flasher` implementation is preserved
+at commit `63444e82cc5274abe31ec49ad55ee552b50b64b3` and was also compiled as an
+x86-64 binary on this host. Its source and build are now available as an exact
+tool-control experiment; it has not yet been run against the speaker.
 
 Grant unprivileged access to the boot endpoint rather than running the flasher
 as root. Running `usb_boot` as root would give it write access to block devices
@@ -350,6 +359,8 @@ virtual machines, and USB passthrough were less reliable. This Mac mini exposes
 the external port through one internal EHCI hub. That may matter after iROM
 starts, but it does not explain why the initial descriptor is subclass 254.
 The ARM executable was reviewed but was not run on Raspberry Pi hardware here.
+It is now compiled natively on this x86-64 host, so testing its implementation
+does not require moving the project session to a Pi.
 
 ## Untested next steps
 
