@@ -222,11 +222,14 @@ this session those claims cited evidence the project did not possess.
    is already a Bluetooth-speaker build, so a working unit may substantially
    satisfy the end goal with no intervention.
 2. Does the Micro-USB service port expose a Marvell boot endpoint?
-   **Answered 2026-09-01: yes.** The unit presents `1286:8174`, the BG2CDP Boot
-   Device, for roughly four seconds on every power-on. `usb_boot` reaches it,
-   claims the interface, and completes a signed handshake. Details and the
-   verified service-mode entry are in [usb-service-mode.md](docs/usb-service-mode.md).
-   The RAM-boot avenue is open without opening the case.
+   **Answered 2026-09-01: yes, but the boot chain does not start.** The unit
+   presents `1286:8174`, the BG2CDP Boot Device, for roughly four seconds on
+   every power-on. `usb_boot` reaches it, claims the interface, and completes a
+   full image transfer. However the interface subclass reads 254 on every
+   attempt, and `usb_boot` only enters the iROM bootstrap path on subclass
+   `0xFF`. The vendor button sequence produces the yellow panel indication and a
+   sustained retry loop, but not a subclass change, so no U-Boot console has
+   been reached. Details in [usb-service-mode.md](docs/usb-service-mode.md).
 
 **Remaining steps, once those two are answered:**
 

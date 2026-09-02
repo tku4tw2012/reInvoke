@@ -11,6 +11,7 @@ set -u
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PORT=8141
+VARIANT="${1:-stock}"
 cd "$DIR"
 
 for f in usb_boot bcm_erom.bin.usb bootloader.img sysinit.img drm_erom.img; do
@@ -26,6 +27,17 @@ for f in 83_IMAGE 99_IMAGE; do
     exit 1
   fi
 done
+
+# This unit requests image type 0x08, which is outside the documented boot
+# chain. These variants test what it will accept. All are RAM-only.
+[ -f 08_IMAGE.stock ] || cp 08_IMAGE 08_IMAGE.stock
+case "$VARIANT" in
+  stock)   cp 08_IMAGE.stock 08_IMAGE ;;
+  absent)  rm -f 08_IMAGE ;;
+  erom)    cp bcm_erom.bin.usb 08_IMAGE ;;
+  *) echo "FATAL: unknown variant '$VARIANT' (stock|absent|erom)" >&2; exit 1 ;;
+esac
+echo "variant: $VARIANT"
 
 if [ ! -f 79_IMAGE ]; then
   cp 79_IMAGE.uboot_cmdline 79_IMAGE

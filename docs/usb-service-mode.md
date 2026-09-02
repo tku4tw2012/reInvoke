@@ -1,11 +1,15 @@
 # USB service mode and the RAM boot path
 
-Status: verified on hardware, 2026-09-01, on unit `myInvoke-1` running the final
-`Barracuda_libre-12.2134.0` build.
+Status: partially verified on hardware, 2026-09-01, on unit `myInvoke-1` running
+the final `Barracuda_libre-12.2134.0` build.
 
-This document records what the Micro-USB port actually exposes, how to reach the
-Marvell download path without opening the enclosure, and where the safe boundary
-sits.
+Reached: the Marvell boot endpoint enumerates, `usb_boot` claims the interface,
+and a full image request and transfer completes. Not reached: interface subclass
+`0xFF`, and therefore no U-Boot console.
+
+This document records what the Micro-USB port actually exposes, how far the
+download path can be driven without opening the enclosure, where that path
+currently stops, and where the safe boundary sits.
 
 ## What the port exposes
 
@@ -98,13 +102,110 @@ cb_data_recv, 299: img transfer status: 1
 detach_cb, 1227: detach
 ```
 
-The device requests `08_IMAGE`, receives it, disconnects, and boots from NAND.
-It never requests `bcm_erom.bin.usb`, `bootloader.img`, or `sysinit.img`.
-Download mode must be armed explicitly.
+The device requests image type `0x08`, receives it, disconnects, and boots from
+NAND. It never requests `bcm_erom.bin.usb`, `bootloader.img`, or `sysinit.img`.
 
-The numbered files are protocol data, not firmware. `06_IMAGE` is written by the
-tool and holds the USB path (`3-1.2`). `08_IMAGE` and `09_IMAGE` are signed
-binary blobs used in the secure-boot exchange.
+The numbered files are a mix of protocol data and payloads, not firmware.
+`06_IMAGE` is written by the tool on every run and holds the USB path (`3-1.2`);
+its mtime updates each session. `07_IMAGE` holds an image size as a
+little-endian `uint32` and is likewise tool-written; the copy in the bundle
+reads 107,934,810, exactly the size of `83_IMAGE`, so it is a leftover from the
+vendor's own working directory. `08_IMAGE` and `09_IMAGE` are signed binary
+blobs shipped in the bundle.
+
+## Interface subclass selects the boot path
+
+This is the decisive detail. `usb_boot` branches on the USB interface subclass:
+
+```text
+4045ed:  mov    -0x18(%rbp),%eax     ; sub_class
+4045f0:  cmp    $0xff,%eax
+4045f5:  jne    40461d               ; not 255 -> ordinary request loop
+404610:  call   4041eb <serve_irom_stage_dongle>
+```
+
+Only subclass `0xFF` enters `serve_irom_stage_dongle`, which is the function
+that sends `bcm_erom.bin.usb`. The community reverse-engineering report states
+the same: a unit in service mode presents `1286:8174` with interface subclass
+`0xFF`, and re-enumerates with a different subclass after the iROM bootstrap
+completes.
+
+This unit reports **subclass 254 on every attempt**, including attempts where
+the top panel turned yellow. It therefore never enters the iROM path, and the
+`bcm_erom` to `bootloader` to `sysinit` to `drm_erom` chain never begins.
+
+The image type codes are confirmed as: `0x01` no-op, `0x02` `sysinit.img`,
+`0x03` `bootloader.img`, `0x05` `drm_erom.img`, and anything else formatted as
+`NN_IMAGE`. The `0x08` this unit requests is outside the documented boot chain,
+which is consistent with the request coming from the NAND bootloader's update
+check rather than from the mask ROM.
+
+Observed behaviour, both confirmed on hardware:
+
+| Entry method | USB windows | Subclass | Request |
+|---|---|---|---|
+| Ordinary power-on | one, then boots | 254 | `0x08` |
+| Reset held plus four MicOff presses, panel yellow | fourteen retries over roughly two minutes, then white, then chime | 254 | `0x08` |
+
+Arming download mode changes the retry count but not the subclass. The yellow
+indication is real, and the retry loop is a genuine behavioural difference, but
+the interface identity stays in the post-iROM phase.
+
+A plausible reading, not yet proven: the mask ROM only holds the USB download
+path open when the NAND boot chain fails to validate. On a healthy unit the
+bootloader takes over first and offers its own update window. If that is
+correct, reaching subclass `0xFF` on a working unit may not be possible without
+invalidating NAND, which is outside the safe boundary of this work.
+
+## The console proxy works, and the device announces an ID
+
+Phase 2 includes a console proxy: bytes arriving on interrupt IN `0x82` are
+stripped of the `i*m*g*r*q*` markers and forwarded to the TCP client, and client
+input is sent back on interrupt OUT `0x02`. That path is confirmed working here.
+
+Before requesting an image, the device emits an ASCII string that reaches the
+console:
+
+```text
+one target device connected.
+ 424091892ef47412 target device disconnected.
+```
+
+`424091892ef47412` was byte-identical across all fourteen attempts, so it is a
+stable identifier rather than a per-boot nonce. The exchange is therefore not a
+randomised challenge, which leaves open the possibility that a static response
+image is the correct answer.
+
+## Failure signature and what it means
+
+Every cycle ends identically. The image is delivered in full and correctly
+framed: an eight-byte header carrying the size as a little-endian `uint32`
+followed by four zero bytes, then the payload. The subsequent bulk IN transfer
+then reports status 1.
+
+That value is a libusb transfer status, not a device status code:
+`LIBUSB_TRANSFER_ERROR` is 1 and `LIBUSB_TRANSFER_NO_DEVICE` is 5. Both were
+observed, and both are what a host sees when a device drops off the bus
+mid-transfer. On any non-zero status `cb_data_recv` calls `request_exit(2)` and
+tears the session down.
+
+A disconnect after an image is expected between boot phases, so the transfer
+error alone does not prove rejection. What does indicate a problem is that the
+device returns to the same request every time rather than advancing to the next
+image in the chain.
+
+## Untested next steps
+
+Neither has been run, and both are RAM-only with no NAND writes:
+
+1. Remove `08_IMAGE` from the working directory. The tool will log
+   `failed to open image file`. If the device then requests a different type,
+   the current `08_IMAGE` is the wrong response for this unit's request.
+2. Stage a copy of `bcm_erom.bin.usb` as `08_IMAGE`. If the bootloader is
+   asking for the iROM bootstrap under a different type code, it should
+   progress to requesting `0x02`, `0x03`, or `0x05`.
+
+Both require a power cycle to test, since the window only opens at boot.
 
 ## Arming download mode
 
@@ -120,8 +221,18 @@ From the vendor `Instructions.pdf` shipped in the flashing bundle:
    down and repeat.
 6. Release Reset only after the U-Boot console appears.
 
-Holding Reset alone is not sufficient. The four MicOff presses are what arm the
-mode.
+Holding Reset alone is not sufficient. The four MicOff presses are what produce
+the yellow indication. Timing is tight, and the sequence needs both hands: hold
+the pinhole with one hand throughout, and use the other to seat the barrel
+connector and then tap MicOff. A switched power strip makes it easier.
+
+Releasing Reset early resets the unit. That was observed directly as a burst of
+enumerate-and-disconnect cycles followed by a fall-through to normal boot.
+
+On this unit the sequence produces yellow and a sustained retry loop, but not
+subclass `0xFF`, so the U-Boot console has not been reached. The step above that
+says to release Reset once the console appears is reproduced from the vendor
+document and remains untested here.
 
 ## Safe boundary
 
