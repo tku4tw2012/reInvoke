@@ -36,6 +36,19 @@ alongside them, then run:
 
 It reports `READY` only after `usb_boot` has entered its USB hotplug loop.
 
+The script takes an optional variant argument controlling what is served for
+image type `0x08`, which is what this unit requests:
+
+| Variant | Effect |
+|---|---|
+| `stock` (default) | Serve the bundle's `08_IMAGE` |
+| `absent` | Remove `08_IMAGE` so the request cannot be satisfied |
+| `erom` | Serve a copy of `bcm_erom.bin.usb` as `08_IMAGE` |
+
+The original is preserved as `08_IMAGE.stock` on first run and restored by
+`./start-session.sh stock`. All variants are RAM-only and write nothing to the
+device.
+
 ## Reading the session
 
 ```bash
