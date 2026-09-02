@@ -1,4 +1,9 @@
-# No-Disassembly Observation Procedure
+---
+title: No-disassembly observation procedure
+description: Safe physical observations for an Invoke that remains closed
+ms.date: 2026-09-02
+ms.topic: how-to
+---
 
 Operator procedure for a physical Invoke that will not be opened. The procedure
 does not flash firmware or write raw storage. Bluetooth pairing can update
@@ -13,8 +18,8 @@ Static analysis established that Harman's final firmware, `Barracuda_libre-12.21
 shipped in the OTA2 bundle, removes Cortana and Spotify and adds a `wifi-blocker`
 service. See `docs/bundle-contents/invoke-ota2/ota2-analysis.md`.
 
-The owner confirms the unit runs this final build. That settles what would
-otherwise be the first question and narrows the remaining ones considerably.
+The unit's Bluetooth-only behavior is consistent with this firmware line, but
+the exact installed version has not been read from the device.
 
 The device is already the Bluetooth speaker its last firmware was built to be.
 The open questions are no longer about what it is, but about what can be
@@ -42,8 +47,8 @@ answers, the recovered control API becomes reachable immediately.
 
 - Do not open the enclosure.
 - Do not flash, write, or run any update.
-- Do not press the recessed reset control or test unknown button combinations.
-  Preserved factory-reset code deletes user data.
+- Do not test unknown button combinations. The supported runtime factory reset
+  erases user settings and is a separate, explicit experiment.
 - Stop and record if anything overheats, smells, or behaves erratically.
 
 ## Step 1: Identify and photograph
@@ -109,7 +114,20 @@ If audio plays cleanly, the speaker, amplifier, DSP, and MCU control path are
 all functioning. That is a working device, and the invasive research paths
 become optional rather than necessary.
 
-## Step 5: USB service port enumeration
+## Optional controlled factory reset
+
+Harman's
+[September 2021 release notes](https://web.archive.org/web/20240822092012id_/https://support.harmanaudio.com/us/en/howto/invoke-final-software-update-release-notes-us/000018514.html)
+enable factory reset through the recessed Reset pinhole beside Mic Mute. With
+the unit fully booted and USB disconnected, hold the pinhole for five seconds,
+release it, and allow the restart to finish. This deletes pairings and other
+writable user state.
+
+Use this once as a controlled state-reset experiment, then repeat the ordinary
+and yellow-mode USB captures. Do not hold Reset while applying power; that is a
+separate early-boot action.
+
+## Step 5: USB service-port enumeration
 
 This step is read-only. Do not run any flashing tool.
 
@@ -130,7 +148,7 @@ Identifiers of interest:
 | Vendor:Product | Meaning |
 |---|---|
 | `1286:8100` or `1286:8101` | Marvell BootROM download mode for Monahans P/L parts |
-| `1286:8174` | **BG2CDP Boot Device.** Verified: this unit presents this ID for roughly four seconds on every power-on, and `marvell_flash_tool/run.sh` targets exactly `usb_boot 1286 8174`. `Mrvl_WinUSB.inf` names it `"Marvell(R) WTP: Tools package USB Driver for BG2CDP Boot Device"`. It is the boot endpoint, not a post-handoff gadget |
+| `1286:8174` | **BG2CDP Boot Device.** Verified: this unit presents this ID for roughly four seconds on every power-on, and `marvell_flash_tool/run.sh` targets exactly `usb_boot 1286 8174`. `Mrvl_WinUSB.inf` names it `"Marvell(R) WTP: Tools package USB Driver for BG2CDP Boot Device"`. It is a boot/download endpoint; the emitting device stage remains unknown |
 | `????:0d02` | The normal runtime gadget. `init.rc` sets this product ID with the string `MRVL USB SDK`. Expected on a booted unit |
 | Anything else | Record verbatim |
 
@@ -145,14 +163,14 @@ factory reset. The documented service-mode entry is recorded in
 [usb-service-mode.md](./usb-service-mode.md) and is the only button sequence
 that should be attempted.
 
-The `1286:8174` window appears on ordinary power-on, so the RAM-download
-endpoint is externally reachable without opening the case. A normal power-on
-window is not sufficient on its own: the BootROM performs a short handshake and
-falls through to NAND unless download mode is armed.
+The `1286:8174` window appears on ordinary power-on, so the boot/download
+endpoint is externally reachable without opening the case. On this unit the
+observed `0xFE` session requests `08_IMAGE`, disconnects, and continues normal
+boot. The component that performs that exchange remains unidentified.
 
 ## Step 6: If a normal gadget appears
 
-If the unit enumerates as an ordinary USB device rather than the BootROM
+If the unit enumerates as an ordinary USB device rather than the boot
 downloader, try a read-only connection. The prediction is that this fails,
 because `adbd` is disabled in this build.
 

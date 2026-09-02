@@ -1,12 +1,18 @@
-# USB service mode and the RAM boot path
+---
+title: USB service mode and the RAM boot path
+description: Hardware observations and evidence limits for the Invoke Micro-USB boot endpoint
+ms.date: 2026-09-02
+ms.topic: troubleshooting
+---
 
-Status: partially verified on hardware, 2026-09-01, on unit `myInvoke-1` running
-the final `Barracuda_libre-12.2134.0` build.
+Status: partially verified on hardware, 2026-09-01, on unit `myInvoke-1`.
+The installed firmware version has not been read from the device. Its
+Bluetooth-only behavior is consistent with the final firmware line.
 
 Reached: the Marvell boot endpoint enumerates, `usb_boot` claims the interface,
-and a full image request and transfer completes. Not reached: interface subclass
-`0xFF`, and therefore no U-Boot console. Sixteen descriptor captures across
-normal boots and confirmed service-mode entries all report subclass `0xFE`.
+and the host reports a complete `08_IMAGE` transfer. Not reached: device
+subclass `0xFF`, the host tool's iROM bootstrap branch, or a U-Boot console.
+Sixteen descriptor captures all report device and interface subclass `0xFE`.
 
 This document records what the Micro-USB port actually exposes, how far the
 download path can be driven without opening the enclosure, where that path
@@ -25,8 +31,9 @@ usb 3-1.2: Manufacturer: Marvell
 usb 3-1.2: USB disconnect
 ```
 
-This identifier is the BootROM endpoint, not a runtime gadget. Two independent
-artifacts in this repository confirm it:
+This identifier is the Marvell BG2CDP boot/download endpoint, not a runtime
+gadget. The exact device component that emits it remains unidentified. Two
+independent artifacts establish its intended boot-tool use:
 
 - `marvell_flash_tool/run.sh` invokes `usb_boot 1286 8174 ./ 8141`
 - `Mrvl_WinUSB.inf` declares
@@ -111,12 +118,12 @@ The numbered files are a mix of protocol data and payloads, not firmware.
 its mtime updates each session. `07_IMAGE` holds an image size as a
 little-endian `uint32` and is likewise tool-written; the copy in the bundle
 reads 107,934,810, exactly the size of `83_IMAGE`, so it is a leftover from the
-vendor's own working directory. `08_IMAGE` and `09_IMAGE` are signed binary
-blobs shipped in the bundle.
+vendor's own working directory. `08_IMAGE` and `09_IMAGE` are opaque structured
+binary records shipped in the bundle.
 
-## Interface subclass selects the boot path
+## Device subclass selects the host-tool path
 
-This is the decisive detail. `usb_boot` branches on the USB interface subclass:
+The original `usb_boot` binary branches on `bDeviceSubClass`:
 
 ```text
 4045ed:  mov    -0x18(%rbp),%eax     ; sub_class
@@ -125,21 +132,19 @@ This is the decisive detail. `usb_boot` branches on the USB interface subclass:
 404610:  call   4041eb <serve_irom_stage_dongle>
 ```
 
-Only subclass `0xFF` enters `serve_irom_stage_dongle`, which is the function
-that sends `bcm_erom.bin.usb`. The community reverse-engineering report states
-the same: a unit in service mode presents `1286:8174` with interface subclass
-`0xFF`, and re-enumerates with a different subclass after the iROM bootstrap
-completes.
+Only device subclass `0xFF` enters `serve_irom_stage_dongle`, which sends
+`bcm_erom.bin.usb`. This establishes the host binary's behavior. Community
+reports associate that branch with the iROM bootstrap, but the descriptor alone
+does not identify which device component emits `0xFE`.
 
 This unit reports **subclass 254 on every attempt**, including attempts where
-the top panel turned yellow. It therefore never enters the iROM path, and the
-`bcm_erom` to `bootloader` to `sysinit` to `drm_erom` chain never begins.
+the top panel turned yellow. The host therefore never takes its iROM branch, and
+the `bcm_erom` to `bootloader` to `sysinit` to `drm_erom` chain never begins.
 
 The image type codes are confirmed as: `0x01` no-op, `0x02` `sysinit.img`,
 `0x03` `bootloader.img`, `0x05` `drm_erom.img`, and anything else formatted as
-`NN_IMAGE`. The `0x08` this unit requests is outside the documented boot chain,
-which is consistent with the request coming from the NAND bootloader's update
-check rather than from the mask ROM.
+`NN_IMAGE`. The `0x08` request is outside those special mappings. Its device-side
+meaning and executing stage remain unknown.
 
 Observed behaviour, both confirmed on hardware:
 
@@ -148,15 +153,13 @@ Observed behaviour, both confirmed on hardware:
 | Ordinary power-on | one, then boots | 254 | `0x08` |
 | Reset held plus four MicOff presses, panel yellow | fourteen retries over roughly two minutes, then white, then chime | 254 | `0x08` |
 
-Arming download mode changes the retry count but not the subclass. The yellow
-indication is real, and the retry loop is a genuine behavioural difference, but
-the interface identity stays in the post-iROM phase.
+Arming download mode changes the retry count but not the observed descriptor.
+The yellow indication and retry loop are genuine behavioral differences, but
+they do not identify the executing boot stage.
 
-A plausible reading, not yet proven: the mask ROM only holds the USB download
-path open when the NAND boot chain fails to validate. On a healthy unit the
-bootloader takes over first and offers its own update window. If that is
-correct, reaching subclass `0xFF` on a working unit may not be possible without
-invalidating NAND, which is outside the safe boundary of this work.
+One unproven hypothesis is that NAND or boot-state differences determine whether
+the device presents `0xFF` or `0xFE`. The available success and failure reports
+do not establish that relationship, and no destructive test is justified by it.
 
 ## The console proxy works, and the device announces an ID
 
@@ -185,11 +188,9 @@ tcp_server_func, 891: sending \n, len 1 to dongle.
 cb_intr_out, 456: actual data wrote 1
 ```
 
-The device accepted the byte and answered nothing. It emitted no banner, no
-countdown, and no prompt, and it exited at the same point regardless. Whatever
-is running at this stage is not an interactive console, which rules out the
-theory that a request for image type `0x08` indicates a live U-Boot executing
-`usbload 8` with an interruptible autoboot.
+The host controller completed the transfer, but the device produced no visible
+reaction, banner, countdown, or prompt. This does not prove that firmware
+consumed the byte or that the transfer reached the relevant timing window.
 
 ## The descriptor, captured
 
@@ -218,9 +219,9 @@ different bytes, so a device reporting `0xFE` in one and `0xFF` in the other
 would explain the whole failure and would mean the ARM tool could succeed where
 this one cannot.
 
-**Both fields read `0xFE` on this unit.** There is no discrepancy, and the ARM
-tool would skip the iROM path for exactly the same reason. Changing tools is not
-a path forward.
+**Both fields read `0xFE` on this unit.** There is no descriptor discrepancy, so
+both tools would skip the iROM branch on those observed enumerations. Their host
+timing and re-enumeration behavior remain separate controls.
 
 The endpoint layout matches the documented protocol: bulk `0x01` for image data
 and interrupt `0x02` for console input, with the IN counterparts `0x81` and
@@ -249,29 +250,28 @@ than a data-dependent rejection:
 - The device returns to the same request every time instead of advancing to the
   next image in the chain.
 
-The host side of the exchange is complete and correctly framed. `cb_img_write`
-sends every block, calls `fclose`, and sends no trailing completion marker,
-which matches the protocol as documented. The transfer itself is not the
-problem.
+The host reports a complete, correctly framed exchange. `cb_img_write` sends
+every block, calls `fclose`, and sends no trailing completion marker. Whether
+the device accepts or acts on the record remains unknown.
 
 ## What 08_IMAGE and 09_IMAGE contain
 
-Both are vendor-signed records sharing a common layout:
+Both are opaque records sharing a common layout:
 
 ```text
 08_IMAGE  01 00 00 00  6a e7 03 00  ...   144 bytes
 09_IMAGE  01 00 00 00  37 c2 00 13  ...  4096 bytes
 ```
 
-The first word is a version of 1 in both. The second differs: `0x0003e76a` in
-`08_IMAGE` and `0x1300c237` in `09_IMAGE`. The remainder is high-entropy binary
-consistent with a signature or key material.
+The first word is 1 in both. The second differs: `0x0003e76a` in `08_IMAGE` and
+`0x1300c237` in `09_IMAGE`. The remainder is high-entropy binary consistent with
+several possible encrypted or authenticated formats.
 
 The unit's announced identifier `424091892ef47412` does not appear in
 `08_IMAGE` in either byte order, and no four-byte or eight-byte prefix of it
-matches at any offset. The file is therefore not bound to this unit, and the
-copy being served is the vendor's own unmodified blob. Missing signing material
-is not what is blocking progress.
+matches at any offset. The copy being served is the vendor's unmodified blob.
+This plaintext comparison does not exclude hashing, derivation, family binding,
+or device-side version checks.
 
 ## Documented entry procedures disagree
 
@@ -294,24 +294,24 @@ Attempts so far, all ending in subclass 254:
 |---|---|
 | Reset held, four MicOff, released early | Three enumerate cycles, then normal boot |
 | Reset held, four MicOff, held throughout | Yellow, fourteen retry cycles, then white, then chime |
-| Same, with keystrokes fed to the console | Byte delivered and accepted, no response, same exit |
+| Same, with keystrokes fed to the console | Host transfer completed, no visible response, same exit |
 
-### All three procedures were tried, with identical results
+### Published yellow-mode procedures were tried
 
 Those variants have now been tested on this unit:
 
 | Variant | Result |
 |---|---|
 | USB connected throughout, Reset held, four MicOff presses, held through yellow | Subclass 254, repeated requests for `08_IMAGE` |
-| Same, with keystrokes fed to the console | Byte delivered and accepted, no response, subclass 254 |
+| Same, with keystrokes fed to the console | Host transfer completed, no visible response, subclass 254 |
 | Reset and power only, no MicOff presses | Panel never turned yellow at all |
 | Reset, four MicOff presses, released at yellow, USB connected last while still yellow | Subclass 254, repeated requests for `08_IMAGE` |
 
-Two conclusions follow. First, on this unit the four MicOff presses are
+Two observations follow. First, on this unit the four MicOff presses are
 required: Reset and power alone never produce the yellow indication, which
-contradicts the ARM flasher README. Second, the entry procedure is not the
-variable that controls the subclass. Every documented sequence, including
-connecting USB while the panel was still yellow, produced subclass 254.
+differs from the ARM flasher README. Second, every tested yellow-mode sequence,
+including connecting USB while the panel was still yellow, produced subclass
+254. The separate community-reported green startup mode was not tested.
 
 ## External reports
 
@@ -332,13 +332,16 @@ Primary community evidence confirms that the RAM-boot path has worked:
   from Harman's PDF: enter service mode with power and Reset only, release Reset
   after yellow, start the tool and console, then connect Micro-USB last to a
   direct Raspberry Pi 4 USB 2.0 port.
+- In Discussion #3, `coggy9` also described holding Bluetooth and Mic while
+  starting as another, green-light "bootloader" mode. That single report came
+  after the unit had been damaged by writing `99_IMAGE`; the mode produced the
+  same connection loop and was not shown to reach U-Boot.
 
-The public successes prove the path exists, but do not prove that every NAND or
-firmware state enters iROM identically. The successful ARM test began with an
-old, effectively bricked unit that had missed the final OTA. This unit has a
-valid NAND boot chain and boots the final Bluetooth firmware normally. That is
-a concrete difference, but there is not yet enough evidence to say it causes
-subclass 254 instead of 255.
+The public successes prove the path exists on some units, but do not establish
+which device state selects `0xFF`. The successful ARM test began with an old
+unit that had missed the final OTA; that application state does not itself prove
+an invalid NAND boot chain. This unit boots normally and presents `0xFE`, but
+the causal difference remains unknown.
 
 USB topology is another concrete difference. The ARM success used a direct
 Raspberry Pi 4 USB-A 2.0 port. Its author reports that an Ubuntu-hosted Dell
@@ -346,57 +349,34 @@ behind a USB-C adapter sent the initial bootstrap and then stalled, while docks,
 virtual machines, and USB passthrough were less reliable. This Mac mini exposes
 the external port through one internal EHCI hub. That may matter after iROM
 starts, but it does not explain why the initial descriptor is subclass 254.
+The ARM executable was reviewed but was not run on Raspberry Pi hardware here.
 
 ## Untested next steps
 
-Three candidate explanations have been eliminated by direct measurement:
+Direct measurement establishes three narrower constraints:
 
-- **Entry procedure.** All documented sequences were tried, including holding
-  Reset through yellow, releasing at yellow, omitting MicOff entirely, and
-  connecting USB last while the panel was still yellow. Every one gives `0xFE`.
-- **Tool choice.** The original binary reads `bDeviceSubClass` while the
-  community ARM reimplementation reads `bInterfaceSubClass`. Both bytes read
-  `0xFE` here, so the ARM tool would skip the iROM path identically.
-- **Autoboot countdown.** A keystroke was delivered and accepted with no
-  response, so nothing interactive is listening.
+- Every tested yellow-mode sequence produced `0xFE`.
+- Both descriptor subclass fields were `0xFE`, so both reviewed tools would
+  skip their iROM branch on the observed enumerations.
+- An interrupt-OUT byte completed with no visible reaction; firmware consumption
+  and exact timing remain unknown.
 
-Sixteen descriptor captures were taken across normal boots and confirmed
-service-mode entries. Every one reported `bDeviceSubClass=fe`,
-`bInterfaceSubClass=fe`, and `iInterface="DEFAULT"`, and every session requested
-image type `0x08`. No capture ever showed `0xFF`, and the U-Boot prompt never
-appeared. The yellow indication changes how many times the device retries, but
-not the USB identity it presents.
+Sixteen retained descriptor captures report `bDeviceSubClass=fe`,
+`bInterfaceSubClass=fe`, and `iInterface="DEFAULT"`. Operator notes associate
+them with normal and service-mode attempts, but the descriptor log itself does
+not label each physical sequence. Observed tool sessions requested image type
+`0x08`; no capture showed `0xFF`, and no U-Boot prompt appeared.
 
-The leading explanation is that the mask ROM only holds the USB download path
-open when the NAND boot chain fails to validate. On a unit with intact NAND the
-mask ROM hands off, and the bootloader presents its own update endpoint at
-subclass `0xFE` requesting image type `0x08`. The `"DEFAULT"` interface string
-is consistent with this: the descriptor labels the mode as the ordinary one, not
-a recovery or download mode. Supporting evidence:
+The relationship among NAND state, firmware version, button state, and subclass
+selection remains unresolved. Discussion #11 records this unit's failure
+signature on a normally booting Cortana unit, while other reports omit the
+starting boot state or raw descriptors. Destructive NAND changes are not a
+valid way to test the hypothesis.
 
-- The successful ARM flash began with a unit that had missed the final OTA and
-  could not complete setup, so its boot chain was not in a healthy state.
-- The 2021 report in Discussion #11 came from a unit that booted normally to
-  Cortana and produced this unit's exact symptoms. It was never resolved.
-- This unit boots the final Bluetooth firmware normally and shows the same
-  symptoms.
+One host-side diagnostic remains available through `start-session.sh`:
 
-Against it: `rbeesley` reported reaching U-Boot and an ADB shell in Discussion
-#3 while doing development, though that report does not say whether the unit had
-already been modified.
-
-If the explanation is correct, reaching subclass `0xFF` on a healthy unit would
-require invalidating the NAND boot chain. That is a destructive write and is
-outside the safe boundary of this work.
-
-Two host-side variants remain available through `start-session.sh`. Both are
-weak leads, since the served `08_IMAGE` is the vendor's own unmodified blob and
-carries no trace of this unit's identifier:
-
-- `absent` removes `08_IMAGE` so the request cannot be satisfied. Mainly a
+* `absent` removes `08_IMAGE` so the request cannot be satisfied. It is a
   control, to confirm the request is not itself what triggers the disconnect.
-- `erom` serves `bcm_erom.bin.usb` in its place. Likely to misparse, since the
-  iROM path sends that file with no size header while Phase 2 prepends one.
 
 ## Arming download mode
 
@@ -427,12 +407,14 @@ document and remains untested here.
 
 ## Safe boundary
 
-The boot chain loads into RAM. Persistent storage is untouched unless a write
-command is issued at the U-Boot prompt.
+The intended boot chain loads into RAM, and no known NAND-write command was
+issued during these tests. Complete absence of device-side persistent writes
+has not been independently verified with before-and-after storage captures.
 
 Keep `83_IMAGE` and `99_IMAGE` out of the working directory. `83_IMAGE` is the
 NAND firmware image and `99_IMAGE` is reported to brick the unit
-unrecoverably. Their absence makes an accidental flash impossible.
+unrecoverably. Keep `79_IMAGE` comment-only so no command runs automatically.
+These controls prevent the known vendor NAND-write workflow from proceeding.
 
 Read-only commands such as `help`, `printenv`, and `bdinfo` are safe. Do not
 issue `nand`, `nandinit`, `nanderase`, `tftp2nand`, `l2nand`, or `saveenv`

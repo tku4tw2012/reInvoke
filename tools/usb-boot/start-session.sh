@@ -1,4 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Copyright (c) Microsoft Corporation.
+# SPDX-License-Identifier: MIT
+#
 # Bring up the Marvell usb_boot session for the Harman Kardon Invoke.
 #
 # Starts usb_boot and attaches the console client that it requires before it
@@ -7,7 +10,7 @@
 #   /tmp/uboot.log - U-Boot console transcript
 #
 # Send commands to the prompt with:  echo 'help' > /tmp/uboot_cmd
-set -u
+set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PORT=8141
@@ -29,13 +32,12 @@ for f in 83_IMAGE 99_IMAGE; do
 done
 
 # This unit requests image type 0x08, which is outside the documented boot
-# chain. These variants test what it will accept. All are RAM-only.
+# chain. The absent variant tests whether sending the record causes disconnect.
 [ -f 08_IMAGE.stock ] || cp 08_IMAGE 08_IMAGE.stock
 case "$VARIANT" in
   stock)   cp 08_IMAGE.stock 08_IMAGE ;;
   absent)  rm -f 08_IMAGE ;;
-  erom)    cp bcm_erom.bin.usb 08_IMAGE ;;
-  *) echo "FATAL: unknown variant '$VARIANT' (stock|absent|erom)" >&2; exit 1 ;;
+  *) echo "FATAL: unknown variant '$VARIANT' (stock|absent)" >&2; exit 1 ;;
 esac
 echo "variant: $VARIANT"
 
@@ -43,12 +45,16 @@ if [ ! -f 79_IMAGE ]; then
   cp 79_IMAGE.uboot_cmdline 79_IMAGE
 fi
 if grep -qvE '^#|^$' 79_IMAGE 2>/dev/null; then
-  echo "WARNING: 79_IMAGE contains commands that will run automatically:" >&2
+  echo "FATAL: 79_IMAGE contains commands that would run automatically:" >&2
   grep -vE '^#|^$' 79_IMAGE >&2
+  exit 1
 fi
 
 for pid in $(pgrep -f "usb_boot $((1286))" 2>/dev/null) $(pgrep -f "uboot-console.py" 2>/dev/null); do
-  kill "$pid" 2>/dev/null
+  if ! kill "$pid" 2>/dev/null && [[ -d "/proc/${pid}" ]]; then
+    echo "FATAL: failed to stop existing process ${pid}" >&2
+    exit 1
+  fi
 done
 sleep 1
 

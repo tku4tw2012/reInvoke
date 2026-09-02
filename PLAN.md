@@ -1,9 +1,14 @@
-# Project Plan and Handoff
+---
+title: Project plan and handoff
+description: Current evidence, project status, and next steps for reInvoke
+ms.date: 2026-09-02
+ms.topic: overview
+---
 
 Current state, established facts, and next steps. This file exists so work can resume
 in a fresh session — or from GitHub on the web — without the original conversation.
 
-**Last updated:** 2026-08-28
+**Last updated:** 2026-09-02
 
 ---
 
@@ -19,7 +24,7 @@ in a fresh session — or from GitHub on the web — without the original conver
 | Analysis — unpack and understand the firmware | **Done** |
 | Control-plane emulation — device userland runs off-device | **Done** — see [control-plane-emulation.md](docs/emulation/control-plane-emulation.md) |
 | Evidence closure — FCC exhibits, OTA2, sibling cross-index | **Done** |
-| Hardware validation — donor device(s) available | **Ready to start** — procedure in [no-disassembly-observation-procedure.md](docs/no-disassembly-observation-procedure.md) |
+| Hardware validation — donor device(s) available | **In progress** — Bluetooth works; USB boundary measured; closed-unit controls remain |
 
 ### The finding that reframes the project
 
@@ -130,10 +135,12 @@ mtdparts=mv_nand:
   1M(bbt)
 ```
 
-- Partitions sum to **exactly 512 MB**, establishing NAND size by derivation.
-- Several regions are **A/B paired** (`post-bootloader` ×2, `tz_en`/`tz_en-B`,
-  `bootimgs`/`bootimgs-B`), indicating failsafe update capability. Worth confirming
-  against the OTA bundle.
+- The recovery command's partitions sum to exactly 512 MiB. Third-party
+  `/proc/mtd` output reports a 256 MiB aggregate device, so physical capacity and
+  applicability of the recovery map remain unresolved.
+- Several regions are paired (`post-bootloader` twice, `tz_en`/`tz_en-B`, and
+  `bootimgs`/`bootimgs-B`). Their names suggest redundancy, but slot-selection
+  and fallback semantics remain unresolved.
 - `tz_en` implies a TrustZone/secure-world image.
 
 ### Boot parameters — same file
@@ -201,8 +208,9 @@ most consequential artifact in the archive. See
    `revival-roadmap.md`, `azure-restore-runbook.md`) was committed as the
    clean preservation milestone.
 
-**Phase 3 is fully closed.** All static, firmware-only analysis achievable
-without a physical unit has been completed and committed.
+The Phase 3 preservation and extraction baseline is complete. Targeted static
+analysis remains open for boot-stage identity, opaque USB records, factory-mode
+selection, and active-slot behavior.
 
 ### Phase 4 — hardware validation (current phase)
 
@@ -222,14 +230,16 @@ this session those claims cited evidence the project did not possess.
    is already a Bluetooth-speaker build, so a working unit may substantially
    satisfy the end goal with no intervention.
 2. Does the Micro-USB service port expose a Marvell boot endpoint?
-   **Answered 2026-09-01: yes, but the boot chain does not start.** The unit
+   **Answered 2026-09-01: yes, but the host's iROM bootstrap path is not
+   entered.** The unit
    presents `1286:8174`, the BG2CDP Boot Device, for roughly four seconds on
-   every power-on. `usb_boot` reaches it, claims the interface, and completes a
-   full image transfer. However the interface subclass reads 254 on every
-   attempt, and `usb_boot` only enters the iROM bootstrap path on subclass
-   `0xFF`. The vendor button sequence produces the yellow panel indication and a
-   sustained retry loop, but not a subclass change, so no U-Boot console has
-   been reached. Details in [usb-service-mode.md](docs/usb-service-mode.md).
+   every power-on. `usb_boot` reaches it, claims the interface, and reports a
+   complete `08_IMAGE` transfer. However `bDeviceSubClass` reads 254 on every
+   captured attempt, and `usb_boot` only enters its iROM bootstrap path on
+   `0xFF`. The vendor button sequence produces the yellow panel indication and
+   a sustained retry loop, but not a captured subclass change, so no U-Boot
+   console has been reached. Details are in
+   [usb-service-mode.md](docs/usb-service-mode.md).
 
 **Remaining steps, once those two are answered:**
 
