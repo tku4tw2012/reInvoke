@@ -1,7 +1,13 @@
-# USB boot session tooling
+---
+title: USB boot session tooling
+description: Host tools for observing the Invoke Marvell boot endpoint without known NAND writes
+ms.date: 2026-09-02
+ms.topic: how-to
+---
 
-Host-side tooling for reaching the Marvell BootROM on the Harman Kardon Invoke
-over Micro-USB. Verified against hardware on 2026-09-01. Background and the
+Host-side tooling for observing the Marvell boot/download endpoint on the Harman
+Kardon Invoke over Micro-USB. Verified against hardware on 2026-09-01.
+Background and the
 service-mode entry sequence are in [../../docs/usb-service-mode.md](../../docs/usb-service-mode.md).
 
 No proprietary files are included here. The Marvell `usb_boot` binary and the
@@ -48,11 +54,11 @@ image type `0x08`, which is what this unit requests:
 |---|---|
 | `stock` (default) | Serve the bundle's `08_IMAGE` |
 | `absent` | Remove `08_IMAGE` so the request cannot be satisfied |
-| `erom` | Serve a copy of `bcm_erom.bin.usb` as `08_IMAGE` |
 
 The original is preserved as `08_IMAGE.stock` on first run and restored by
-`./start-session.sh stock`. All variants are RAM-only and write nothing to the
-device.
+`./start-session.sh stock`. The wrapper does not stage known NAND images or
+automatic commands. Complete absence of device-side persistent writes has not
+been verified by before-and-after storage capture.
 
 ## Reading the session
 
@@ -77,10 +83,10 @@ power cycle:
 python3 interrupt-autoboot.py 180
 ```
 
-This is aimed at the case where the device's request for image type `0x08`
-comes from a running U-Boot executing `usbload 8`, rather than from the mask
-ROM. If an autoboot countdown is in progress, a keypress drops it to a prompt.
-Only newlines are sent, which are empty commands at a prompt.
+This tests whether the device's request for image type `0x08` comes from a
+running U-Boot executing `usbload 8`. A completed interrupt transfer produced
+no visible response on this unit; that result does not prove firmware consumed
+the byte or that it reached the relevant timing window.
 
 ## Why the console client is required
 
@@ -94,9 +100,9 @@ negotiation command, so a client that replies will loop indefinitely.
 
 ## Safety
 
-`start-session.sh` aborts if `83_IMAGE` or `99_IMAGE` is present. The first
-writes NAND; the second is reported to brick the unit unrecoverably. Keeping
-them out of the working directory makes an accidental flash impossible.
+`start-session.sh` aborts if `83_IMAGE` or `99_IMAGE` is present or if
+`79_IMAGE` contains a non-comment command. The first is used by the vendor NAND
+workflow; the second is reported to brick the unit unrecoverably.
 
 The boot chain loads into RAM and writes nothing on its own. Avoid `nand`,
 `nandinit`, `nanderase`, `tftp2nand`, `l2nand`, and `saveenv` at the prompt on a
