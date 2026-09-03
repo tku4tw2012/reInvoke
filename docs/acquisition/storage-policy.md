@@ -72,8 +72,8 @@ Azure Blob Storage, including the Git mirrors.
 |---|---|
 | Resource group | `<resource-group>` |
 | Storage account | `<storage-account>` |
-| Container | `archive` |
-| Region | `westus2` |
+| Container | `<container>` |
+| Region | `<azure-region>` |
 | Redundancy | Standard LRS |
 | Access tier | Cool |
 | Public blob access | Disabled |
@@ -85,7 +85,7 @@ so Tier 1 remains the authoritative catalogue of everything held in Tier 3.
 
 ### Why Cool, and not Archive
 
-Measured cost for the 4.9 GB working set in `westus2`:
+Measured example cost for the 4.9 GB working set:
 
 | Tier | Minimum retention | Access | Annual cost |
 |---|---|---|---|
