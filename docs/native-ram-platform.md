@@ -443,8 +443,16 @@ external 40,067,033-byte initramfs has SHA-256
 Archive inspection confirmed the owned daemon, provisioning adapters, release
 manifest, pinned module tree, and updated PID 1. PID 1 restarts networkd after
 failure with a five-second delay, sends its output to the bounded kernel log, and
-supports `reinvoke.networkd=off` for manual recovery. This image has not yet
-completed a cold RAM boot.
+supports `reinvoke.networkd=off` for manual recovery.
+
+On 2026-09-03 the checksum-gated image was cold-booted through yellow mode.
+PID 1 auto-started `reinvoke-networkd`, the service entered its expected
+supplicant-wait state, and the mount table showed only RAM-backed or virtual
+filesystems; no NAND or MTD block was mounted. The SD8887 WLAN and Bluetooth
+drivers also loaded. Because this acceptance image intentionally contained no
+station credentials, it did not attempt association, DHCP, DNS, or default
+route acquisition; those credentialed transitions remain covered by the live
+RAM-only validation above.
 
 ### RAM-only replacement Bluetooth control path
 

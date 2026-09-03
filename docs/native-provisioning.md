@@ -242,6 +242,17 @@ module tree, release manifest, and PID 1. Provenance is recorded in
 
 ## Remaining validation
 
-Cold-boot the checksum-gated image and verify automatic lifecycle startup.
+The checksum-gated image cold-booted in yellow mode on 2026-09-03. PID 1
+automatically started `reinvoke-networkd`; the root filesystem contained only
+`rootfs`, `proc`, `sysfs`, `devtmpfs`, `devpts`, and `tmpfs` mounts, with no
+NAND or MTD block mounted. The SD8887 WLAN and Bluetooth drivers loaded, and
+the supervisor correctly remained waiting for a root-controlled station
+supplicant.
+
+This image intentionally contained no station credentials, so association,
+DHCP, DNS, and default-route acquisition were not expected in this cold-boot
+check. The already validated credentialed station lifecycle remains covered by
+the live RAM-only validation above.
+
 Persistent storage remains out of scope until backup, rollback, and recovery
 are independently proven.
