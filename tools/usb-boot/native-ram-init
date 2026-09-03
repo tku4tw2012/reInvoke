@@ -13,7 +13,8 @@ log() {
 ${BB} mount -t proc proc /proc
 ${BB} mount -t sysfs sysfs /sys
 ${BB} mount -t tmpfs devtmpfs /dev
-${BB} mkdir -p /dev/pts /tmp /run /data/local/tmp
+${BB} mkdir -p /dev/pts /tmp /run /run/reinvoke /data/local/tmp
+${BB} chmod 0700 /run/reinvoke
 ${BB} mount -t devpts devpts /dev/pts
 ${BB} mount -t tmpfs tmpfs /tmp
 
@@ -147,6 +148,26 @@ else
     bt_fw_serial=0 ||
     log "failed to load native SD8887 Bluetooth"
 fi
+
+case " $(${BB} cat /proc/cmdline) " in
+  *" reinvoke.networkd=off "*)
+    log "owned network lifecycle service disabled by kernel command line"
+    ;;
+  *)
+    if ${BB} test -x /usr/sbin/reinvoke-networkd; then
+      (
+        while true; do
+          /usr/sbin/reinvoke-networkd > /dev/kmsg 2>&1
+          networkd_status="$?"
+          log "network lifecycle service exited ${networkd_status}"
+          ${BB} sleep 5
+        done
+      ) &
+      echo "$!" > /run/reinvoke/networkd-supervisor.pid
+      log "owned network lifecycle service supervisor started"
+    fi
+    ;;
+esac
 
 (
   while true; do

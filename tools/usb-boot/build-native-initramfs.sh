@@ -9,6 +9,8 @@ set -euo pipefail
 readonly EXPECTED_SOURCE_SHA256="08a8f96a5c476a08ba19441d83637e606f27f442d56c2689dd6b56d2fc72b7a8"
 readonly EXPECTED_PROVISIOND_SHA256="2948300b5be513e57ec26302f3f393b15759344b5e3c5cabdb84061a3b8e1b70"
 readonly EXPECTED_WIFI_APPLYD_SHA256="6697df000d130a6461d1e3f57b6ebe8b1ad1742984a94250bc1e243dca097610"
+readonly EXPECTED_NETWORKD_SHA256="e6d847fd20f0bb784f019169211f0200d2f43edb5ee8a030e17b6d636f58148f"
+readonly EXPECTED_MODULE_TREE_MANIFEST_SHA256="06d7a5f5bc43c3b3d869b9b962e1ef70d7f3c3fc15d934c8dc020332b57b940a"
 
 usage() {
   local exit_code="${1:-0}"
@@ -20,6 +22,7 @@ Usage: build-native-initramfs.sh \
   [--kernel-modules PATH] \
   [--provisiond PATH] \
   [--wifi-applyd PATH] \
+  [--networkd PATH] \
   --output PATH
 
 Builds a RAM-only 82_IMAGE derivative. The donor rootfs supplies the Invoke's
@@ -45,6 +48,7 @@ main() {
   local kernel_modules=""
   local provisiond=""
   local wifi_applyd=""
+  local networkd=""
   local output_path=""
   local script_dir
   local work_dir
@@ -58,7 +62,9 @@ main() {
   local module_tree=""
   local module_flavor=""
   local bluetooth_module=""
+  local module_tree_manifest_sha256
   local -a module_trees=()
+  local -a module_symlinks=()
 
   while (( $# > 0 )); do
     case "$1" in
@@ -87,6 +93,11 @@ main() {
         wifi_applyd="$2"
         shift 2
         ;;
+      --networkd)
+        [[ -n "${2:-}" ]] || err "--networkd requires a path"
+        networkd="$2"
+        shift 2
+        ;;
       --output)
         [[ -n "${2:-}" ]] || err "--output requires a path"
         output_path="$2"
@@ -109,7 +120,7 @@ main() {
   [[ ! -e "${output_path}" ]] ||
     err "refusing to overwrite existing output: ${output_path}"
 
-  for command_name in cp cpio find gzip install sha256sum sort; do
+  for command_name in awk cp cpio find gzip install sha256sum sort touch xargs; do
     require_command "${command_name}"
   done
 
@@ -160,6 +171,25 @@ main() {
     done
     [[ -n "${bluetooth_module}" ]] ||
       err "kernel module root has no native SD8887 Bluetooth module"
+    mapfile -t module_symlinks < <(
+      find "${module_tree}" -type l -print |
+        LC_ALL=C sort
+    )
+    (( ${#module_symlinks[@]} == 2 )) &&
+      [[ "${module_symlinks[0]}" == "${module_tree}/build" ]] &&
+      [[ "${module_symlinks[1]}" == "${module_tree}/source" ]] ||
+      err "kernel module tree has unexpected symlinks"
+    module_tree_manifest_sha256="$(
+      cd "${kernel_modules}"
+      find . -type f -print0 |
+        LC_ALL=C sort --zero-terminated |
+        xargs --null sha256sum |
+        sha256sum |
+        awk '{print $1}'
+    )"
+    [[ "${module_tree_manifest_sha256}" == \
+      "${EXPECTED_MODULE_TREE_MANIFEST_SHA256}" ]] ||
+      err "kernel module tree checksum mismatch"
 
   fi
   if [[ -n "${provisiond}" ]]; then
@@ -175,6 +205,13 @@ main() {
     printf "%s  %s\n" "${EXPECTED_WIFI_APPLYD_SHA256}" "${wifi_applyd}" |
       sha256sum --check --status ||
       err "Wi-Fi apply daemon checksum mismatch"
+  fi
+  if [[ -n "${networkd}" ]]; then
+    [[ -f "${networkd}" ]] ||
+      err "network lifecycle service not found: ${networkd}"
+    printf "%s  %s\n" "${EXPECTED_NETWORKD_SHA256}" "${networkd}" |
+      sha256sum --check --status ||
+      err "network lifecycle service checksum mismatch"
   fi
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -208,6 +245,15 @@ main() {
   if [[ -n "${module_tree}" ]]; then
     cp -a "${module_tree}" "${rootfs_dir}/lib/modules/"
   fi
+  find "${rootfs_dir}/lib/modules" \
+    -mindepth 2 -maxdepth 2 -type l \
+    \( -name build -o -name source \) -delete
+  if find "${rootfs_dir}/lib/modules" \
+    -mindepth 2 -maxdepth 2 -type l \
+    \( -name build -o -name source \) -print -quit |
+    grep -q .; then
+    err "failed to remove host-only kernel module symlinks"
+  fi
   if [[ -n "${provisiond}" ]]; then
     install -m 0755 "${provisiond}" \
       "${rootfs_dir}/usr/sbin/reinvoke-provisiond"
@@ -215,6 +261,10 @@ main() {
   if [[ -n "${wifi_applyd}" ]]; then
     install -m 0755 "${wifi_applyd}" \
       "${rootfs_dir}/usr/sbin/reinvoke-wifi-applyd"
+  fi
+  if [[ -n "${networkd}" ]]; then
+    install -m 0755 "${networkd}" \
+      "${rootfs_dir}/usr/sbin/reinvoke-networkd"
   fi
 
   rm -f \
@@ -237,15 +287,19 @@ main() {
     if [[ -n "${wifi_applyd}" ]]; then
       printf "Wi-Fi apply daemon: included, manual start only\n"
     fi
+    if [[ -n "${networkd}" ]]; then
+      printf "network lifecycle service: included, auto-started\n"
+    fi
     printf "storage policy: no NAND partitions mounted\n"
   } > "${rootfs_dir}/etc/reinvoke-release"
 
   umask 077
+  find "${rootfs_dir}" -exec touch --no-dereference --date="@0" {} +
   (
     cd "${rootfs_dir}"
     find . -print0 |
       LC_ALL=C sort --zero-terminated |
-      cpio --null --create --format=newc --owner=0:0 |
+      cpio --null --create --format=newc --owner=0:0 --reproducible |
       gzip --no-name --best
   ) > "${output_path}"
 

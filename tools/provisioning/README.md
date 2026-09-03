@@ -61,6 +61,10 @@ tools/provisioning/build.sh \
 tools/provisioning/build.sh \
   --component wifi-applyd \
   --output ../reinvoke-archive/build/artifacts/reinvoke-wifi-applyd
+
+tools/provisioning/build.sh \
+  --component networkd \
+  --output ../reinvoke-archive/build/artifacts/reinvoke-networkd
 ```
 
 ## Run
@@ -103,7 +107,15 @@ The parser's `-apply-timeout` must be at least five seconds shorter than its
 window and longer than the adapter's `-connect-timeout`. Defaults are 25 and
 20 seconds respectively.
 
-The adapter acknowledges success at `wpa_state=COMPLETED`. DHCP and resolver
-configuration remain a separate lifecycle boundary so the privileged adapter
-does not gain route or DNS policy. An owned network service must supervise that
-boundary for unattended operation.
+The adapter acknowledges success at `wpa_state=COMPLETED`.
+`reinvoke-networkd` owns the separate DHCP and resolver boundary so the
+credential adapter does not gain route or DNS policy. It monitors the
+root-controlled supplicant socket, supervises BusyBox `udhcpc`, validates lease
+values before invoking fixed commands without a shell, and atomically points
+`/etc/resolv.conf` at RAM-only resolver state.
+
+The service removes its IPv4 address, default route, resolver link, and lease
+state on disconnect or shutdown. It reacquires after association, credential
+replacement, DHCP failure, or daemon restart. A full-lifetime lock rejects a
+second supervisor, and stale process records never authorize signaling an
+unrelated PID on kernels without process file descriptors.

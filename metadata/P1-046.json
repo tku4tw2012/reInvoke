@@ -1,0 +1,56 @@
+{
+  "id": "P1-046",
+  "kind": "owned_network_lifecycle",
+  "retrieved_utc": "2026-09-03T16:18:00Z",
+  "status": "HARDWARE_VALIDATED_RAM_ONLY",
+  "artifact": {
+    "path": "build/artifacts/reinvoke-networkd-20260903/reinvoke-networkd",
+    "sha256": "e6d847fd20f0bb784f019169211f0200d2f43edb5ee8a030e17b6d636f58148f",
+    "size": 2293760
+  },
+  "packaged_initramfs": {
+    "path": "build/artifacts/invoke-native-ram-audio-sd8887-networkd-20260903/82_IMAGE.reinvoke-audio-sd8887-networkd",
+    "sha256": "01e0991ef140a8ab8d916796ae0248e0eb097e89c5f74e531a208af4d32e03a4",
+    "size": 40067033,
+    "status": "BUILT_NOT_COLD_BOOTED"
+  },
+  "kernel_modules": {
+    "release": "3.8.13-reinvoke-audio-sd8887",
+    "tree_manifest_sha256": "06d7a5f5bc43c3b3d869b9b962e1ef70d7f3c3fc15d934c8dc020332b57b940a",
+    "manifest_method": "SHA-256 of the sorted regular-file relative-path SHA-256 manifest; validated input and donor build/source symlinks are stripped from the package"
+  },
+  "compiler": {
+    "metadata": "P1-044",
+    "version": "go1.18.1 linux/amd64",
+    "target": "linux/arm/v7",
+    "cgo": false
+  },
+  "owned_components": [
+    "tools/provisioning/networkd/main.go",
+    "tools/provisioning/networkd/main_test.go",
+    "tools/provisioning/build.sh",
+    "tools/usb-boot/build-native-initramfs.sh",
+    "tools/usb-boot/native-ram-init"
+  ],
+  "runtime_constraints": [
+    "The service requires root and a root-owned mode-0700 ramfs or tmpfs runtime directory.",
+    "The supplicant control directory and socket must be root-controlled.",
+    "Lease input is validated before fixed BusyBox commands are executed without a shell.",
+    "A full-lifetime lock prevents concurrent supervisors.",
+    "Prior non-child process records are never used to signal a PID on the target's pre-pidfd kernel.",
+    "DHCP event handlers must match the active owner token and interface before changing network state.",
+    "All lease, resolver, lock, PID, and ownership state remains in RAM."
+  ],
+  "validation": [
+    "Two clean static ARMv7 builds were byte-identical.",
+    "Owned DHCP acquired a lease and preserved gateway, public IPv4, and DNS reachability.",
+    "Graceful shutdown removed DHCP, IPv4, route, resolver, and lease state.",
+    "Service restart reacquired connectivity.",
+    "Station disconnect cleaned state and reconnect reacquired connectivity.",
+    "A second supervisor was rejected without disturbing the active service.",
+    "A reused stale PID was ignored without signaling the unrelated process, and supervision reacquired connectivity.",
+    "A disowned DHCP event left the active route and failure marker unchanged.",
+    "Authenticated credential replacement stopped the prior supplicant and DHCP child, then the unchanged supervisor reacquired association, lease, route, resolver, IPv4, and DNS.",
+    "Two packaged initramfs builds were byte-identical and contained the reviewed daemon, adapters, release manifest, and PID 1."
+  ]
+}
