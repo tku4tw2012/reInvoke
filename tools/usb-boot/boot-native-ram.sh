@@ -24,6 +24,7 @@ Options:
   --load-timeout SECONDS    Kernel usbload timeout (default: 120)
   --usb-timeout SECONDS     USB gadget criterion (default: 30)
   --adb-serial SERIAL       Expected ADB serial
+  --wifi-mode MODE          sta or sta-uap (default: sta)
   --prepare-only            Validate and stage without sending commands
   --help                    Show this help
 
@@ -140,6 +141,7 @@ main() {
   local load_timeout=120
   local usb_timeout=30
   local adb_serial="0123456789ABCDEF"
+  local wifi_mode="sta"
   local prepare_only=0
   local initramfs_size
   local console_offset
@@ -203,6 +205,12 @@ main() {
       --adb-serial)
         [[ -n "${2:-}" ]] || err "--adb-serial requires a value"
         adb_serial="$2"
+        shift 2
+        ;;
+      --wifi-mode)
+        [[ "${2:-}" == "sta" || "${2:-}" == "sta-uap" ]] ||
+          err "--wifi-mode must be sta or sta-uap"
+        wifi_mode="$2"
         shift 2
         ;;
       --prepare-only)
@@ -281,6 +289,9 @@ main() {
     "U-Boot prompt return" "${load_timeout}"
 
   bootargs="console=ttyS0,115200 earlyprintk loglevel=8 debug root=/dev/ram rdinit=/init init=/init initrd=${INITRAMFS_ADDRESS},${initramfs_size}"
+  if [[ "${wifi_mode}" == "sta-uap" ]]; then
+    bootargs="${bootargs} reinvoke.wifi_mode=sta-uap"
+  fi
   printf "Sending initramfs load and volatile boot command batch\n"
   printf "usbload 0x82 %s\rset bootargs %s\rbootm %s\r" \
     "${INITRAMFS_ADDRESS}" "${bootargs}" "${KERNEL_STAGING_ADDRESS}" \

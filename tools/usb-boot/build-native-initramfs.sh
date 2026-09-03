@@ -7,6 +7,7 @@
 set -euo pipefail
 
 readonly EXPECTED_SOURCE_SHA256="08a8f96a5c476a08ba19441d83637e606f27f442d56c2689dd6b56d2fc72b7a8"
+readonly EXPECTED_PROVISIOND_SHA256="a4024dac2b178e1060eda8a240f644b0981c66ee82e8c32c7da34d59184a07b1"
 
 usage() {
   local exit_code="${1:-0}"
@@ -16,6 +17,7 @@ Usage: build-native-initramfs.sh \
   --source-initramfs PATH \
   --donor-rootfs PATH \
   [--kernel-modules PATH] \
+  [--provisiond PATH] \
   --output PATH
 
 Builds a RAM-only 82_IMAGE derivative. The donor rootfs supplies the Invoke's
@@ -39,17 +41,20 @@ main() {
   local source_initramfs=""
   local donor_rootfs=""
   local kernel_modules=""
+  local provisiond=""
   local output_path=""
   local script_dir
   local work_dir
   local rootfs_dir
   local archive_listing
   local cleanup_command
+  local candidate
   local donor_version
   local firmware_dir
   local module_release=""
   local module_tree=""
   local module_flavor=""
+  local bluetooth_module=""
   local -a module_trees=()
 
   while (( $# > 0 )); do
@@ -67,6 +72,11 @@ main() {
       --kernel-modules)
         [[ -n "${2:-}" ]] || err "--kernel-modules requires a path"
         kernel_modules="$2"
+        shift 2
+        ;;
+      --provisiond)
+        [[ -n "${2:-}" ]] || err "--provisiond requires a path"
+        provisiond="$2"
         shift 2
         ;;
       --output)
@@ -124,8 +134,7 @@ main() {
     module_tree="${module_trees[0]}"
     module_release="${module_tree##*/}"
     if [[ -f "${module_tree}/kernel/arch/arm/mach-berlin/modules/wlan_sd8887/mlan.ko" &&
-          -f "${module_tree}/kernel/arch/arm/mach-berlin/modules/wlan_sd8887/sd8xxx.ko" &&
-          -f "${module_tree}/kernel/arch/arm/mach-berlin/modules/bt_sd8887/bt8xxx.ko" ]]; then
+          -f "${module_tree}/kernel/arch/arm/mach-berlin/modules/wlan_sd8887/sd8xxx.ko" ]]; then
       module_flavor="wlan_sd8887"
     elif [[ -f "${module_tree}/kernel/arch/arm/mach-berlin/modules/wlan_sd8801/88mlan.ko" &&
             -f "${module_tree}/kernel/arch/arm/mach-berlin/modules/wlan_sd8801/sd8801.ko" ]]; then
@@ -133,6 +142,24 @@ main() {
     else
       err "kernel module root has no reviewed SD8887-compatible module set"
     fi
+    for candidate in \
+      "${module_tree}/kernel/arch/arm/mach-berlin/modules/bt_sd8887/bt8xxx.ko" \
+      "${module_tree}/extra/bt8xxx.ko"; do
+      if [[ -f "${candidate}" ]]; then
+        bluetooth_module="${candidate#"${module_tree}/"}"
+        break
+      fi
+    done
+    [[ -n "${bluetooth_module}" ]] ||
+      err "kernel module root has no native SD8887 Bluetooth module"
+
+  fi
+  if [[ -n "${provisiond}" ]]; then
+    [[ -f "${provisiond}" ]] ||
+      err "provisioning daemon not found: ${provisiond}"
+    printf "%s  %s\n" "${EXPECTED_PROVISIOND_SHA256}" "${provisiond}" |
+      sha256sum --check --status ||
+      err "provisioning daemon checksum mismatch"
   fi
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -166,6 +193,10 @@ main() {
   if [[ -n "${module_tree}" ]]; then
     cp -a "${module_tree}" "${rootfs_dir}/lib/modules/"
   fi
+  if [[ -n "${provisiond}" ]]; then
+    install -m 0755 "${provisiond}" \
+      "${rootfs_dir}/usr/sbin/reinvoke-provisiond"
+  fi
 
   rm -f \
     "${rootfs_dir}/bin/flash_custk" \
@@ -179,6 +210,10 @@ main() {
     if [[ -n "${module_release}" ]]; then
       printf "replacement kernel modules: %s\n" "${module_release}"
       printf "replacement module flavor: %s\n" "${module_flavor}"
+      printf "replacement bluetooth module: %s\n" "${bluetooth_module}"
+    fi
+    if [[ -n "${provisiond}" ]]; then
+      printf "provisioning daemon: included, manual start only\n"
     fi
     printf "storage policy: no NAND partitions mounted\n"
   } > "${rootfs_dir}/etc/reinvoke-release"
