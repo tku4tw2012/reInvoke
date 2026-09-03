@@ -473,7 +473,11 @@ With MCU amplifier and DAC mute asserted and host volume limited to one percent,
 an A2DP stream opened ALSA card 1 as stereo `S16_LE` at 44.1 kHz. The hardware
 pointer advanced from `192000` to `238080` while the PCM remained `RUNNING`.
 This proves the muted Bluetooth transport, SBC decode, BlueALSA, ALSA, and DMA
-pipeline. Audible Bluetooth output remains an attended acceptance test.
+pipeline. For the attended acceptance on 2026-09-03, the owned MCU WAMP
+procedures explicitly unmuted the amplifier and DAC, the paired Mac mini sent a
+440 Hz tone at 20 percent host volume, and the operator confirmed audible
+speaker output. The host volume was then restored to one percent; the physical
+outputs remain under the MCU mute procedures.
 Provenance is in [P1-045](../metadata/P1-045.json).
 
 ## Rebuilding the RAM platform

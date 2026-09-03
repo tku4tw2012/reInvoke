@@ -25,7 +25,7 @@ conversation.
 | Analysis — unpack and understand the firmware | **Done** |
 | Control-plane emulation — device userland runs off-device | **Done** — see [control-plane-emulation.md](docs/emulation/control-plane-emulation.md) |
 | Evidence closure — FCC exhibits, OTA2, sibling cross-index | **Done** |
-| Hardware validation, donor device available | **In progress**: U-Boot and custom RAM Linux reached over USB; Wi-Fi, MCU, DSP, ALSA, audible output, rotary volume, native HCI, peer pairing, and the muted BlueZ/BlueALSA A2DP-to-PCM path are verified; attended audible Bluetooth acceptance remains; see [native-ram-platform.md](docs/native-ram-platform.md) |
+| Hardware validation, donor device available | **In progress**: U-Boot and custom RAM Linux reached over USB; Wi-Fi, MCU, DSP, ALSA, audible output, rotary volume, native HCI, peer pairing, and the BlueZ/BlueALSA A2DP-to-PCM path are verified in RAM; see [native-ram-platform.md](docs/native-ram-platform.md) |
 
 ### The finding that reframes the project
 
@@ -251,10 +251,10 @@ this session those claims cited evidence the project did not possess.
 
 **The two observations that matter most:**
 
-1. Does the unit pair over Bluetooth and play audio? **Partially answered:**
+1. Does the unit pair over Bluetooth and play audio? **Answered 2026-09-03:**
    the RAM-only BlueZ/BlueALSA replacement forms a durable allowlisted bond,
-   decodes A2DP SBC, and advances the target ALSA DMA path while physically
-   muted. A brief attended unmuted acceptance test remains.
+   decodes A2DP SBC, advances the target ALSA DMA path, and produced audible
+   output after the MCU amplifier and DAC were explicitly unmuted.
 2. Does the Micro-USB service port expose a Marvell boot endpoint?
    **Answered 2026-09-02: yes.** Yellow service mode transitions through
    Marvell USB stages and reaches interactive RAM-loaded U-Boot. U-Boot then
@@ -275,11 +275,11 @@ build of the pinned open-source flasher at commit `63444e82`.
    bidirectional startup.
 3. **Done:** enable Berlin ASoC and ALSA loopback, enumerate both cards, pass a
    muted zero-data test, and audibly verify a guarded low-level tone.
-4. **In progress:** native SD8887 HCI, peer pairing, A2DP/AVRCP, absolute
+4. **Done:** native SD8887 HCI, peer pairing, A2DP/AVRCP, absolute
    volume, and SBC ingress are complete. A static BlueZ/BlueALSA replacement
    now provides a RAM-only, address-allowlisted pairing path and a verified
-   mute-first A2DP-to-PCM pipeline. Complete the short attended audible
-   Bluetooth acceptance test before closing this item. See
+   mute-first A2DP-to-PCM pipeline. The attended audible Bluetooth acceptance
+   test passed on 2026-09-03. See
    [bluetooth-stack.md](docs/emulation/bluetooth-stack.md) and `P1-045`.
 5. Replace donor MCU, DSP, and media adapters with reInvoke-owned services.
 6. **In progress:** the physical-gated provisioning API and authenticated TLS

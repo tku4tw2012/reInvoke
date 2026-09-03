@@ -2,7 +2,7 @@
   "id": "P1-045",
   "kind": "replacement_bluetooth_stack",
   "retrieved_utc": "2026-09-03T13:45:00Z",
-  "status": "HARDWARE_VALIDATED_RAM_ONLY",
+  "status": "HARDWARE_VALIDATED_AUDIBLE_RAM_ONLY",
   "sources": {
     "bluez_5.55": {
       "url": "https://www.kernel.org/pub/linux/bluetooth/bluez-5.55.tar.xz",
@@ -54,6 +54,7 @@
     "The initiating host must also be pairable during the bounded exchange so both controllers request bonding.",
     "Owned helper hashes are provenance records; the launcher checksum-gates third-party artifacts and validates owned helpers as static ARM ELF files.",
     "BlueALSA starts at volume 0, but MCU-controlled physical mute is the authoritative audio safety boundary.",
-    "Muted A2DP playback reached ALSA as stereo S16_LE at 44100 Hz with advancing DMA pointers."
+    "Muted A2DP playback reached ALSA as stereo S16_LE at 44100 Hz with advancing DMA pointers.",
+    "On 2026-09-03, the MCU amplifier and DAC were explicitly unmuted through the owned WAMP procedures, a 440 Hz tone was sent from the paired Mac mini at 20 percent host volume, and the operator confirmed audible output. The host volume was then restored to one percent and the physical outputs were remuted."
   ]
 }
