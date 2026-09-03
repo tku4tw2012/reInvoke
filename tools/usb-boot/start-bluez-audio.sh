@@ -71,7 +71,7 @@ ensure_rootfs_mount() {
   mounted_release="$(
     adb_shell "busybox cat '${MOUNT_POINT}/etc/version.txt' 2>/dev/null" |
       grep -F "Barracuda_libre-12.2050.3" |
-      tail -1
+      tail -1 || true
   )"
   if [[ "${mounted_release}" == "Barracuda_libre-12.2050.3" ]]; then
     return
