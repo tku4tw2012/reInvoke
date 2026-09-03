@@ -144,6 +144,56 @@ raising HCI, L2CAP, and BTIF trace levels. It does not disable A2DP decoding.
 This boundary is preserved for later work, but it should not delay replacing
 the obsolete Bluedroid userspace with a maintained stack.
 
+## RAM-only BlueZ and BlueALSA replacement
+
+The physical RAM-native platform now has a working classic-Bluetooth replacement
+path. BlueZ 5.55 is built statically for the target's old EGLIBC userland and
+started with `ControllerMode=bredr`; this avoids the unsupported GATT setup
+required by the target's MGMT 1.2 kernel. BlueALSA 4.0.0 registers an A2DP
+sink, and `bluealsa-aplay` is ready against ALSA card 1 (`plughw:1,0`) at
+initial volume zero.
+
+The owned [bluez-pairing-agent.c](../../tools/control/bluez-pairing-agent.c)
+registers as the default `org.bluez.Agent1` through a private D-Bus socket. It
+accepts only the operator-supplied peer address and the A2DP/AVRCP service UUIDs;
+all other peers and services are rejected. Pairing, D-Bus state, and BlueZ
+configuration remain in volatile RAM under `/tmp` and
+`/usr/var/lib/bluetooth`. They disappear on reboot. The source and artifact
+hashes are recorded in [P1-045](../../metadata/P1-045.json).
+
+Launch a clean stack with an explicit peer and bounded pairing window:
+
+```bash
+tools/usb-boot/start-bluez-audio.sh \
+  --rootfs path/to/installed-rootfs-region.bin \
+  --bluetoothd path/to/bluetoothd \
+  --bluealsa path/to/bluealsa \
+  --bluealsa-aplay path/to/bluealsa-aplay \
+  --hci-init path/to/hci-init \
+  --pairing-agent path/to/bluez-pairing-agent \
+  --peer-address AA:BB:CC:DD:EE:FF \
+  --pair-seconds 60
+```
+
+The initiating host must also be pairable during this window. On the tested
+BlueZ host, initiating `bluetoothctl pair` while the host adapter was not
+pairable completed a transient `No Bonding` exchange. Enabling host pairability
+for the bounded exchange created a bond that persisted across disconnect. Host
+pairability was disabled immediately afterward.
+
+The Mac mini completed a fresh bond with the RAM-only stack. The target then
+returned to `Pairable=false` and `Discoverable=false`. After disconnecting and
+waiting for the pairing window to close, the host retained `Paired=true`, the
+target retained its volatile bond record, and A2DP reconnected without opening
+another pairing window.
+
+With the MCU amplifier and DAC mute asserted and the host sink limited to one
+percent, a streamed test tone put ALSA card 1 into `RUNNING` state. The PCM was
+stereo `S16_LE` at 44.1 kHz, and its hardware pointer advanced from `192000` to
+`238080`. This proves A2DP transport, SBC decode, BlueALSA handoff, ALSA
+playback, and DMA operation. Physical mute remained asserted, so audible
+Bluetooth playback still requires a short attended acceptance test.
+
 The UIPC command values, sink queue, decoder-reset path, and expected automatic
 decode trigger were cross-checked against official AOSP `system/bt` tag
 `android-6.0.1_r81`, commit

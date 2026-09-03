@@ -1,0 +1,59 @@
+{
+  "id": "P1-045",
+  "kind": "replacement_bluetooth_stack",
+  "retrieved_utc": "2026-09-03T13:45:00Z",
+  "status": "HARDWARE_VALIDATED_RAM_ONLY",
+  "sources": {
+    "bluez_5.55": {
+      "url": "https://www.kernel.org/pub/linux/bluetooth/bluez-5.55.tar.xz",
+      "sha256": "8863717113c4897e2ad3271fc808ea245319e6fd95eed2e934fae8e0894e9b88",
+      "license": "GPL-2.0-or-later",
+      "build_flags": [
+        "--disable-systemd",
+        "--enable-library",
+        "--with-systemdunitdir=no"
+      ],
+      "compatibility_patch": "Rename the internal BlueZ 5.55 media callback pause to media_pause for modern unistd.h compatibility."
+    },
+    "bluealsa_4.0.0": {
+      "url": "https://github.com/arkq/bluez-alsa/releases/download/v4.0.0/bluez-alsa-4.0.0.tar.gz",
+      "sha256": "ce5e060e61669d61d44f5f9bad34a7b88378376e9d49d31482406a68127a6b29",
+      "license": "MIT"
+    },
+    "sbc_2.0": {
+      "url": "https://www.kernel.org/pub/linux/bluetooth/sbc-2.0.tar.xz",
+      "sha256": "8f12368e1dbbf55e14536520473cfb338c84b392939cc9b64298360fd4a07992",
+      "license": "GPL-2.0-or-later"
+    },
+    "dbus_1.12.20": {
+      "url": "https://dbus.freedesktop.org/releases/dbus/dbus-1.12.20.tar.xz",
+      "sha256": "f77620140ecb4cdc67f37fb444f8a6bea70b5b6461f12f1cbe2cec60fa7de5fe",
+      "license": "AFL-2.1 OR GPL-2.0-or-later",
+      "build_flags": [
+        "--disable-systemd"
+      ]
+    }
+  },
+  "artifacts": {
+    "bluez_5.55_bluetoothd": "22a68c5d1ff5a20f15a081dd5744e831236c9f3d38ef1796a805f60c8e1147a5",
+    "bluealsa_4.0.0": "66b43a54c1abfaaf45f3ef433466c8ecb69453795a655c89af48d2652e15e35e",
+    "bluealsa_aplay": "2237cce8da108ed3239d54e8077a20fcefe9464ccd2d0c4041a4d650b887b94a",
+    "pairing_agent": "c66a76640029988c416828d5a92ab7ed6cfd82ae6f08ef7379b694dc99b40d83",
+    "hci_initializer": "de8161326eb7d508a116ff03e3d1bdea869ce3453df58df5ecd1262156c2ba57"
+  },
+  "owned_components": [
+    "tools/control/bluez-pairing-agent.c",
+    "tools/control/hci-init.c",
+    "tools/usb-boot/bluez-classic.conf",
+    "tools/usb-boot/start-bluez-audio.sh"
+  ],
+  "runtime_constraints": [
+    "BlueZ 5.55 runs with ControllerMode=bredr because the target kernel exposes MGMT 1.2 and rejects default GATT setup.",
+    "D-Bus state is confined to /tmp; bond state is confined to the RAM-backed /usr/var/lib/bluetooth directory.",
+    "Pairing agent accepts only an operator-supplied allowlisted peer address and A2DP/AVRCP service UUIDs.",
+    "The initiating host must also be pairable during the bounded exchange so both controllers request bonding.",
+    "Owned helper hashes are provenance records; the launcher checksum-gates third-party artifacts and validates owned helpers as static ARM ELF files.",
+    "BlueALSA starts at volume 0, but MCU-controlled physical mute is the authoritative audio safety boundary.",
+    "Muted A2DP playback reached ALSA as stereo S16_LE at 44100 Hz with advancing DMA pointers."
+  ]
+}

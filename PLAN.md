@@ -276,8 +276,11 @@ build of the pinned open-source flasher at commit `63444e82`.
 3. **Done:** enable Berlin ASoC and ALSA loopback, enumerate both cards, pass a
    muted zero-data test, and audibly verify a guarded low-level tone.
 4. **In progress:** native SD8887 HCI, peer pairing, A2DP/AVRCP, absolute
-   volume, and SBC ingress are complete. Replace or bypass the donor decoder
-   handoff so verified incoming media reaches the ALSA `music` PCM.
+   volume, and SBC ingress are complete. A static BlueZ/BlueALSA replacement
+   now provides a RAM-only, address-allowlisted pairing path and a verified
+   mute-first A2DP-to-PCM pipeline. Complete the short attended audible
+   Bluetooth acceptance test before closing this item. See
+   [bluetooth-stack.md](docs/emulation/bluetooth-stack.md) and `P1-045`.
 5. Replace donor MCU, DSP, and media adapters with reInvoke-owned services.
 6. **In progress:** the physical-gated provisioning API and authenticated TLS
    parser are implemented. Add the SD8887 `p2p0` radio adapter, isolated

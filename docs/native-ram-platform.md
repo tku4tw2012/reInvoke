@@ -411,6 +411,28 @@ derived key in mode-0600 RAM, acquired a DHCP lease, and verified gateway,
 public IPv4, and DNS reachability. The station and renewal client remain
 ephemeral, and NAND remains unmounted.
 
+### RAM-only replacement Bluetooth control path
+
+BlueZ 5.55, built statically for the target's EGLIBC 2.12.2 userland, registered
+the classic adapter when launched with `ControllerMode=bredr`. BlueALSA 4.0.0
+registered an A2DP sink and `bluealsa-aplay` opened no PCM until a peer connects.
+The owned pairing agent registered on the private D-Bus system bus and
+allowlisted one operator-supplied peer address plus A2DP/AVRCP services.
+
+The Mac mini was freshly paired after its stale host record was removed. The
+target reported `Paired=true` for that peer while `Pairable=false` and
+`Discoverable=false`. The bond survived a disconnect and reconnect after the
+pairing window closed. Target bond state remained in the volatile
+`/usr/var/lib/bluetooth` directory, and the private D-Bus state remained under
+`/tmp`.
+
+With MCU amplifier and DAC mute asserted and host volume limited to one percent,
+an A2DP stream opened ALSA card 1 as stereo `S16_LE` at 44.1 kHz. The hardware
+pointer advanced from `192000` to `238080` while the PCM remained `RUNNING`.
+This proves the muted Bluetooth transport, SBC decode, BlueALSA, ALSA, and DMA
+pipeline. Audible Bluetooth output remains an attended acceptance test.
+Provenance is in [P1-045](../metadata/P1-045.json).
+
 ## Rebuilding the RAM platform
 
 No proprietary image is committed. Build the sanitized initramfs from held
