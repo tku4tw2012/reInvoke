@@ -1,0 +1,14 @@
+{
+  "clone_url": "https://github.com/Aristoddle/hk-invoke-opensource-speaker.git",
+  "default_branch": "main",
+  "head_commit": "948e85e2ddbdd560e186913cdfaad3f57f118c93",
+  "id": "P2-004",
+  "kind": "git_mirror",
+  "license": "MIT",
+  "license_sha256": "24dc90077c8562e660825666bac67671892aa4ba4c53de78aac82f63790224ab",
+  "mirror_path": "git-mirrors/community/hk-invoke-opensource-speaker.git",
+  "refs_count": 1,
+  "required_commit": "948e85e2ddbdd560e186913cdfaad3f57f118c93",
+  "retrieved_utc": "2026-09-03T00:28:00Z",
+  "status": "MIRRORED_PROVISIONAL"
+}

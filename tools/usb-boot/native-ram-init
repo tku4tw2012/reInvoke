@@ -1,0 +1,146 @@
+#!/bin/busybox sh
+# Copyright (c) Microsoft Corporation.
+# SPDX-License-Identifier: MIT
+
+BB=/bin/busybox
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+log() {
+  echo "reInvoke: $*" > /dev/kmsg
+}
+
+${BB} mount -t proc proc /proc
+${BB} mount -t sysfs sysfs /sys
+${BB} mount -t tmpfs devtmpfs /dev
+${BB} mkdir -p /dev/pts /tmp /run /data/local/tmp
+${BB} mount -t devpts devpts /dev/pts
+${BB} mount -t tmpfs tmpfs /tmp
+
+(umask 0; /sbin/ueventd -s)
+${BB} ifconfig lo 127.0.0.1 up
+
+for mtd_path in /sys/class/mtd/mtd[0-9]*; do
+  if ! ${BB} test -f "${mtd_path}/dev"; then
+    continue
+  fi
+  if [ "$(${BB} cat "${mtd_path}/name")" != "mv_nand" ] ||
+     [ "$(${BB} cat "${mtd_path}/size")" != "268435456" ]; then
+    continue
+  fi
+
+  old_ifs="${IFS}"
+  IFS=:
+  set -- $(${BB} cat "${mtd_path}/dev")
+  IFS="${old_ifs}"
+  if [ "$1" = "90" ] && [ $(($2 % 2)) -eq 0 ]; then
+    ${BB} rm -f /dev/reinvoke-nand-ro
+    ${BB} mknod -m 0400 /dev/reinvoke-nand-ro c "$1" $(($2 + 1))
+    log "read-only NAND node uses major $1 minor $(($2 + 1))"
+    break
+  fi
+done
+
+if ${BB} test -d /sys/class/android_usb/android0; then
+  echo 0 > /sys/class/android_usb/android0/enable
+  echo 0d02 > /sys/class/android_usb/android0/idProduct
+  echo "reInvoke RAM diagnostics" > /sys/class/android_usb/android0/iProduct
+  echo acm,adb > /sys/class/android_usb/android0/functions
+  echo 1 > /sys/class/android_usb/android0/f_acm/instances
+  echo 1 > /sys/class/android_usb/android0/enable
+  /sbin/adbd-root &
+else
+  log "Android USB gadget is unavailable"
+fi
+
+wifi_dir=/lib/firmware/mrvl
+sd8887_module_dir=""
+sd8801_module_dir=""
+bt_module=""
+
+for candidate in \
+  /lib/modules/3.8.13-reinvoke*/kernel/arch/arm/mach-berlin/modules/wlan_sd8887; do
+  if ${BB} test -f "${candidate}/mlan.ko" &&
+     ${BB} test -f "${candidate}/sd8xxx.ko"; then
+    sd8887_module_dir="${candidate}"
+    break
+  fi
+done
+
+for candidate in \
+  /lib/modules/3.8.13-reinvoke*/kernel/arch/arm/mach-berlin/modules/wlan_sd8801 \
+  /lib/modules/3.8.13-mrvl/kernel/arch/arm/mach-berlin/modules/wlan_sd8801; do
+  if ${BB} test -f "${candidate}/88mlan.ko" &&
+     ${BB} test -f "${candidate}/sd8801.ko"; then
+    sd8801_module_dir="${candidate}"
+    break
+  fi
+done
+
+for candidate in \
+  /lib/modules/3.8.13-reinvoke*/extra/bt8xxx.ko \
+  /lib/modules/3.8.13-reinvoke*/kernel/arch/arm/mach-berlin/modules/bt_sd8887/bt8xxx.ko; do
+  if ${BB} test -f "${candidate}"; then
+    bt_module="${candidate}"
+    break
+  fi
+done
+
+if ! ${BB} test -f "${wifi_dir}/sd8887_wlan_a2_p78.bin" ||
+   ! ${BB} test -f "${wifi_dir}/WlanCalData_ext-LS9AD-20160725.conf" ||
+   ! ${BB} test -f "${wifi_dir}/txpwrlimit_cfg_8887.bin"; then
+  log "SD8887 firmware bundle is incomplete"
+elif [ -n "${sd8887_module_dir}" ]; then
+  echo /etc/hotplug/wifi-fw.sh > /proc/sys/kernel/hotplug
+  ${BB} insmod "${sd8887_module_dir}/mlan.ko" ||
+    log "failed to load SD8887 mlan core"
+  ${BB} insmod "${sd8887_module_dir}/sd8xxx.ko" \
+    fw_name=mrvl/sd8887_wlan_a2_p78.bin \
+    cal_data_cfg=mrvl/WlanCalData_ext-LS9AD-20160725.conf \
+    txpwrlimit_cfg=mrvl/txpwrlimit_cfg_8887.bin \
+    mac_addr=02:52:49:4e:56:01 \
+    drv_mode=1 max_sta_bss=1 max_uap_bss=0 \
+    sta_name=mlan fw_serial=1 cfg80211_wext=0xf \
+    auto_ds=2 ps_mode=2 antenna_div=1 module_rev=22 ||
+    log "failed to load native SD8887 Wi-Fi"
+elif [ -n "${sd8801_module_dir}" ]; then
+  echo /etc/hotplug/wifi-fw.sh > /proc/sys/kernel/hotplug
+  ${BB} insmod "${sd8801_module_dir}/88mlan.ko" ||
+    log "failed to load recovery 88mlan core"
+  ${BB} insmod "${sd8801_module_dir}/sd8801.ko" \
+    fw_name=mrvl/sd8887_wlan_a2_p78.bin \
+    cal_data_cfg=mrvl/WlanCalData_ext-LS9AD-20160725.conf \
+    txpwrlimit_cfg=mrvl/txpwrlimit_cfg_8887.bin \
+    mac_addr=02:52:49:4e:56:01 \
+    drv_mode=1 auto_ds=2 ps_mode=2 ||
+    log "failed to load recovery SD8887-compatible Wi-Fi"
+else
+  log "no compatible SD8887 Wi-Fi modules found"
+fi
+
+if ! ${BB} test -f "${wifi_dir}/sd8887_bt_a2_new.bin"; then
+  log "SD8887 Bluetooth firmware is missing"
+elif [ -z "${bt_module}" ]; then
+  log "no native SD8887 Bluetooth module found"
+else
+  ${BB} insmod "${bt_module}" \
+    fw_name=mrvl/sd8887_bt_a2_new.bin \
+    bt_fw_serial=0 ||
+    log "failed to load native SD8887 Bluetooth"
+fi
+
+(
+  while true; do
+    if ${BB} test -c /dev/ttyGS0; then
+      /bin/sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1
+    else
+      ${BB} sleep 1
+    fi
+  done
+) &
+
+log "native RAM environment is running"
+
+while true; do
+  ${BB} sleep 3600
+done

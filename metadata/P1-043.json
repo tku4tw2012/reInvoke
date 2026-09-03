@@ -1,0 +1,30 @@
+{
+  "commit": "3ba689bd4e88946eeb40b8d8b91fb7f42db46529",
+  "files": {
+    "MODULE_LICENSE_APACHE2": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "NOTICE": {
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "size": 11358
+    },
+    "audio_a2dp_hw/audio_a2dp_hw.h": {
+      "sha256": "26032f0bcaeed3f505652fd346d03e9387b976d7f532def9e3e66c97dabede27",
+      "size": 3043
+    },
+    "btif/src/btif_media_task.c": {
+      "sha256": "21a04ca6b29dd2fb28d14569f9c98fc4384932ad7e792df53287146a6ca0ad60",
+      "size": 90388
+    }
+  },
+  "id": "P1-043",
+  "kind": "source_snapshot",
+  "license": "Apache-2.0",
+  "local_path": "originals/google/aosp/system-bt/3ba689bd4e88946eeb40b8d8b91fb7f42db46529",
+  "repository_url": "https://android.googlesource.com/platform/system/bt",
+  "retrieved_utc": "2026-09-03T04:52:52Z",
+  "status": "ACQUIRED_SOURCE_SNAPSHOT",
+  "tag": "android-6.0.1_r81",
+  "tag_object": "4707a9131b42eacbc8795c98907bbb219fa202ad"
+}

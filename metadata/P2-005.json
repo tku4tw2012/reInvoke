@@ -1,0 +1,16 @@
+{
+  "commit": "764b617b647c91fe969332ceb690282ecdad4e0c",
+  "commit_date": "2020-07-13T20:45:49Z",
+  "commit_tree": "6736b984699749609c0bb4109d11f6215244d34b",
+  "file_path": "sound/soc/berlin/pcm.c",
+  "file_sha256": "fc76216c9715f07f5d55bef3f1886851c5fcc4cd5e1a9af3eb7235a5aeab2dad",
+  "file_size": 25405,
+  "id": "P2-005",
+  "kind": "source_snapshot",
+  "license": "GPL-2.0-or-later",
+  "local_path": "originals/github/courk/gmini-linux/764b617b647c91fe969332ceb690282ecdad4e0c/sound/soc/berlin/pcm.c",
+  "repository_url": "https://github.com/courk/gmini-linux",
+  "retrieved_utc": "2026-09-03T02:48:00Z",
+  "source_url": "https://github.com/courk/gmini-linux/blob/764b617b647c91fe969332ceb690282ecdad4e0c/sound/soc/berlin/pcm.c",
+  "status": "ACQUIRED_FILE_SNAPSHOT"
+}

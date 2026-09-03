@@ -68,7 +68,7 @@ All values below were read with non-destructive commands.
 | DRAM | 512 MiB, bank base `0x00000000`, size `0x20000000` |
 | SPI NOR | M25P128, 16 MiB, 64 sectors of 256 KiB, mapped at `0xF0000000` |
 | NAND | Chip ID `98DA90157616`, 256 MiB |
-| NAND geometry | 128 KiB blocks, 2 KiB pages, 32 B OOB, 48-bit ECC per 2 KiB |
+| NAND geometry | 128 KiB blocks and 2 KiB pages; U-Boot reports 32 B OOB while Linux reports 64 B |
 | NAND randomizer | Not enabled |
 | eMMC / SD | No card responds on `MV_SDIO` |
 | Console | Serial only, no Ethernet detected |
@@ -134,6 +134,40 @@ fatwrite   mkext4    img2sd       mw  mm  nm
 `99_IMAGE` and `83_IMAGE` must never be staged. `79_IMAGE` must stay
 comment-only; the launcher refuses to start otherwise.
 
+The `imls` command was also attempted as a read-only image-listing probe, but
+this customized build raised a data abort and reset the CPU. Do not repeat it
+without first understanding the command's assumptions and memory accesses.
+"Read-only" describes intended storage effects, not guaranteed stability.
+
+The documented OTA2 `mtdparts` layout places `rootfs` at `0x10700000`, but
+`nandrd 10700000 400` returned `Invalid address...` on this unit. The layout
+therefore cannot be applied to this U-Boot NAND address space without further
+reconciliation; no larger or speculative address probes should follow.
+
+## RAM-native Linux handoff
+
+The prompt can load the reviewed recovery kernel and a sanitized initramfs into
+DRAM without writing NAND:
+
+```text
+usbload 0x81 0x0c400000
+usbload 0x82 0x08000000
+set bootargs console=ttyS0,115200 loglevel=8 debug root=/dev/ram rdinit=/init init=/init initrd=0x08000000,<generated-size>
+bootm 0x0c400000
+```
+
+This was verified on `myInvoke-1`. The replacement PID 1 configured root ADB,
+left NAND unmounted, loaded native SD8887 Wi-Fi, and ran selected hardware
+adapters under its own lifecycle. A full 268,435,456-byte logical NAND data
+image was then read through a fresh read-only MTD node. Its SHA-256 is
+`edf38ef2af48d249c9925ebb6a94c716cfdb2c1ce575fb704283918cdd0e53be`.
+
+The active rootfs extracted from that image identifies as
+`Barracuda_libre-12.2050.3`, commit
+`6c36464edbac87c01fcba0f81c86293f554acf50`, built 2021-02-04. See
+[native-ram-platform.md](native-ram-platform.md) for the component audit and
+replacement architecture.
+
 ## Reconnecting to a live session
 
 A session cannot be resumed by restarting the host tool alone. `usb_boot` waits
@@ -146,9 +180,10 @@ Repeat the yellow sequence from step 3 instead. It is reproducible.
 
 ## What this does not establish
 
-* No ADB interface appeared at any point, in any mode.
-* The installed firmware version has still not been read from the device.
-* Nothing here demonstrates that the encrypted NAND payload can be decrypted,
-  modified, or replaced.
+* The Marvell boot stages do not expose ADB. The custom RAM initramfs does.
+* The active rootfs is readable, but the installed normal-kernel carve remains
+  a high-entropy signed or encrypted container.
+* Nothing here demonstrates that a modified persistent image will pass the
+  secure boot chain.
 * Absence of device-side writes is argued from the command set used, not proven
   by before-and-after storage imaging.

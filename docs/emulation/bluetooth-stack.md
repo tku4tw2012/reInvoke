@@ -79,6 +79,77 @@ This is management-plane scaffolding only. It does not emulate HCI commands,
 events, ACL traffic, pairing, media transport, or `/dev/rfkill`. No Bluetooth
 procedure has completed through this shim.
 
+## Physical RAM-native validation
+
+The recovery kernel identifies the SD8887 combo device as Marvell SDIO
+functions `02df:9135`, `02df:9136`, and `02df:9137`. Its Wi-Fi module binds
+function `9135`; the installed `bt8xxx.ko` module aliases function `9136`.
+
+The installed Bluetooth module has no symbol-version section but carries
+`vermagic` for `3.8.13-yocto-standard`. A temporary copy changed only that
+metadata to `3.8.13-mrvl`. Loaded into the ephemeral recovery kernel, it:
+
+* Downloaded 272,656 bytes from `sd8887_bt_a2_new.bin`
+* Reported `BT FW is active(2)`
+* Created `hci0`
+* Created an rfkill entry
+* Applied the temporary address `02:52:49:4e:56:02`
+
+The first observed HCI command `0x080f` timed out. The installed Bluedroid
+service nevertheless joined the RAM-owned Bonefish router and registered its
+pairing, media transport, and device-name procedures using an empty RAM-only
+`/data` tree. A read-only `deviceNameGet` call reached the service but did not
+return before timeout.
+
+This establishes native transport registration and userspace startup. It does
+not yet establish pairing, A2DP audio, or reliable HCI command completion.
+
+A later GCC 4.9 audio-kernel run removed the temporary-module limitation. The
+Invoke GPL module was built with exact `3.8.13-reinvoke-audio` vermagic and
+loaded without metadata editing. Its SHA-256 is
+`b77adca16d3c2778a047243f824b8fea339603343c88da32ab4c42e952bbd522`.
+
+The matching module and RAM-only Bluedroid stack then:
+
+* Reported `BT FW is active(2)`
+* Created `hci0` and an unblocked Bluetooth rfkill device
+* Enabled the adapter with its controller-provided local address
+* Initialized A2DP Sink, AVRCP Controller, and AVRCP Target with result `0`
+* Entered connectable mode
+* Entered discoverable pairing mode through `com.harman.bluetoothPairing`
+
+Bluedroid normally calls `com.harman.identifiersGet`, a procedure owned by the
+broad stock supervisor. Static analysis recovered its two result fields,
+`mac-hex` and `unique-hex`. A reInvoke-owned fixed-response WAMP service supplies
+only those RAM-safe fields. Bluedroid derives the current compatibility name
+`HK Invoke_4E5601` from that response.
+
+An iPhone completed a RAM-only bond and A2DP negotiation at 44.1 kHz stereo.
+The physical ring changed the ALSA music control and Bluedroid forwarded the
+same changes through AVRCP absolute volume.
+
+Ubuntu 22.04 provided an independently controlled source. BlueZ connected the
+classic Audio Sink UUID, and PulseAudio exposed an active SBC `a2dp_sink` with
+a live sink input. Both the phone and Linux source delivered sustained RTP/SBC
+frames on dynamic L2CAP channel `0x44`.
+
+The remaining failure is after compressed-media ingress. The donor stack did
+not emit its A2DP audio-start callback, its `media_worker` remained asleep, and
+ALSA stayed closed. A client connected to `.a2dp_data` but received no decoded
+PCM. The standard control-channel `CHECK_READY` command returned failure
+acknowledgement `1`, so START was not sent.
+
+The donor test configuration differs from normal only by enabling HCI snoop and
+raising HCI, L2CAP, and BTIF trace levels. It does not disable A2DP decoding.
+This boundary is preserved for later work, but it should not delay replacing
+the obsolete Bluedroid userspace with a maintained stack.
+
+The UIPC command values, sink queue, decoder-reset path, and expected automatic
+decode trigger were cross-checked against official AOSP `system/bt` tag
+`android-6.0.1_r81`, commit
+`3ba689bd4e88946eeb40b8d8b91fb7f42db46529`. The pinned source snapshot and
+Apache license evidence are recorded in `P1-043`.
+
 ## What is unresolved
 
 Whether `qemu-user` forwards `AF_BLUETOOTH` sockets faithfully enough for the
@@ -88,9 +159,9 @@ Whether the host's `/dev/vhci` can be used safely. The workstation has real
 Bluetooth hardware at `hci0`, so any virtual adapter work must target a
 separate created adapter and must never drive the host's own controller.
 
-Whether the transport procedures can be exercised without a peer device. Even
-with an adapter present, `bluetooth.resume`, `pause`, `next`, and `skipTo`
-operate on an active media session.
+Whether a maintained userspace can decode the verified incoming SBC frames and
+feed the proven ALSA `music` path. The donor stack pairs and receives media but
+does not release decoded PCM.
 
 No Bluetooth procedure has yet been shown to complete under emulation. Current
 evidence is limited to service registration on the WAMP bus and static/runtime

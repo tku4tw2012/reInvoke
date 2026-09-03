@@ -180,9 +180,14 @@ No claim is made here about simultaneous MIMO behavior because the cited evidenc
 
 ### 5.4 Exact radio IC
 
-**Unknown.**
+RAM-native Linux enumerated Marvell SDIO functions `02df:9135`,
+`02df:9136`, and `02df:9137`. The acquired Invoke kernel source maps `9135`
+to its SD8887 Wi-Fi driver and `9136` to its SD8887 Bluetooth driver. Both
+drivers loaded their corresponding controller firmware on the physical unit.
+[NATIVE-RAM]
 
-Do not promote a Marvell 88W8887 or any other radio IC into the baseline without an Invoke-specific package marking, runtime bus ID, driver binding, or equivalent evidence.
+This establishes the 88W8887/SD8887 radio family and SDIO host bus. The exact
+package marking and simultaneous spatial-stream topology remain unknown.
 
 ## 6. Board/module architecture
 
@@ -255,12 +260,15 @@ The canonical corpus does **not** currently state an Invoke CPU clock because th
 
 ### 7.3 RAM
 
-External memory packages are visible on the daughterboard, but the present regulatory image quality is not sufficient to establish exact DRAM identity/capacity. [FCC-IP p.5]
+U-Boot `bdinfo` reports one 512 MiB DRAM bank at base `0x00000000`.
+[NATIVE-RAM] External memory packages are visible on the daughterboard, but
+the present regulatory image quality is not sufficient to establish exact DRAM
+type or part number. [FCC-IP p.5]
 
 Canonical state:
 
 ```yaml
-ram_capacity: unknown
+ram_capacity: 512 MiB
 ram_type: unknown
 ram_part_number: unknown
 ```
@@ -275,16 +283,21 @@ Harman's final release notes state:
 
 This independently confirms that the service USB path was used for official firmware maintenance. [HARMAN-FINAL], [HARMAN-OM p.8]
 
-Third-party reverse engineering further reports:
-- successful entry into U-Boot;
-- successful ADB shell access after modified boot parameters/ramdisk work;
-- use of Marvell `Mrvl_WinUSB` infrastructure. [HKHACK]
+The project has independently reproduced:
 
-Status: `OBS-RUNTIME-3P`, confidence `medium-high`.
+* Interactive U-Boot over the Micro-USB Marvell endpoint
+* A custom RAM-only PID 1 and root ADB gadget
+* A complete logical NAND data read
+* Native SD8887 Wi-Fi and partial Bluetooth bring-up
+* Real MCU/I2C startup under the custom lifecycle
+
+See [NATIVE-RAM].
 
 ## 9. Nonvolatile storage
 
-A third-party Invoke shell dump reports this MTD map: [HKHACK lines 218-236]
+A third-party Invoke shell dump reports the map below. [HKHACK lines 218-236]
+Its 512 MiB flashing-bundle partition layout does not match the physical unit
+measured by this project.
 
 ```text
 dev:    size     erasesize name
@@ -313,6 +326,18 @@ mtd16: 10000000 00020000 "mv_nand"
 
 Thus the reported aggregate `mv_nand` MTD device has a 256 MiB address space. [HKHACK lines 218-236]
 
+Direct U-Boot and Linux observations confirm a Toshiba-manufactured 256 MiB
+NAND with 2 KiB pages and 128 KiB erase blocks. A complete
+268,435,456-byte ECC-processed logical data image was captured through a
+kernel-enforced read-only MTD node. [NATIVE-RAM]
+
+A second community project records a compact 256 MiB partition map with an
+8 MiB `kernel` region beginning at `0x00a20000` and a 105 MiB `rootfs` region
+beginning at `0x01220000`. [ARISTODDLE-INVOKE] The directly carved
+high-entropy kernel container begins at `0x00a20000`, and the active SquashFS
+at `0x02920000` falls inside that proposed rootfs region. This corroborates the
+compact map's geometry without independently proving every partition label.
+
 This does **not** prove:
 - flash manufacturer;
 - flash part number;
@@ -337,19 +362,15 @@ Canonical interpretation:
 ```yaml
 compute:
   configured_cpu_clock: unknown
-  ram_capacity: unknown
   ram_type: unknown
   ram_part_number: unknown
   daughterboard_connector_pinout: unknown
 
 storage:
-  nand_manufacturer: unknown
   nand_part_number: unknown
   bad_block_strategy: unknown
 
 radio:
-  wifi_bluetooth_ic: unknown
-  host_bus: unknown
   spatial_stream_topology: unknown
 
 audio:
@@ -430,3 +451,15 @@ Relevant visible discussion locators include lines 143-180 and 218-238 in the in
 ## LINUX-MARVELL
 Linux kernel documentation, *ARM Marvell SoCs — Berlin family*.  
 https://docs.kernel.org/5.19/arm/marvell.html
+
+## NATIVE-RAM
+
+Project-local hardware observations and hashes in
+`docs/native-ram-platform.md` and
+`reinvoke-archive/hardware/dumps/20260902T215700Z-native-ram/`.
+
+## ARISTODDLE-INVOKE
+
+`Aristoddle/hk-invoke-opensource-speaker`, commit
+`948e85e2ddbdd560e186913cdfaad3f57f118c93`. The source is retained as
+provisional; see `docs/research/provisional/aristoddle-invoke-review.md`.
