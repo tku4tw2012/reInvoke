@@ -342,6 +342,16 @@ xrun, DMA error, or kernel fault. A second guarded test:
 The operator audibly confirmed the tone. This proves the RAM-owned
 kernel-to-speaker output path.
 
+The capture side is not yet operational. On 2026-09-03, the target exposed
+card 1 PCM 0 as a capture substream, but the donor `tinycap` utility could not
+set hardware parameters on that device. The failure reproduced before DSP
+startup, after the owned DSP image booted, and after `micTestNormal`, including
+the documented 48 kHz stereo `S32_LE` format and several period sizes. Each
+attempt captured zero frames. Card 0 loopback capture did open, so the utility
+and ALSA capture ioctl path work; this does not constitute microphone evidence.
+Microphone support remains blocked on identifying the required Berlin/WM8904
+capture configuration or completing the kernel capture path.
+
 The physical rotary ring also produced 63 volume-up and 57 volume-down MCU
 events. Bonefish recorded exactly 120 matching
 `com.harman.test.inputEvent` publications. After the stock empty-stream ALSA
