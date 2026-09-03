@@ -203,11 +203,45 @@ state remain only in the current RAM boot.
 The external evidence bundle is
 `reinvoke-archive/hardware/usb-attempts/20260903T105444Z-sd8887-sta-uap-reconnect-arm-stock/`.
 
+## Owned network lifecycle
+
+The static ARMv7 `reinvoke-networkd` artifact is 2,293,760 bytes with SHA-256
+`e6d847fd20f0bb784f019169211f0200d2f43edb5ee8a030e17b6d636f58148f`.
+Two clean builds were byte-identical. The service uses only fixed,
+root-controlled executable paths and does not invoke a shell.
+
+Live RAM-only validation replaced the temporary DHCP hook and proved:
+
+* The service detected the existing `wpa_state=COMPLETED` station.
+* Its supervised BusyBox `udhcpc` acquired and renewed the station lease.
+* The lease handler validated address, mask, route, DNS, and lifetime values.
+* `/etc/resolv.conf` pointed to atomically written RAM-only resolver state.
+* Gateway, public IPv4, and DNS-resolved reachability succeeded.
+* Graceful shutdown removed the IPv4 address, default route, resolver link,
+  lease, and DHCP child.
+* A service restart reacquired connectivity without replacing credentials.
+* A station disconnect removed network state, and reconnect reacquired it.
+* A second supervisor was rejected without disturbing the active service.
+* A stale owner record pointing at a reused PID did not block startup or signal
+  the unrelated process.
+* Authenticated replacement through both provisioning daemons replaced the
+  supplicant and DHCP child while the same supervisor remained active.
+* The replacement regained association, lease, route, resolver, public IPv4,
+  and DNS without exposing or writing the plaintext credential on the host.
+
+The initramfs builder checksum-gates the artifact and PID 1 auto-starts it when
+included. PID 1 sends daemon output to the bounded kernel log and restarts a
+failed supervisor after five seconds. The `reinvoke.networkd=off` kernel
+argument keeps the packaged service disabled for manual recovery. Two clean
+builds of the packaged initramfs were byte-identical. The external image is
+40,067,033 bytes and has SHA-256
+`01e0991ef140a8ab8d916796ae0248e0eb097e89c5f74e531a208af4d32e03a4`
+and contains the reviewed network daemon, provisioning adapters, pinned kernel
+module tree, release manifest, and PID 1. Provenance is recorded in
+[P1-046](../metadata/P1-046.json).
+
 ## Remaining validation
 
-Move DHCP acquisition and renewal into an owned, restart-safe network service,
-then repeat credential replacement and a cold RAM boot. The current DHCP hook
-is a validated runtime probe, not a packaged lifecycle component.
-
+Cold-boot the checksum-gated image and verify automatic lifecycle startup.
 Persistent storage remains out of scope until backup, rollback, and recovery
 are independently proven.

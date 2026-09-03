@@ -411,6 +411,41 @@ derived key in mode-0600 RAM, acquired a DHCP lease, and verified gateway,
 public IPv4, and DNS reachability. The station and renewal client remain
 ephemeral, and NAND remains unmounted.
 
+### Owned network lifecycle
+
+The static ARMv7 `reinvoke-networkd` service replaced the temporary DHCP hook
+without changing the derived station credentials. It detected the existing
+supplicant, started a supervised BusyBox DHCP client, atomically installed
+RAM-only resolver state, and preserved gateway, public IPv4, and DNS
+reachability.
+
+Graceful service termination removed the DHCP child, IPv4 address, default
+route, resolver link, and lease state. Restarting the service reacquired them.
+A forced station disconnect produced the same cleanup, and reconnect restored
+connectivity. A full-lifetime lock rejected a second supervisor without
+disturbing the active instance. The final artifact identity is recorded in
+[P1-046](../metadata/P1-046.json).
+
+Hardware validation also pointed a stale owner record at an unrelated live
+process. The corrected service removed the stale records, preserved the
+unrelated process, started one DHCP child, and restored IPv4 and DNS. DHCP event
+handlers now verify the active owner token and interface before changing state.
+
+An authenticated replacement request then stopped the prior supplicant and
+DHCP child while the same network supervisor remained active. The replacement
+created new child PIDs and regained association, lease, route, resolver, public
+IPv4, and DNS. The host passed its active profile entirely through shell memory;
+no plaintext credential was printed or written to a host file.
+
+The checksum-gated lifecycle image was built twice with identical bytes. The
+external 40,067,033-byte initramfs has SHA-256
+`01e0991ef140a8ab8d916796ae0248e0eb097e89c5f74e531a208af4d32e03a4`.
+Archive inspection confirmed the owned daemon, provisioning adapters, release
+manifest, pinned module tree, and updated PID 1. PID 1 restarts networkd after
+failure with a five-second delay, sends its output to the bounded kernel log, and
+supports `reinvoke.networkd=off` for manual recovery. This image has not yet
+completed a cold RAM boot.
+
 ### RAM-only replacement Bluetooth control path
 
 BlueZ 5.55, built statically for the target's EGLIBC 2.12.2 userland, registered

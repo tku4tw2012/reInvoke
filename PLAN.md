@@ -25,7 +25,7 @@ conversation.
 | Analysis — unpack and understand the firmware | **Done** |
 | Control-plane emulation — device userland runs off-device | **Done** — see [control-plane-emulation.md](docs/emulation/control-plane-emulation.md) |
 | Evidence closure — FCC exhibits, OTA2, sibling cross-index | **Done** |
-| Hardware validation, donor device available | **In progress**: U-Boot and custom RAM Linux reached over USB; Wi-Fi, MCU, DSP, ALSA, audible output, rotary volume, native HCI, peer pairing, A2DP negotiation, and SBC ingress are verified; donor Bluedroid does not release decoded PCM; see [native-ram-platform.md](docs/native-ram-platform.md) |
+| Hardware validation, donor device available | **In progress**: U-Boot and custom RAM Linux reached over USB; Wi-Fi, MCU, DSP, ALSA, audible output, rotary volume, native HCI, peer pairing, and the muted BlueZ/BlueALSA A2DP-to-PCM path are verified; attended audible Bluetooth acceptance remains; see [native-ram-platform.md](docs/native-ram-platform.md) |
 
 ### The finding that reframes the project
 
@@ -252,9 +252,9 @@ this session those claims cited evidence the project did not possess.
 **The two observations that matter most:**
 
 1. Does the unit pair over Bluetooth and play audio? **Partially answered:**
-   iPhone and Ubuntu peers pair, A2DP/AVRCP initialize, and RTP/SBC media reaches
-   the Invoke. The speaker path plays direct ALSA audio, but donor Bluedroid does
-   not hand decoded Bluetooth PCM to ALSA.
+   the RAM-only BlueZ/BlueALSA replacement forms a durable allowlisted bond,
+   decodes A2DP SBC, and advances the target ALSA DMA path while physically
+   muted. A brief attended unmuted acceptance test remains.
 2. Does the Micro-USB service port expose a Marvell boot endpoint?
    **Answered 2026-09-02: yes.** Yellow service mode transitions through
    Marvell USB stages and reaches interactive RAM-loaded U-Boot. U-Boot then
@@ -283,8 +283,12 @@ build of the pinned open-source flasher at commit `63444e82`.
    [bluetooth-stack.md](docs/emulation/bluetooth-stack.md) and `P1-045`.
 5. Replace donor MCU, DSP, and media adapters with reInvoke-owned services.
 6. **In progress:** the physical-gated provisioning API and authenticated TLS
-   parser are implemented. Add the SD8887 `p2p0` radio adapter, isolated
-   dnsmasq, and RAM-only station apply service; SSH remains optional.
+   parser, SD8887 `p2p0` radio adapter, isolated provisioning AP, real station
+   application, and restart-safe owned DHCP/resolver lifecycle are implemented
+   and live-validated in RAM. The packaged lifecycle image is reproducible and
+   contains the reviewed components. Credential replacement while the owned
+   supervisor remained active also passed. Cold-boot validation with that image
+   remains; SSH is optional.
 7. Repeat cold-boot and recovery tests before designing any persistent NAND
    installation.
 8. **Interface measurements** (unpowered continuity testing first): map both

@@ -85,24 +85,34 @@ donor rootfs:
 tools/usb-boot/build-native-initramfs.sh \
   --source-initramfs ../reinvoke-archive/extracted/ota2/OTA2/82_IMAGE \
   --donor-rootfs ../reinvoke-archive/hardware/dumps/20260902T215700Z-native-ram/rootfs-extracted/primary \
-  --kernel-modules ../reinvoke-archive/build/artifacts/invoke-kernel-acast/modules \
+  --kernel-modules ../reinvoke-archive/build/artifacts/invoke-kernel-gcc49-audio-sd8887-20260903/modules \
   --provisiond ../reinvoke-archive/build/artifacts/reinvoke-provisiond-20260903/reinvoke-provisiond \
   --wifi-applyd ../reinvoke-archive/build/artifacts/reinvoke-wifi-applyd-20260903/reinvoke-wifi-applyd \
-  --output ../invoke-boot/82_IMAGE.native-ram
+  --networkd ../reinvoke-archive/build/artifacts/reinvoke-networkd-20260903/reinvoke-networkd \
+  --output ../reinvoke-archive/build/artifacts/invoke-native-ram-audio-sd8887-networkd-20260903/82_IMAGE.reinvoke-audio-sd8887-networkd
 ```
 
-The generated file remains outside Git. See
+The builder normalizes archive metadata so identical reviewed inputs produce
+byte-identical output. It checksum-gates the reviewed daemon binaries and kernel
+module tree, then strips host-only `build` and `source` symlinks from every
+packaged module release. The generated file remains outside Git. See
 [native-ram-platform.md](../../docs/native-ram-platform.md) for the verified
 U-Boot load addresses, runtime evidence, component audit, and safety boundary.
 See [Invoke kernel build](../kernel/README.md) for the replacement-kernel
 source, compatibility patch, and artifact pipeline.
+
+When the network daemon is packaged, PID 1 starts it by default and restarts it
+after failures with a five-second delay. Add `reinvoke.networkd=off` to the
+kernel command line for manual network bring-up or failure isolation.
 
 When the supplied module tree includes the repository-built `bt8xxx.ko`, PID 1
 loads it with the stock volatile firmware parameters. This creates `hci0`
 without changing module metadata or starting a pairing service.
 
 The optional provisioning and Wi-Fi apply daemons are independently
-checksum-gated and installed but never auto-started. See
+checksum-gated and installed but never auto-started. When included, the
+checksum-gated network lifecycle service starts at boot and waits for a
+root-controlled station supplicant before acquiring DHCP state. See
 [Native Wi-Fi provisioning boundary](../../docs/native-provisioning.md).
 
 After a capture session reports the live `MV88DE3100|>` prompt, stage and boot
