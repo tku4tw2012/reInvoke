@@ -145,7 +145,8 @@ main() {
       break
     fi
     if [[ "${boot_kind}" == "arm" ]] &&
-      grep -q "Device not found. Waiting" "${attempt_dir}/usbboot.log"; then
+      grep -Eq "Device not found\\. Waiting|Telnet client connected" \
+        "${attempt_dir}/usbboot.log"; then
       break
     fi
     if [[ ! -d "/proc/${BOOT_PID}" ]]; then
@@ -161,11 +162,12 @@ main() {
     KEEP_RUNNING=1
     printf "READY: original usb_boot is polling for the device.\n"
   elif [[ "${boot_kind}" == "arm" ]] &&
-    grep -q "Device not found. Waiting" "${attempt_dir}/usbboot.log"; then
+    grep -Eq "Device not found\\. Waiting|Telnet client connected" \
+      "${attempt_dir}/usbboot.log"; then
     KEEP_RUNNING=1
-    printf "READY: pinned open-source tool is polling for the device.\n"
+    printf "READY: pinned open-source tool is polling or connected.\n"
   else
-    printf "FATAL: USB boot tool never entered its device polling loop.\n" >&2
+    printf "FATAL: USB boot tool never became ready.\n" >&2
     tail -20 "${attempt_dir}/usbboot.log" >&2
     exit 1
   fi

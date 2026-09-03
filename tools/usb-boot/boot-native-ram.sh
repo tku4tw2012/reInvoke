@@ -9,6 +9,8 @@ set -euo pipefail
 readonly KERNEL_STAGING_ADDRESS="0x0c400000"
 readonly INITRAMFS_ADDRESS="0x08000000"
 readonly MAX_INITRAMFS_BYTES=$((0x04400000))
+# The open-source console relay can split the prompt suffix after reconnecting.
+readonly UBOOT_PROMPT_PREFIX=$'\rMV88D'
 
 usage() {
   local exit_code="${1:-0}"
@@ -23,6 +25,7 @@ Options:
   --console-fifo PATH       U-Boot command FIFO (default: /tmp/uboot_cmd)
   --load-timeout SECONDS    Kernel usbload timeout (default: 120)
   --usb-timeout SECONDS     USB gadget criterion (default: 30)
+  --adb-server-port PORT    ADB server port (default: 5037)
   --adb-serial SERIAL       Expected ADB serial
   --wifi-mode MODE          sta or sta-uap (default: sta)
   --prepare-only            Validate and stage without sending commands
@@ -140,7 +143,9 @@ main() {
   local console_fifo="/tmp/uboot_cmd"
   local load_timeout=120
   local usb_timeout=30
+  local adb_server_port="${INVOKE_ADB_SERVER_PORT:-5037}"
   local adb_serial="0123456789ABCDEF"
+  local adb_state
   local wifi_mode="sta"
   local prepare_only=0
   local initramfs_size
@@ -202,6 +207,12 @@ main() {
         usb_timeout="$2"
         shift 2
         ;;
+      --adb-server-port)
+        [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] ||
+          err "--adb-server-port requires a positive integer"
+        adb_server_port="$2"
+        shift 2
+        ;;
       --adb-serial)
         [[ -n "${2:-}" ]] || err "--adb-serial requires a value"
         adb_serial="$2"
@@ -231,6 +242,10 @@ main() {
   [[ -f "${initramfs_path}" ]] ||
     err "initramfs not found: ${initramfs_path}"
   [[ -n "${initramfs_sha256}" ]] || err "--initramfs-sha256 is required"
+  [[ "${adb_server_port}" =~ ^[1-9][0-9]*$ ]] ||
+    err "ADB server port must be a positive integer"
+  ((adb_server_port >= 1024 && adb_server_port <= 65535)) ||
+    err "ADB server port must be between 1024 and 65535"
   [[ -d "${firmware_dir}" ]] ||
     err "firmware staging directory not found: ${firmware_dir}"
   [[ ! -e "${firmware_dir}/83_IMAGE" ]] ||
@@ -271,7 +286,7 @@ main() {
     err "U-Boot console log not found: ${console_log}"
   [[ -p "${console_fifo}" ]] ||
     err "U-Boot command FIFO not found: ${console_fifo}"
-  grep -a -qF "MV88DE3100|>" "${console_log}" ||
+  grep -a -qF "${UBOOT_PROMPT_PREFIX}" "${console_log}" ||
     err "U-Boot prompt is not present in the console log"
   ! usb_gadget_present ||
     err "18d1:0d02 is already present; enter U-Boot before loading"
@@ -285,7 +300,7 @@ main() {
     "${console_log}" "${console_offset}" "all done." \
     "Kernel transfer" "${load_timeout}"
   wait_for_console_text \
-    "${console_log}" "${console_offset}" "MV88DE3100|>" \
+    "${console_log}" "${console_offset}" "${UBOOT_PROMPT_PREFIX}" \
     "U-Boot prompt return" "${load_timeout}"
 
   bootargs="console=ttyS0,115200 earlyprintk loglevel=8 debug root=/dev/ram rdinit=/init init=/init initrd=${INITRAMFS_ADDRESS},${initramfs_size}"
@@ -298,10 +313,15 @@ main() {
     >"${console_fifo}"
 
   wait_for_usb_gadget "${usb_timeout}"
-  timeout "${usb_timeout}" adb -s "${adb_serial}" wait-for-device
-  [[ "$(adb -s "${adb_serial}" get-state)" == "device" ]] ||
+  timeout "${usb_timeout}" \
+    adb -P "${adb_server_port}" -s "${adb_serial}" wait-for-device
+  adb_state="$(
+    adb -P "${adb_server_port}" -s "${adb_serial}" get-state
+  )"
+  [[ "${adb_state}" == "device" ]] ||
     err "expected ADB device did not become ready"
-  printf "ADB %s is ready\n" "${adb_serial}"
+  printf "ADB %s is ready on server port %s\n" \
+    "${adb_serial}" "${adb_server_port}"
 }
 
 main "$@"

@@ -91,10 +91,10 @@ Verified facts:
   graph from a clean service state and keeps amplifier, DAC, and NAND safe.
 - Static ARM provisioning and station-apply daemons now provide ephemeral TLS,
   a 256-bit token, root-peer verification, derived WPA2 configuration, and
-  bounded association. Live fail-closed tests pass; SD8887 AP mode remains
-  unverified.
-- A separate native SD8887 STA/uAP kernel and provisioning initramfs are built
-  and isolated from the proven boot pair pending attended yellow-mode testing.
+  bounded association. Live fail-closed and AP success-path tests pass.
+- The native SD8887 STA/uAP profile returns USB in five seconds, exposes
+  `mlan0` and `p2p0`, and serves an isolated WPA2/DHCP provisioning network with
+  no gateway, DNS, or forwarding. A real external station join remains.
 
 Artifact-backed findings:
 
