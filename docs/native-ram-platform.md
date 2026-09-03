@@ -394,6 +394,16 @@ the launcher can reassert mute. The safe unattended default therefore skips
 `dsp-client`; attended audio work must opt in with `--start-dsp` and wait for
 the launcher to confirm that both outputs were remuted.
 
+The native SD8887 STA/uAP milestone is preserved under
+`reinvoke-archive/hardware/usb-attempts/20260903T105444Z-sd8887-sta-uap-reconnect-arm-stock/`.
+The candidate returned the USB gadget in five seconds and exposed `mlan0`,
+`p2p0`, `hci0`, GPIO, SPI, and both ALSA cards. A Mac mini joined a random-key
+WPA2 AP on `p2p0`, received DHCP without a gateway or DNS, pinned the
+provisioning certificate, and completed an HTTP 202 parser-to-adapter request.
+Forwarding remained disabled, NAND remained unmounted, and all temporary
+credentials and AP processes were removed. The active host staging directory
+was then restored to the proven audio/Bluetooth pair above.
+
 ## Rebuilding the RAM platform
 
 No proprietary image is committed. Build the sanitized initramfs from held

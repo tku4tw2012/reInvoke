@@ -137,9 +137,9 @@ standard IEEE WPA2 PSK vector, and replacement of an existing 0770
 The adapter-rejection test used only fake credentials and did not touch a radio
 or persistent storage.
 
-## Remaining validation
+## Attended AP validation
 
-The unbooted AP candidate is staged outside the normal boot directory:
+The AP candidate remains staged outside the normal boot directory:
 
 | Artifact | SHA-256 |
 |----------|---------|
@@ -152,20 +152,40 @@ The kernel contains loadable native `mlan.ko`, `sd8xxx.ko`, `bt8xxx.ko`, and
 and both checksum-gated provisioning daemons. Station-only remains its default;
 `reinvoke.wifi_mode=sta-uap` is required to request `p2p0`.
 
-This pair has not been booted. It remains in isolated staging until an operator
-is present to perform yellow mode and observe the 30-second USB criterion.
+An attended yellow-mode test booted this pair with
+`reinvoke.wifi_mode=sta-uap`. The USB gadget returned in five seconds. The
+native driver reported `drv_mode=3` and exposed both `mlan0` and `p2p0` while
+preserving HCI, GPIO, SPI, ALSA, and the read-only NAND node. NAND remained
+unmounted, and the kernel log contained no panic, oops, or fault signature.
 
-The next hardware increment must:
+The test then:
 
-1. Boot the isolated native SD8887 profile and confirm that it exposes `p2p0`.
-2. Create a WPA2 AP with a random per-window key.
-3. Bind dnsmasq only to `p2p0`.
-4. Confirm that no forwarding or upstream DNS path exists.
-5. Run the HTTPS test through the AP instead of USB loopback.
-6. Run the implemented root-owned station adapter against a disposable test
-   network using RAM-only `wpa_supplicant` state.
-7. Verify that credentials never appear in
-   logs, process arguments, or repository artifacts.
+* Ran the retained hostapd as its numeric UID/GID 1008 with a
+  `0770 root:1008` runtime directory and `0640 root:1008` configuration
+* Created a random-key WPA2 AP on `p2p0`
+* Bound dnsmasq DHCP only to `p2p0` with DNS disabled
+* Kept IPv4 and IPv6 forwarding disabled
+* Assigned the Mac mini an address in `192.168.43.0/24` with no gateway or DNS
+* Verified the TLS certificate fingerprint over the AP
+* Received HTTP 202 from the complete parser-to-adapter path
+* Removed the host connection profile, AP key, derived station configuration,
+  daemons, sockets, and RAM runtime after the test
+
+The success-path adapter test used root-controlled fake station executables, so
+it exercised authenticated AP delivery and both daemon boundaries without
+joining `mlan0` to an external network. No real network credential was used or
+retained. The proven default boot pair was restored to active host staging
+afterward.
+
+The external evidence bundle is
+`reinvoke-archive/hardware/usb-attempts/20260903T105444Z-sd8887-sta-uap-reconnect-arm-stock/`.
+
+## Remaining validation
+
+Run the root-owned station adapter against a disposable external network using
+the real `wpa_supplicant` and `wpa_cli` paths. Verify association on `mlan0`,
+then confirm that credentials never appear in logs, process arguments, evidence
+summaries, or repository artifacts.
 
 Persistent storage remains out of scope until backup, rollback, and recovery
 are independently proven.
