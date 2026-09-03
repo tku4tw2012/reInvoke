@@ -116,9 +116,25 @@ or persistent storage.
 
 ## Remaining validation
 
+The unbooted AP candidate is staged outside the normal boot directory:
+
+| Artifact | SHA-256 |
+|----------|---------|
+| `3.8.13-reinvoke-audio-sd8887` kernel | `4dbfc484c3ff99325b293aa02810d9e97396252a70d89fdf47dead5443135c4c` |
+| Native SD8887 provisioning initramfs | `30886634cff8c210ed3fdb30523159cc7d4676e87166b4e2d6d72f9fa1697ceb` |
+
+The kernel contains loadable native `mlan.ko`, `sd8xxx.ko`, `bt8xxx.ko`, and
+`btmrvl.ko` modules with matching
+`3.8.13-reinvoke-audio-sd8887` vermagic. The initramfs includes those modules
+and the checksum-gated provisioning daemon. Station-only remains its default;
+`reinvoke.wifi_mode=sta-uap` is required to request `p2p0`.
+
+This pair has not been booted. It remains in isolated staging until an operator
+is present to perform yellow mode and observe the 30-second USB criterion.
+
 The next hardware increment must:
 
-1. Build or load a Wi-Fi module configuration that exposes `p2p0`.
+1. Boot the isolated native SD8887 profile and confirm that it exposes `p2p0`.
 2. Create a WPA2 AP with a random per-window key.
 3. Bind dnsmasq only to `p2p0`.
 4. Confirm that no forwarding or upstream DNS path exists.

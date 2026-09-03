@@ -86,6 +86,7 @@ tools/usb-boot/build-native-initramfs.sh \
   --source-initramfs ../reinvoke-archive/extracted/ota2/OTA2/82_IMAGE \
   --donor-rootfs ../reinvoke-archive/hardware/dumps/20260902T215700Z-native-ram/rootfs-extracted/primary \
   --kernel-modules ../reinvoke-archive/build/artifacts/invoke-kernel-acast/modules \
+  --provisiond ../reinvoke-archive/build/artifacts/reinvoke-provisiond-20260903/reinvoke-provisiond \
   --output ../invoke-boot/82_IMAGE.native-ram
 ```
 
@@ -98,6 +99,10 @@ source, compatibility patch, and artifact pipeline.
 When the supplied module tree includes the repository-built `bt8xxx.ko`, PID 1
 loads it with the stock volatile firmware parameters. This creates `hci0`
 without changing module metadata or starting a pairing service.
+
+The optional provisioning daemon is checksum-gated and installed but never
+auto-started. See
+[Native Wi-Fi provisioning boundary](../../docs/native-provisioning.md).
 
 After a capture session reports the live `MV88DE3100|>` prompt, stage and boot
 a reviewed native pair with elapsed progress and a bounded USB criterion:

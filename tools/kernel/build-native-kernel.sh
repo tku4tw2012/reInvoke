@@ -22,6 +22,8 @@ Profiles:
   baseline   Known-good USB, SDIO, I2C, and GPIO kernel configuration
   spi-gpio   Baseline plus DesignWare SPI and spidev
   audio      SPI/GPIO plus Berlin ASoC, WM8904, and ALSA loopback
+  audio-sd8887
+             Audio profile with native SD8887 STA/uAP modules
 
 Options:
   --archive-root PATH  External reInvoke archive root
@@ -69,6 +71,7 @@ main() {
   local module_count
   local mkimage_version
   local bt_module_dir="arch/arm/mach-berlin/modules/bt_sd8887"
+  local bt_module_built_separately=0
 
   repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   archive_root="${REINVOKE_ARCHIVE:-${repo_root}/../reinvoke-archive}"
@@ -145,8 +148,12 @@ main() {
       localversion="-reinvoke-audio"
       image_suffix="audio"
       ;;
+    audio-sd8887)
+      localversion="-reinvoke-audio-sd8887"
+      image_suffix="audio-sd8887"
+      ;;
     *)
-      err "--profile must be baseline, spi-gpio, or audio"
+      err "--profile must be baseline, spi-gpio, audio, or audio-sd8887"
       ;;
   esac
 
@@ -237,7 +244,7 @@ main() {
         --enable SPI_SPIDEV \
         --disable SOUND
       ;;
-    audio)
+    audio|audio-sd8887)
       "${source_dir}/scripts/config" \
         --file "${build_dir}/.config" \
         --disable BERLIN_FASTLOGO \
@@ -261,6 +268,14 @@ main() {
         --enable SND_SOC_WM8904
       ;;
   esac
+
+  if [[ "${profile}" == "audio-sd8887" ]]; then
+    "${source_dir}/scripts/config" \
+      --file "${build_dir}/.config" \
+      --disable BERLIN_SDIO_WLAN_8801 \
+      --module BERLIN_SDIO_WLAN_8887 \
+      --module BERLIN_SDIO_BT_8887
+  fi
 
   make -C "${source_dir}" \
     O="${build_dir}" \
@@ -289,19 +304,22 @@ main() {
     -j"${jobs}" \
     modules
 
-  # The vendor Bluetooth directory is selected by BERLIN_SDIO_BT_8887, but its
-  # local Makefile mistakenly keys bt8xxx.o on the WLAN-8887 symbol.
-  make -C "${source_dir}" \
-    O="${build_dir}" \
-    ARCH=arm \
-    CROSS_COMPILE="${cross_prefix}" \
-    LD="${linker}" \
-    HOSTCFLAGS=-fcommon \
-    KCFLAGS="-fno-pic -fno-pie" \
-    CONFIG_BERLIN_SDIO_WLAN_8887=m \
-    M="${bt_module_dir}" \
-    -j"${jobs}" \
-    modules
+  if [[ "${profile}" != "audio-sd8887" ]]; then
+    # The vendor Bluetooth directory is selected by BERLIN_SDIO_BT_8887, but
+    # its local Makefile mistakenly keys bt8xxx.o on the WLAN-8887 symbol.
+    make -C "${source_dir}" \
+      O="${build_dir}" \
+      ARCH=arm \
+      CROSS_COMPILE="${cross_prefix}" \
+      LD="${linker}" \
+      HOSTCFLAGS=-fcommon \
+      KCFLAGS="-fno-pic -fno-pie" \
+      CONFIG_BERLIN_SDIO_WLAN_8887=m \
+      M="${bt_module_dir}" \
+      -j"${jobs}" \
+      modules
+    bt_module_built_separately=1
+  fi
 
   [[ -f "${build_dir}/arch/arm/boot/zImage" ]] ||
     err "kernel zImage was not produced"
@@ -320,16 +338,18 @@ main() {
     LD="${linker}" \
     INSTALL_MOD_PATH="${partial_output}/modules" \
     modules_install >"${partial_output}/modules-install.log" 2>&1
-  make -C "${source_dir}" \
-    O="${build_dir}" \
-    ARCH=arm \
-    CROSS_COMPILE="${cross_prefix}" \
-    LD="${linker}" \
-    HOSTCFLAGS=-fcommon \
-    CONFIG_BERLIN_SDIO_WLAN_8887=m \
-    M="${bt_module_dir}" \
-    INSTALL_MOD_PATH="${partial_output}/modules" \
-    modules_install >>"${partial_output}/modules-install.log" 2>&1
+  if ((bt_module_built_separately == 1)); then
+    make -C "${source_dir}" \
+      O="${build_dir}" \
+      ARCH=arm \
+      CROSS_COMPILE="${cross_prefix}" \
+      LD="${linker}" \
+      HOSTCFLAGS=-fcommon \
+      CONFIG_BERLIN_SDIO_WLAN_8887=m \
+      M="${bt_module_dir}" \
+      INSTALL_MOD_PATH="${partial_output}/modules" \
+      modules_install >>"${partial_output}/modules-install.log" 2>&1
+  fi
 
   install -m 0644 "${build_dir}/arch/arm/boot/zImage" \
     "${partial_output}/zImage"

@@ -92,6 +92,8 @@ Verified facts:
 - A static ARM provisioning daemon now provides ephemeral TLS, a 256-bit token,
   bounded credential parsing, and Unix-socket handoff. It passed live loopback
   security and expiry tests; SD8887 AP mode remains unverified.
+- A separate native SD8887 STA/uAP kernel and provisioning initramfs are built
+  and isolated from the proven boot pair pending attended yellow-mode testing.
 
 Artifact-backed findings:
 

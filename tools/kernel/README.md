@@ -85,6 +85,12 @@ The `baseline`, `spi-gpio`, and `audio` profiles all start from
 source, compiler, NDK archive, and supplied DTB, and build modules with
 `-fno-pic -fno-pie`.
 
+The separate `audio-sd8887` profile disables the recovery-compatible SD8801
+module and builds the disclosed native SD8887 STA/uAP pair. It is not the
+hardware default until a RAM boot verifies it. Use
+`boot-native-ram.sh --wifi-mode sta-uap` only for that attended validation;
+station-only remains the safe default.
+
 The Invoke source's Bluetooth directory is selected by
 `BERLIN_SDIO_BT_8887`, but its local Makefile mistakenly keys `bt8xxx.o` on
 `BERLIN_SDIO_WLAN_8887`. The builder supplies that selector only to the

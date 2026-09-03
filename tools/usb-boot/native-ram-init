@@ -54,6 +54,7 @@ else
 fi
 
 wifi_dir=/lib/firmware/mrvl
+wifi_mode=sta
 sd8887_module_dir=""
 sd8801_module_dir=""
 bt_module=""
@@ -66,6 +67,12 @@ for candidate in \
     break
   fi
 done
+
+case " $(${BB} cat /proc/cmdline) " in
+  *" reinvoke.wifi_mode=sta-uap "*)
+    wifi_mode=sta-uap
+    ;;
+esac
 
 for candidate in \
   /lib/modules/3.8.13-reinvoke*/kernel/arch/arm/mach-berlin/modules/wlan_sd8801 \
@@ -94,15 +101,27 @@ elif [ -n "${sd8887_module_dir}" ]; then
   echo /etc/hotplug/wifi-fw.sh > /proc/sys/kernel/hotplug
   ${BB} insmod "${sd8887_module_dir}/mlan.ko" ||
     log "failed to load SD8887 mlan core"
-  ${BB} insmod "${sd8887_module_dir}/sd8xxx.ko" \
-    fw_name=mrvl/sd8887_wlan_a2_p78.bin \
-    cal_data_cfg=mrvl/WlanCalData_ext-LS9AD-20160725.conf \
-    txpwrlimit_cfg=mrvl/txpwrlimit_cfg_8887.bin \
-    mac_addr=02:52:49:4e:56:01 \
-    drv_mode=1 max_sta_bss=1 max_uap_bss=0 \
-    sta_name=mlan fw_serial=1 cfg80211_wext=0xf \
-    auto_ds=2 ps_mode=2 antenna_div=1 module_rev=22 ||
-    log "failed to load native SD8887 Wi-Fi"
+  if [ "${wifi_mode}" = "sta-uap" ]; then
+    ${BB} insmod "${sd8887_module_dir}/sd8xxx.ko" \
+      fw_name=mrvl/sd8887_wlan_a2_p78.bin \
+      cal_data_cfg=mrvl/WlanCalData_ext-LS9AD-20160725.conf \
+      txpwrlimit_cfg=mrvl/txpwrlimit_cfg_8887.bin \
+      mac_addr=02:52:49:4e:56:01 \
+      drv_mode=3 max_sta_bss=1 max_uap_bss=1 \
+      sta_name=mlan uap_name=p2p fw_serial=1 cfg80211_wext=0xf \
+      auto_ds=2 ps_mode=2 antenna_div=1 module_rev=22 ||
+      log "failed to load native SD8887 STA/uAP Wi-Fi"
+  else
+    ${BB} insmod "${sd8887_module_dir}/sd8xxx.ko" \
+      fw_name=mrvl/sd8887_wlan_a2_p78.bin \
+      cal_data_cfg=mrvl/WlanCalData_ext-LS9AD-20160725.conf \
+      txpwrlimit_cfg=mrvl/txpwrlimit_cfg_8887.bin \
+      mac_addr=02:52:49:4e:56:01 \
+      drv_mode=1 max_sta_bss=1 max_uap_bss=0 \
+      sta_name=mlan fw_serial=1 cfg80211_wext=0xf \
+      auto_ds=2 ps_mode=2 antenna_div=1 module_rev=22 ||
+      log "failed to load native SD8887 station Wi-Fi"
+  fi
 elif [ -n "${sd8801_module_dir}" ]; then
   echo /etc/hotplug/wifi-fw.sh > /proc/sys/kernel/hotplug
   ${BB} insmod "${sd8801_module_dir}/88mlan.ko" ||
