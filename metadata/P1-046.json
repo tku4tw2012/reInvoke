@@ -1,8 +1,8 @@
 {
   "id": "P1-046",
   "kind": "owned_network_lifecycle",
-  "retrieved_utc": "2026-09-03T16:18:00Z",
-  "status": "HARDWARE_VALIDATED_RAM_ONLY",
+  "retrieved_utc": "2026-09-03T17:37:00Z",
+  "status": "HARDWARE_COLD_BOOT_VALIDATED_RAM_ONLY",
   "artifact": {
     "path": "build/artifacts/reinvoke-networkd-20260903/reinvoke-networkd",
     "sha256": "e6d847fd20f0bb784f019169211f0200d2f43edb5ee8a030e17b6d636f58148f",
@@ -12,7 +12,7 @@
     "path": "build/artifacts/invoke-native-ram-audio-sd8887-networkd-20260903/82_IMAGE.reinvoke-audio-sd8887-networkd",
     "sha256": "01e0991ef140a8ab8d916796ae0248e0eb097e89c5f74e531a208af4d32e03a4",
     "size": 40067033,
-    "status": "BUILT_NOT_COLD_BOOTED"
+    "status": "COLD_BOOT_VALIDATED"
   },
   "kernel_modules": {
     "release": "3.8.13-reinvoke-audio-sd8887",
@@ -51,6 +51,8 @@
     "A reused stale PID was ignored without signaling the unrelated process, and supervision reacquired connectivity.",
     "A disowned DHCP event left the active route and failure marker unchanged.",
     "Authenticated credential replacement stopped the prior supplicant and DHCP child, then the unchanged supervisor reacquired association, lease, route, resolver, IPv4, and DNS.",
-    "Two packaged initramfs builds were byte-identical and contained the reviewed daemon, adapters, release manifest, and PID 1."
+    "Two packaged initramfs builds were byte-identical and contained the reviewed daemon, adapters, release manifest, and PID 1.",
+    "Checksum-gated image cold-booted in yellow mode at 2026-09-03T17:36Z; PID 1 auto-started networkd, the RAM-only root remained unmounted from NAND, and the SD8887 WLAN/Bluetooth drivers loaded.",
+    "Cold-boot networkd correctly waited for a root-controlled station supplicant; no station credentials were included in this image, so association, DHCP, DNS, and route acquisition were not expected or attempted."
   ]
 }

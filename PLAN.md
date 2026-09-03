@@ -287,9 +287,11 @@ build of the pinned open-source flasher at commit `63444e82`.
    application, and restart-safe owned DHCP/resolver lifecycle are implemented
    and live-validated in RAM. The packaged lifecycle image is reproducible and
    contains the reviewed components. Credential replacement while the owned
-   supervisor remained active also passed. Cold-boot validation with that image
-   remains; SSH is optional.
-7. Repeat cold-boot and recovery tests before designing any persistent NAND
+   supervisor remained active also passed. The packaged image then cold-booted
+   in yellow mode with automatic networkd startup and no NAND mount; the
+   credential-free acceptance image correctly waited for a station supplicant.
+   SSH is optional.
+7. **Next:** repeat recovery tests before designing any persistent NAND
    installation.
 8. **Interface measurements** (unpowered continuity testing first): map both
    daughterboard connectors pin-by-pin; identify power, ground, reset,
