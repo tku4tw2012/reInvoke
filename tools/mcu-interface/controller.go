@@ -36,6 +36,7 @@ var dacInitialization = [][2]byte{
 type hardware interface {
 	ReadRegister(address, register byte) (byte, error)
 	WriteRegister(address, register, value byte) error
+	UpdateRegister(address, register byte, update func(byte) byte) error
 }
 
 type mutePolicy struct {
@@ -184,16 +185,9 @@ func (c *controller) unmuteAllowedLocked() error {
 }
 
 func (c *controller) updateExpanderLocked(update func(byte) byte) error {
-	current, err := c.hardware.ReadRegister(
+	return c.hardware.UpdateRegister(
 		expanderAddress,
 		expanderOutput,
-	)
-	if err != nil {
-		return err
-	}
-	return c.hardware.WriteRegister(
-		expanderAddress,
-		expanderOutput,
-		update(current),
+		update,
 	)
 }

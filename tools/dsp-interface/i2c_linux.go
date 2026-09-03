@@ -1,19 +1,24 @@
 // Copyright (c) 2026 tku4tw2012
 // SPDX-License-Identifier: MIT
 
+//go:build linux
+
 package main
+
+// Raw I2C_RDWR backend for the IO expander that carries the DSP reset bit.
+// Only register 0x01 bit 0 is ever touched, always read-modify-write, so the
+// amplifier and DAC mute bits owned by the MCU service are preserved.
 
 import (
 	"fmt"
 	"os"
 	"runtime"
-	"sync"
 	"syscall"
 	"unsafe"
 )
 
 const (
-	i2cRead          = 0x0001
+	i2cReadFlag      = 0x0001
 	i2cRDWR          = 0x0707
 	expanderLockPath = "/run/reinvoke/expander.lock"
 )
@@ -33,7 +38,6 @@ type i2cTransfer struct {
 type linuxI2C struct {
 	file     *os.File
 	lockFile *os.File
-	mu       sync.Mutex
 }
 
 func openLinuxI2C(path string) (*linuxI2C, error) {
@@ -62,10 +66,7 @@ func (bus *linuxI2C) Close() error {
 	return busErr
 }
 
-func (bus *linuxI2C) ReadRegister(
-	address,
-	register byte,
-) (byte, error) {
+func (bus *linuxI2C) ReadRegister(address, register byte) (byte, error) {
 	pointer := []byte{register}
 	value := []byte{0}
 	messages := []i2cMessage{
@@ -76,24 +77,21 @@ func (bus *linuxI2C) ReadRegister(
 		},
 		{
 			Address: uint16(address),
-			Flags:   i2cRead,
+			Flags:   i2cReadFlag,
 			Length:  uint16(len(value)),
 			Buffer:  uintptr(unsafe.Pointer(&value[0])),
 		},
 	}
-	if err := bus.transfer(messages); err != nil {
-		return 0, err
-	}
+	err := bus.transfer(messages)
 	runtime.KeepAlive(pointer)
 	runtime.KeepAlive(value)
+	if err != nil {
+		return 0, err
+	}
 	return value[0], nil
 }
 
-func (bus *linuxI2C) WriteRegister(
-	address,
-	register,
-	value byte,
-) error {
+func (bus *linuxI2C) WriteRegister(address, register, value byte) error {
 	buffer := []byte{register, value}
 	messages := []i2cMessage{{
 		Address: uint16(address),
@@ -102,30 +100,6 @@ func (bus *linuxI2C) WriteRegister(
 	}}
 	err := bus.transfer(messages)
 	runtime.KeepAlive(buffer)
-	return err
-}
-
-func (bus *linuxI2C) ReadMCUEvent() ([6]byte, error) {
-	var frame [6]byte
-	messages := []i2cMessage{{
-		Address: 0x36,
-		Flags:   i2cRead,
-		Length:  uint16(len(frame)),
-		Buffer:  uintptr(unsafe.Pointer(&frame[0])),
-	}}
-	err := bus.transfer(messages)
-	runtime.KeepAlive(frame)
-	return frame, err
-}
-
-func (bus *linuxI2C) WriteMCUCommand(frame [6]byte) error {
-	messages := []i2cMessage{{
-		Address: 0x36,
-		Length:  uint16(len(frame)),
-		Buffer:  uintptr(unsafe.Pointer(&frame[0])),
-	}}
-	err := bus.transfer(messages)
-	runtime.KeepAlive(frame)
 	return err
 }
 
@@ -147,9 +121,6 @@ func (bus *linuxI2C) UpdateRegister(
 }
 
 func (bus *linuxI2C) transfer(messages []i2cMessage) error {
-	bus.mu.Lock()
-	defer bus.mu.Unlock()
-
 	transfer := i2cTransfer{
 		Messages: &messages[0],
 		Count:    uint32(len(messages)),

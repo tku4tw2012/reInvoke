@@ -64,6 +64,18 @@ func (hardware *recordingHardware) WriteRegister(
 	return nil
 }
 
+func (hardware *recordingHardware) UpdateRegister(
+	address,
+	register byte,
+	update func(byte) byte,
+) error {
+	current, err := hardware.ReadRegister(address, register)
+	if err != nil {
+		return err
+	}
+	return hardware.WriteRegister(address, register, update(current))
+}
+
 func TestInitializePreservesMuteFirstCapturedOrder(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
 	control := newController(hardware, mutePolicy{})
