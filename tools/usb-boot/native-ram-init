@@ -17,6 +17,9 @@ ${BB} mkdir -p /dev/pts /tmp /run /run/reinvoke /data/local/tmp
 ${BB} chmod 0700 /run/reinvoke
 ${BB} mount -t devpts devpts /dev/pts
 ${BB} mount -t tmpfs tmpfs /tmp
+# Minimal devtmpfs images may omit the kernel random devices required by D-Bus.
+${BB} test -e /dev/random || ${BB} mknod -m 0444 /dev/random c 1 8
+${BB} test -e /dev/urandom || ${BB} mknod -m 0444 /dev/urandom c 1 9
 
 (umask 0; /sbin/ueventd -s)
 ${BB} ifconfig lo 127.0.0.1 up
