@@ -7,9 +7,9 @@
 set -euo pipefail
 
 readonly EXPECTED_SOURCE_SHA256="08a8f96a5c476a08ba19441d83637e606f27f442d56c2689dd6b56d2fc72b7a8"
-readonly EXPECTED_PROVISIOND_SHA256="2948300b5be513e57ec26302f3f393b15759344b5e3c5cabdb84061a3b8e1b70"
+readonly EXPECTED_PROVISIOND_SHA256="5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07"
 readonly EXPECTED_WIFI_APPLYD_SHA256="6697df000d130a6461d1e3f57b6ebe8b1ad1742984a94250bc1e243dca097610"
-readonly EXPECTED_NETWORKD_SHA256="e6d847fd20f0bb784f019169211f0200d2f43edb5ee8a030e17b6d636f58148f"
+readonly EXPECTED_NETWORKD_SHA256="cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66"
 readonly EXPECTED_MODULE_TREE_MANIFEST_SHA256="06d7a5f5bc43c3b3d869b9b962e1ef70d7f3c3fc15d934c8dc020332b57b940a"
 
 usage() {
@@ -50,6 +50,7 @@ main() {
   local wifi_applyd=""
   local networkd=""
   local output_path=""
+  local output_partial
   local script_dir
   local work_dir
   local rootfs_dir
@@ -117,12 +118,30 @@ main() {
   [[ -d "${donor_rootfs}" ]] ||
     err "donor rootfs not found: ${donor_rootfs}"
   [[ -n "${output_path}" ]] || err "--output is required"
-  [[ ! -e "${output_path}" ]] ||
-    err "refusing to overwrite existing output: ${output_path}"
 
-  for command_name in awk cp cpio find gzip install sha256sum sort touch xargs; do
+  for command_name in awk cp cpio find gzip install realpath sha256sum sort touch xargs; do
     require_command "${command_name}"
   done
+  source_initramfs="$(realpath "${source_initramfs}")"
+  donor_rootfs="$(realpath "${donor_rootfs}")"
+  output_path="$(realpath --canonicalize-missing "${output_path}")"
+  output_partial="${output_path}.partial"
+  [[ ! -e "${output_path}" ]] ||
+    err "refusing to overwrite existing output: ${output_path}"
+  [[ ! -e "${output_partial}" ]] ||
+    err "stale partial output exists: ${output_partial}"
+  if [[ -n "${kernel_modules}" ]]; then
+    kernel_modules="$(realpath "${kernel_modules}")"
+  fi
+  if [[ -n "${provisiond}" ]]; then
+    provisiond="$(realpath "${provisiond}")"
+  fi
+  if [[ -n "${wifi_applyd}" ]]; then
+    wifi_applyd="$(realpath "${wifi_applyd}")"
+  fi
+  if [[ -n "${networkd}" ]]; then
+    networkd="$(realpath "${networkd}")"
+  fi
 
   printf "%s  %s\n" \
     "${EXPECTED_SOURCE_SHA256}" \
@@ -216,7 +235,9 @@ main() {
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/reinvoke-initramfs.XXXXXX")"
-  printf -v cleanup_command 'rm -rf -- %q' "${work_dir}"
+  printf -v cleanup_command \
+    'rm -rf -- %q; rm -f -- %q' \
+    "${work_dir}" "${output_partial}"
   trap "${cleanup_command}" EXIT
   rootfs_dir="${work_dir}/rootfs"
   archive_listing="${work_dir}/archive.list"
@@ -301,9 +322,10 @@ main() {
       LC_ALL=C sort --zero-terminated |
       cpio --null --create --format=newc --owner=0:0 --reproducible |
       gzip --no-name --best
-  ) > "${output_path}"
+  ) > "${output_partial}"
 
-  gzip --test "${output_path}"
+  gzip --test "${output_partial}"
+  mv "${output_partial}" "${output_path}"
   stat --format="%n %s bytes" "${output_path}"
   sha256sum "${output_path}"
 

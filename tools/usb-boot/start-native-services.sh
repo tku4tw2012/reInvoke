@@ -133,12 +133,10 @@ ensure_rootfs_mount() {
   local mounted_release
 
   mounted_release="$(
-    adb_shell \
-      "busybox cat '${MOUNT_POINT}/etc/version.txt' 2>/dev/null" |
-      grep -F "Barracuda_libre-12.2050.3" |
-      tail -1
+    adb_shell "busybox cat '${MOUNT_POINT}/etc/version.txt' 2>/dev/null" ||
+      true
   )"
-  if [[ "${mounted_release}" == "Barracuda_libre-12.2050.3" ]]; then
+  if grep -qF "Barracuda_libre-12.2050.3" <<<"${mounted_release}"; then
     printf "Reviewed donor rootfs is already mounted\n"
   else
     adb -s "${ADB_SERIAL}" push "${ROOTFS_PATH}" "${DEVICE_ROOTFS}" >/dev/null

@@ -28,6 +28,7 @@ Options:
   --adb-server-port PORT    ADB server port (default: 5037)
   --adb-serial SERIAL       Expected ADB serial
   --wifi-mode MODE          sta or sta-uap (default: sta)
+  --wait-for-prompt         Wait indefinitely for yellow-mode U-Boot
   --prepare-only            Validate and stage without sending commands
   --help                    Show this help
 
@@ -108,6 +109,34 @@ usb_gadget_present() {
   lsusb -d 18d1:0d02 2>/dev/null | grep -q "18d1:0d02"
 }
 
+wait_for_uboot_prompt() {
+  local console_log="$1"
+  local console_fifo="$2"
+  local log_offset=0
+
+  if [[ -f "${console_log}" ]]; then
+    log_offset="$(stat --format="%s" "${console_log}")"
+    if [[ -p "${console_fifo}" ]] &&
+      grep -a -qF "${UBOOT_PROMPT_PREFIX}" "${console_log}" &&
+      ! usb_gadget_present; then
+      printf "\r" >"${console_fifo}"
+    fi
+  fi
+
+  printf "Waiting for yellow-mode U-Boot; no timeout is applied\n"
+  while true; do
+    if [[ -f "${console_log}" &&
+          -p "${console_fifo}" ]] &&
+      console_contains_since \
+        "${console_log}" "${log_offset}" "${UBOOT_PROMPT_PREFIX}" &&
+      ! usb_gadget_present; then
+      printf "U-Boot prompt is ready\n"
+      return
+    fi
+    sleep 0.2
+  done
+}
+
 wait_for_usb_gadget() {
   local timeout_seconds="$1"
   local start_seconds="${SECONDS}"
@@ -147,6 +176,7 @@ main() {
   local adb_serial="0123456789ABCDEF"
   local adb_state
   local wifi_mode="sta"
+  local wait_for_prompt=0
   local prepare_only=0
   local initramfs_size
   local console_offset
@@ -224,6 +254,10 @@ main() {
         wifi_mode="$2"
         shift 2
         ;;
+      --wait-for-prompt)
+        wait_for_prompt=1
+        shift
+        ;;
       --prepare-only)
         prepare_only=1
         shift
@@ -282,6 +316,9 @@ main() {
     return 0
   fi
 
+  if ((wait_for_prompt == 1)); then
+    wait_for_uboot_prompt "${console_log}" "${console_fifo}"
+  fi
   [[ -f "${console_log}" ]] ||
     err "U-Boot console log not found: ${console_log}"
   [[ -p "${console_fifo}" ]] ||

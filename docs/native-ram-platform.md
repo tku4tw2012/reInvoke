@@ -52,7 +52,7 @@ The physical unit completed this sequence:
 | SPI NOR | Early-boot flash | Persistent | Sampled only; image before any future write |
 | SD8887 radio firmware | Device firmware loaded by Linux | Volatile in the radio; source file is persistent | Load from the RAM initramfs |
 | MCU firmware | Firmware in a companion controller | Presumed persistent in the MCU | Use the existing protocol; do not invoke upgrade RPCs |
-| DSP loader image | DSP program loaded by the host | Storage and update lifecycle not fully established | Use as a volatile donor artifact; live SPI loading is verified |
+| DSP loader image | DSP program loaded by the host | Volatile in the DSP; the host sends all 160,484 bytes over SPI at every service start | Ship the file with the replacement; a byte-exact capture confirms the transfer is verbatim |
 
 The 16 MiB M25P128 SPI NOR supports erase and program operations in principle.
 U-Boot maps it at `0xF0000000`, reports an invalid stored environment, and
@@ -221,6 +221,24 @@ The DSP transcript identifies the same value as
 `EVENT_DSP_VERSION=0.0.64.58`: the WAMP integer is hexadecimal `0x6458`, or
 decimal `25688`.
 
+The transport, frame layout, checksum, GPIO handshake order, expander-backed
+reset, and boot-image staging behind these observations were later recovered
+from the donor binary itself and are recorded in
+[dsp-boundary.md](emulation/dsp-boundary.md). The captured
+`readmsg: 0x00 0x01 0x04` line in that run is message id 1, event code 4,
+`EVENT_DSP_BOOTUP`, which is what makes the unmute happen.
+
+A later run on 2026-09-03 captured the SPI `ioctl` boundary byte for byte while
+forwarding every call unchanged, archived as
+`hardware/software-captures/20260903T191657Z-dsp-ioctl-record/`. It contains
+40,121 four-byte image transfers whose concatenated payloads are byte-identical
+to the per-byte bit-reversal of `dsp-img.ldr`, followed by 23 one-byte message
+transfers carrying the boot event and one `com.harman.dsp.getVer` exchange.
+That settles the DSP program as **host-loaded and volatile**: it lives in a
+file on the host filesystem and is retransmitted in full at every service
+start, so a replacement platform has to carry the image, not merely the
+protocol. Outputs were remuted after the run.
+
 ## Board-support audit
 
 | Layer | Verified identity | Persistence and replacement boundary |
@@ -230,7 +248,7 @@ decimal `25688`.
 | Wi-Fi calibration | `WlanCalData_ext-LS9AD-20160725.conf`, SHA-256 `11cb55e4f238ce179fb33e197aec11c3ed4ea578f735ef1b0ec5a4fedabd0431` | Board-specific donor data |
 | Bluetooth firmware | `sd8887_bt_a2_new.bin`, SHA-256 `c04b50f8e3a604d85dd7e4a6e05545ec6d0fae417f5898910722993bee62bc73` | Separate volatile controller load |
 | MCU image | `cortana_mcu.bin`, 13,312 bytes, SHA-256 `af0db96faaa79fcff254c5c95cef858e1fc6543ad73238b740f28f0e9fd98811` | Separate MCU upgrade surface exists; do not use it |
-| DSP image | `dsp-img.ldr`, 160,484 bytes, SHA-256 `e76f6ce7c53bb5b508507354fb08523089c136b3731d5ad4f4488a50526a44c8` | `dsp-client` can load alternate paths; exact persistence remains unresolved |
+| DSP image | `dsp-img.ldr`, 160,484 bytes, SHA-256 `e76f6ce7c53bb5b508507354fb08523089c136b3731d5ad4f4488a50526a44c8` | Host-loaded and volatile: pushed bit-reversed over SPI on every start, confirmed byte-identical on hardware |
 
 The recovery kernel has no active ALSA card, no SPI controller, and no
 Invoke-specific SD8887 Bluetooth transport module. Wi-Fi works because its
@@ -437,22 +455,25 @@ created new child PIDs and regained association, lease, route, resolver, public
 IPv4, and DNS. The host passed its active profile entirely through shell memory;
 no plaintext credential was printed or written to a host file.
 
-The checksum-gated lifecycle image was built twice with identical bytes. The
-external 40,067,033-byte initramfs has SHA-256
-`01e0991ef140a8ab8d916796ae0248e0eb097e89c5f74e531a208af4d32e03a4`.
+The final hardened checksum-gated lifecycle image was built twice with
+identical bytes. The external 40,068,440-byte initramfs has SHA-256
+`c056d21b0e147fb9fd38a9458952528be1f58b17566f1223a1147eca14d53e21`.
 Archive inspection confirmed the owned daemon, provisioning adapters, release
 manifest, pinned module tree, and updated PID 1. PID 1 restarts networkd after
 failure with a five-second delay, sends its output to the bounded kernel log, and
 supports `reinvoke.networkd=off` for manual recovery.
 
-On 2026-09-03 the checksum-gated image was cold-booted through yellow mode.
-PID 1 auto-started `reinvoke-networkd`, the service entered its expected
-supplicant-wait state, and the mount table showed only RAM-backed or virtual
-filesystems; no NAND or MTD block was mounted. The SD8887 WLAN and Bluetooth
-drivers also loaded. Because this acceptance image intentionally contained no
-station credentials, it did not attempt association, DHCP, DNS, or default
-route acquisition; those credentialed transitions remain covered by the live
-RAM-only validation above.
+On 2026-09-03 the final hardened checksum-gated image was cold-booted through
+yellow mode. PID 1 auto-started `reinvoke-networkd`, whose live SHA-256 matched
+`cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66`.
+The packaged `reinvoke-provisiond` also matched
+`5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07`.
+The service entered its expected supplicant-wait state, and the mount table
+showed only RAM-backed or virtual filesystems; no NAND or MTD block was
+mounted. The SD8887 WLAN and Bluetooth drivers also loaded. Because this
+acceptance image intentionally contained no station credentials, it did not
+attempt association, DHCP, DNS, or default route acquisition; those
+credentialed transitions remain covered by the live RAM-only validation above.
 
 ### RAM-only replacement Bluetooth control path
 
@@ -541,9 +562,12 @@ The target architecture is:
 7. An application layer for local voice, automation, media, and updates
 8. USB yellow mode retained as recovery
 
-The current hybrid uses Bonefish, `mcu-interface`, and `dsp-client` only to
-validate hardware boundaries. They are not assumptions that the final app stack
-must retain.
+The current hybrid retains Bonefish and the donor `dsp-client` only as
+comparison points. The reInvoke-owned MCU service has replaced donor
+`mcu-interface` in a live RAM session. It reproduced mute-first expander and
+DAC initialization, denied unmute by default, sent the recovered five-second
+MCU heartbeat, returned version `000116`, and published physical volume-up and
+volume-down events. Provenance is in [P1-048](../metadata/P1-048.json).
 
 ## Connectivity and provisioning model
 

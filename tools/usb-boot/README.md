@@ -124,14 +124,17 @@ tools/usb-boot/boot-native-ram.sh \
   --kernel-sha256 <reviewed-kernel-sha256> \
   --initramfs ../reinvoke-archive/build/artifacts/invoke-native-ram-audio/82_IMAGE.reinvoke-audio \
   --initramfs-sha256 <reviewed-initramfs-sha256> \
+  --wait-for-prompt \
   --adb-server-port 5038
 ```
 
 The loader verifies the kernel's `0x02008000` load and entry address, rejects
 staged `83_IMAGE` and `99_IMAGE`, and sends only `usbload`, `set bootargs`, and
-`bootm`. Use `--prepare-only` to validate and stage without touching the live
-console. While `capture-attempt.sh` owns the USB interface, pass its isolated
-ADB server port to the loader. The default capture port is 5038.
+`bootm`. Use `--wait-for-prompt` to keep the checksum-gated loader armed until
+yellow-mode U-Boot appears, without imposing an operator timeout. Use
+`--prepare-only` to validate and stage without touching the live console. While
+`capture-attempt.sh` owns the USB interface, pass its isolated ADB server port
+to the loader. The default capture port is 5038.
 
 After ADB returns, start the minimum diagnostic service graph:
 

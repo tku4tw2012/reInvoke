@@ -261,3 +261,81 @@ transport rather than a session bus. See
 The error came from pattern-matching Linux Bluetooth to BlueZ instead of
 reading the binary's dependencies. It is the same failure mode recorded earlier
 in this journal: fluent, specific, and unverified.
+
+### The DSP link, read out of the donor binary
+
+A replacement for `usr/bin/dsp-client` was treated as a software problem and
+worked without opening the unit. The binary is stripped of debugging
+information but exports 1,619 dynamic symbols, which is enough to disassemble
+by name rather than by guesswork.
+
+That recovered the whole boundary: SPI mode 3 at 1 MHz on `/dev/spidev0.0`, a
+five-byte host header with an additive checksum, a device header first read
+as three bytes and later corrected,
+the GPIO 4/12/13/15 handshake order, GPIO 5 as a bit-banged chip select during
+image download, the reset line as bit 0 of register `0x01` on the `0x20` I2C
+expander, and every command and event the service can emit. See
+[dsp-boundary.md](emulation/dsp-boundary.md).
+
+Two independent checks landed on the recovered format rather than on a
+plausible story about it. The captured `readmsg: 0x00 0x01 0x04` line from the
+SPI plus `base-gpio` hardware run decodes to message id 1, event code 4,
+`EVENT_DSP_BOOTUP`, which is exactly the next line in that log. The version
+event's four payload bytes pack big-endian to `0x6458`, which is the 25688 the
+same run published on `com.harman.dsp.version`.
+
+The expander finding closes a loop with the MCU side. `mcu-interface` mutes the
+amplifier and DAC through register `0x01` at `0x20`, and `dsp-client` resets
+the DSP through bit 0 of that same register. Both read-modify-write, so neither
+clobbers the other. Two services, recovered separately, agree on one expander.
+
+Two decoding errors are worth recording. A twenty-byte buffer named `gpioval`
+was first read as an array of GPIO numbers; it is a text buffer for `fgets` of
+`devmem` output. GPIO 4 was first classified as an input from the `devmem`
+direction helper, while the actual handshake writes it as a low-going strobe.
+Both mistakes came from trusting a name and a register write over the observed
+call order, and both were caught by reading `msgproc` end to end.
+
+`tools/control/dsp-frame-decode.mjs` is the passive result: an offline decoder
+for those frames and for `dsp-client`'s own log output. It opens no device
+node, and its command mode prints the bytes a procedure would send without
+sending them. The donor already prints every received frame, so decoding its
+log is complete instrumentation of the live link with no writes at all.
+
+### The device frame was never three bytes
+
+A second pass over `dsp-client`, taken to specify a wire capture, broke two
+things the first pass had asserted.
+
+The device-to-host header is not three bytes. It is the same five-byte header
+the host sends: id, length, checksum. What misled the first pass was the
+donor's own log. `readmsg:` prints what the receive helper leaves in memory,
+which is the header id followed by the payload, and that tuple was mistaken
+for the frame on the wire. The captured `readmsg: 0x00 0x01 0x04` line still
+decodes to `EVENT_DSP_BOOTUP`, so the conclusion drawn from it survived, but
+the format claimed around it did not. The predicted wire frame for that same
+event is `00 01 00 01 06 04 00 00`, and nothing has yet observed it.
+
+The second break is quieter and changes how any capture must be read. The
+donor issues one `SPI_IOC_MESSAGE(1)` per byte for message traffic. Only the
+image download moves four bytes at a time. Transfer counts therefore do not
+mean frame counts, and the 5,355 transfers in the archived hardware trace that
+exceeded the image word count are not a mystery, they are roughly 669 frames
+sent a byte at a time. Roughly, because the division is not exact, which is
+itself a reason to capture rather than to assert.
+
+One near-miss is worth recording because it was almost a third error. Byte 8
+of a transmit ring entry looked like an opcode field, which would have
+contradicted the checksum claim made in the first pass. Reading `msgwrite`
+showed it is where the computed checksum is stored. The first pass was right;
+the correction would have been the mistake.
+
+`tools/emulation/spi-capture-label.mjs` is what came out of this. It labels a
+byte-exact `SPI_IOC_MESSAGE` log from the ioctl shim's record mode, separates
+image words from message bytes by the shim's own asymmetry between a null
+receive buffer and a real one, reassembles frames, and diffs the image run
+against a bit-reversed `dsp-img.ldr`. It parses files and nothing else. The
+shim, which is owned elsewhere, does the capturing; this does the reading.
+Neither knows about the other beyond one printf format, and the tests hold
+that format verbatim so a drift shows up as a test failure rather than as a
+silently empty report.

@@ -1,4 +1,9 @@
-# reInvoke Revival Roadmap
+---
+title: reInvoke revival roadmap
+description: Staged roadmap for closed-unit software replacement and recovery
+ms.date: 2026-09-03
+ms.topic: overview
+---
 
 ## End state
 
@@ -49,21 +54,26 @@ any RAM-boot work.
 Do not flash until a recovery and image-integrity procedure is independently
 established.
 
-### 4. Interface validation
+### 4. Software interface validation
 
-Resolve the daughterboard connector pinout, rails, reset/enable signals,
-digital-audio transport, MCU control protocol, UI transport, and microphone
-path. Use a logic analyzer or oscilloscope only after the wiring and voltage
-limits are known.
+Recover the MCU, DSP, audio, UI, button, LED, and microphone contracts without
+opening the enclosure. Use held binaries, WAMP traffic, emulation shims,
+interposed system calls, kernel interfaces, and live RAM-only logs. A
+log-and-forward ioctl recorder can capture byte-exact I2C and SPI exchanges,
+including device responses, while the donor process continues operating.
+
+Electrical characterization and replacement-compute design are optional future
+hardware projects. They do not gate a maintained userland on the working
+BG2CDP platform.
 
 ### 5. Reuse decision
 
-- **Keep BG2CDP:** pursue a maintained userland or minimal service replacement
-  if boot, storage, network, and audio paths are usable.
-- **Replace compute:** design a compatible module only after connector,
-  power, audio, and control interfaces are measured.
-- **Bypass electronics:** use only if the stock audio/control path cannot be
-  commanded and driver/acoustic parameters justify a new design.
+- **Keep BG2CDP:** selected for the current project. Yellow-mode RAM boot, USB
+  recovery, networking, Bluetooth, audio, MCU control, and DSP loading work.
+- **Replace compute:** optional future hardware project if BG2CDP becomes
+  unusable.
+- **Bypass electronics:** optional future hardware project if the existing
+  audio/control path fails.
 
 ### 6. Minimal revival demonstrator
 
