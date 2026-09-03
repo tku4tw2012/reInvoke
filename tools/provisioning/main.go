@@ -41,7 +41,9 @@ const (
 	defaultApplySocket   = "/run/reinvoke/wifi-apply.sock"
 	defaultDescriptor    = "/run/reinvoke/provisioning.json"
 	defaultLifetime      = 5 * time.Minute
+	defaultApplyTimeout  = 25 * time.Second
 	maxLifetime          = 15 * time.Minute
+	maxApplyTimeout      = 3 * time.Minute
 	maxRequestBytes      = 4096
 )
 
@@ -75,13 +77,14 @@ type unixApplier struct {
 }
 
 type provisioningHandler struct {
-	applier    requestApplier
-	token      string
-	expiresAt  time.Time
-	expiresUTC *time.Time
-	applied    chan struct{}
-	mu         sync.Mutex
-	complete   bool
+	applier      requestApplier
+	token        string
+	expiresAt    time.Time
+	expiresUTC   *time.Time
+	applied      chan struct{}
+	applyTimeout time.Duration
+	mu           sync.Mutex
+	complete     bool
 }
 
 func (a unixApplier) Apply(ctx context.Context, request wifiRequest) error {
@@ -94,7 +97,8 @@ func (a unixApplier) Apply(ctx context.Context, request wifiRequest) error {
 		return fmt.Errorf("connect apply socket: %w", err)
 	}
 	defer connection.Close()
-	if err := verifyUnixPeer(connection, a.expectedUID); err != nil {
+	unixConnection, err := verifyUnixPeer(connection, a.expectedUID)
+	if err != nil {
 		return err
 	}
 
@@ -104,6 +108,9 @@ func (a unixApplier) Apply(ctx context.Context, request wifiRequest) error {
 	}
 	if err := json.NewEncoder(connection).Encode(request); err != nil {
 		return fmt.Errorf("send apply request: %w", err)
+	}
+	if err := unixConnection.CloseWrite(); err != nil {
+		return fmt.Errorf("finish apply request: %w", err)
 	}
 
 	var response applyResponse
@@ -196,14 +203,17 @@ func validateUnixSocketPath(path string, expectedUID uint32) error {
 	return nil
 }
 
-func verifyUnixPeer(connection net.Conn, expectedUID uint32) error {
+func verifyUnixPeer(
+	connection net.Conn,
+	expectedUID uint32,
+) (*net.UnixConn, error) {
 	unixConnection, ok := connection.(*net.UnixConn)
 	if !ok {
-		return errors.New("apply connection is not a Unix socket")
+		return nil, errors.New("apply connection is not a Unix socket")
 	}
 	rawConnection, err := unixConnection.SyscallConn()
 	if err != nil {
-		return fmt.Errorf("access apply socket descriptor: %w", err)
+		return nil, fmt.Errorf("access apply socket descriptor: %w", err)
 	}
 
 	var (
@@ -217,15 +227,15 @@ func verifyUnixPeer(connection net.Conn, expectedUID uint32) error {
 			syscall.SO_PEERCRED,
 		)
 	}); err != nil {
-		return fmt.Errorf("inspect apply peer: %w", err)
+		return nil, fmt.Errorf("inspect apply peer: %w", err)
 	}
 	if credentialErr != nil {
-		return fmt.Errorf("read apply peer credentials: %w", credentialErr)
+		return nil, fmt.Errorf("read apply peer credentials: %w", credentialErr)
 	}
 	if credentials == nil || credentials.Uid != expectedUID {
-		return errors.New("apply peer UID is not trusted")
+		return nil, errors.New("apply peer UID is not trusted")
 	}
-	return nil
+	return unixConnection, nil
 }
 
 func (h *provisioningHandler) ServeHTTP(
@@ -325,7 +335,7 @@ func (h *provisioningHandler) handleWiFi(
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(request.Context(), h.applyTimeout)
 	defer cancel()
 	if err := h.applier.Apply(ctx, wifi); err != nil {
 		log.Printf("provisioning adapter rejected the request")
@@ -565,6 +575,7 @@ func run() error {
 		applySocket    string
 		descriptorPath string
 		lifetime       time.Duration
+		applyTimeout   time.Duration
 	)
 	flag.StringVar(
 		&listenAddress,
@@ -590,6 +601,12 @@ func run() error {
 		defaultLifetime,
 		"maximum provisioning window",
 	)
+	flag.DurationVar(
+		&applyTimeout,
+		"apply-timeout",
+		defaultApplyTimeout,
+		"maximum wait for the privileged network adapter",
+	)
 	flag.Parse()
 
 	if os.Geteuid() != 0 {
@@ -597,6 +614,12 @@ func run() error {
 	}
 	if lifetime < 30*time.Second || lifetime > maxLifetime {
 		return errors.New("lifetime must be from 30s through 15m")
+	}
+	if applyTimeout < 5*time.Second || applyTimeout > maxApplyTimeout {
+		return errors.New("apply timeout must be from 5s through 3m")
+	}
+	if lifetime < applyTimeout+5*time.Second {
+		return errors.New("lifetime must exceed apply timeout by at least 5s")
 	}
 	ipAddress, err := parseListenAddress(listenAddress)
 	if err != nil {
@@ -653,19 +676,20 @@ func run() error {
 	handler := &provisioningHandler{
 		applier: unixApplier{
 			socketPath:  applySocket,
-			timeout:     3 * time.Second,
+			timeout:     applyTimeout,
 			expectedUID: 0,
 		},
-		token:      token,
-		expiresAt:  expiresAt,
-		expiresUTC: expiresUTC,
-		applied:    applied,
+		token:        token,
+		expiresAt:    expiresAt,
+		expiresUTC:   expiresUTC,
+		applied:      applied,
+		applyTimeout: applyTimeout,
 	}
 	server := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      5 * time.Second,
+		WriteTimeout:      applyTimeout + 5*time.Second,
 		IdleTimeout:       10 * time.Second,
 		MaxHeaderBytes:    8192,
 		TLSConfig: &tls.Config{

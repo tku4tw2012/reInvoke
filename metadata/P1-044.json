@@ -1,8 +1,13 @@
 {
   "artifact": {
     "path": "build/artifacts/reinvoke-provisiond-20260903/reinvoke-provisiond",
-    "sha256": "a4024dac2b178e1060eda8a240f644b0981c66ee82e8c32c7da34d59184a07b1",
+    "sha256": "2948300b5be513e57ec26302f3f393b15759344b5e3c5cabdb84061a3b8e1b70",
     "size": 4784128
+  },
+  "wifi_apply_artifact": {
+    "path": "build/artifacts/reinvoke-wifi-applyd-20260903/reinvoke-wifi-applyd",
+    "sha256": "6697df000d130a6461d1e3f57b6ebe8b1ad1742984a94250bc1e243dca097610",
+    "size": 2293760
   },
   "compiler": {
     "path": "toolchains/ubuntu-go-1.18.1/extracted/usr/lib/go-1.18/bin/go",

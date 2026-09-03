@@ -7,7 +7,8 @@
 set -euo pipefail
 
 readonly EXPECTED_SOURCE_SHA256="08a8f96a5c476a08ba19441d83637e606f27f442d56c2689dd6b56d2fc72b7a8"
-readonly EXPECTED_PROVISIOND_SHA256="a4024dac2b178e1060eda8a240f644b0981c66ee82e8c32c7da34d59184a07b1"
+readonly EXPECTED_PROVISIOND_SHA256="2948300b5be513e57ec26302f3f393b15759344b5e3c5cabdb84061a3b8e1b70"
+readonly EXPECTED_WIFI_APPLYD_SHA256="6697df000d130a6461d1e3f57b6ebe8b1ad1742984a94250bc1e243dca097610"
 
 usage() {
   local exit_code="${1:-0}"
@@ -18,6 +19,7 @@ Usage: build-native-initramfs.sh \
   --donor-rootfs PATH \
   [--kernel-modules PATH] \
   [--provisiond PATH] \
+  [--wifi-applyd PATH] \
   --output PATH
 
 Builds a RAM-only 82_IMAGE derivative. The donor rootfs supplies the Invoke's
@@ -42,6 +44,7 @@ main() {
   local donor_rootfs=""
   local kernel_modules=""
   local provisiond=""
+  local wifi_applyd=""
   local output_path=""
   local script_dir
   local work_dir
@@ -77,6 +80,11 @@ main() {
       --provisiond)
         [[ -n "${2:-}" ]] || err "--provisiond requires a path"
         provisiond="$2"
+        shift 2
+        ;;
+      --wifi-applyd)
+        [[ -n "${2:-}" ]] || err "--wifi-applyd requires a path"
+        wifi_applyd="$2"
         shift 2
         ;;
       --output)
@@ -161,6 +169,13 @@ main() {
       sha256sum --check --status ||
       err "provisioning daemon checksum mismatch"
   fi
+  if [[ -n "${wifi_applyd}" ]]; then
+    [[ -f "${wifi_applyd}" ]] ||
+      err "Wi-Fi apply daemon not found: ${wifi_applyd}"
+    printf "%s  %s\n" "${EXPECTED_WIFI_APPLYD_SHA256}" "${wifi_applyd}" |
+      sha256sum --check --status ||
+      err "Wi-Fi apply daemon checksum mismatch"
+  fi
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/reinvoke-initramfs.XXXXXX")"
@@ -197,6 +212,10 @@ main() {
     install -m 0755 "${provisiond}" \
       "${rootfs_dir}/usr/sbin/reinvoke-provisiond"
   fi
+  if [[ -n "${wifi_applyd}" ]]; then
+    install -m 0755 "${wifi_applyd}" \
+      "${rootfs_dir}/usr/sbin/reinvoke-wifi-applyd"
+  fi
 
   rm -f \
     "${rootfs_dir}/bin/flash_custk" \
@@ -214,6 +233,9 @@ main() {
     fi
     if [[ -n "${provisiond}" ]]; then
       printf "provisioning daemon: included, manual start only\n"
+    fi
+    if [[ -n "${wifi_applyd}" ]]; then
+      printf "Wi-Fi apply daemon: included, manual start only\n"
     fi
     printf "storage policy: no NAND partitions mounted\n"
   } > "${rootfs_dir}/etc/reinvoke-release"

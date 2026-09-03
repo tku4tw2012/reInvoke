@@ -8,6 +8,8 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -105,10 +107,11 @@ func TestProvisioningHandler(t *testing.T) {
 
 	applier := &recordingApplier{}
 	handler := &provisioningHandler{
-		applier:   applier,
-		token:     "test-token",
-		expiresAt: time.Now().Add(time.Minute),
-		applied:   make(chan struct{}, 1),
+		applier:      applier,
+		token:        "test-token",
+		expiresAt:    time.Now().Add(time.Minute),
+		applied:      make(chan struct{}, 1),
+		applyTimeout: time.Second,
 	}
 	server := httptest.NewTLSServer(handler)
 	defer server.Close()
@@ -176,10 +179,11 @@ func TestRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
 
 	handler := &provisioningHandler{
-		applier:   &recordingApplier{},
-		token:     "test-token",
-		expiresAt: time.Now().Add(time.Minute),
-		applied:   make(chan struct{}, 1),
+		applier:      &recordingApplier{},
+		token:        "test-token",
+		expiresAt:    time.Now().Add(time.Minute),
+		applied:      make(chan struct{}, 1),
+		applyTimeout: time.Second,
 	}
 	request := httptest.NewRequest(
 		http.MethodPost,
@@ -279,7 +283,12 @@ func TestUnixApplier(t *testing.T) {
 		defer connection.Close()
 
 		var request wifiRequest
-		if decodeErr := json.NewDecoder(connection).Decode(&request); decodeErr != nil {
+		decoder := json.NewDecoder(connection)
+		if decodeErr := decoder.Decode(&request); decodeErr != nil {
+			return
+		}
+		var extra interface{}
+		if decodeErr := decoder.Decode(&extra); !errors.Is(decodeErr, io.EOF) {
 			return
 		}
 		received <- request
