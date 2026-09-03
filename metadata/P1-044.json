@@ -1,7 +1,7 @@
 {
   "artifact": {
-    "path": "build/artifacts/reinvoke-provisiond-20260903/reinvoke-provisiond",
-    "sha256": "2948300b5be513e57ec26302f3f393b15759344b5e3c5cabdb84061a3b8e1b70",
+    "path": "build/artifacts/reinvoke-provisiond-20260903/reinvoke-provisiond-hardened",
+    "sha256": "5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07",
     "size": 4784128
   },
   "wifi_apply_artifact": {

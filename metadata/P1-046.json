@@ -1,17 +1,17 @@
 {
   "id": "P1-046",
   "kind": "owned_network_lifecycle",
-  "retrieved_utc": "2026-09-03T17:37:00Z",
+  "retrieved_utc": "2026-09-03T19:08:41Z",
   "status": "HARDWARE_COLD_BOOT_VALIDATED_RAM_ONLY",
   "artifact": {
-    "path": "build/artifacts/reinvoke-networkd-20260903/reinvoke-networkd",
-    "sha256": "e6d847fd20f0bb784f019169211f0200d2f43edb5ee8a030e17b6d636f58148f",
+    "path": "build/artifacts/reinvoke-networkd-20260903/reinvoke-networkd-hardened",
+    "sha256": "cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66",
     "size": 2293760
   },
   "packaged_initramfs": {
-    "path": "build/artifacts/invoke-native-ram-audio-sd8887-networkd-20260903/82_IMAGE.reinvoke-audio-sd8887-networkd",
-    "sha256": "01e0991ef140a8ab8d916796ae0248e0eb097e89c5f74e531a208af4d32e03a4",
-    "size": 40067033,
+    "path": "build/artifacts/invoke-native-ram-final-software-20260903/82_IMAGE.reinvoke-final",
+    "sha256": "c056d21b0e147fb9fd38a9458952528be1f58b17566f1223a1147eca14d53e21",
+    "size": 40068440,
     "status": "COLD_BOOT_VALIDATED"
   },
   "kernel_modules": {
@@ -52,7 +52,8 @@
     "A disowned DHCP event left the active route and failure marker unchanged.",
     "Authenticated credential replacement stopped the prior supplicant and DHCP child, then the unchanged supervisor reacquired association, lease, route, resolver, IPv4, and DNS.",
     "Two packaged initramfs builds were byte-identical and contained the reviewed daemon, adapters, release manifest, and PID 1.",
-    "Checksum-gated image cold-booted in yellow mode at 2026-09-03T17:36Z; PID 1 auto-started networkd, the RAM-only root remained unmounted from NAND, and the SD8887 WLAN/Bluetooth drivers loaded.",
+    "The final checksum-gated image cold-booted in yellow mode at 2026-09-03T19:07Z; PID 1 auto-started networkd, the RAM-only root remained unmounted from NAND, and the SD8887 WLAN/Bluetooth drivers loaded.",
+    "The live provisiond and networkd SHA-256 values matched the hardened reproducible ARMv7 build artifacts.",
     "Cold-boot networkd correctly waited for a root-controlled station supplicant; no station credentials were included in this image, so association, DHCP, DNS, and route acquisition were not expected or attempted."
   ]
 }

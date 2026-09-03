@@ -1,4 +1,11 @@
-# Hardware Validation Plan
+---
+title: Hardware validation plan
+description: Closed-unit validation and software-interface recovery plan for reInvoke
+ms.date: 2026-09-03
+ms.topic: concept
+---
+
+## Validation boundary
 
 This is the gate between static firmware research and any physical revival
 work. It is intentionally non-destructive.
@@ -31,10 +38,10 @@ detail. Confirmed from FCC evidence alone:
 Still unresolved even with FCC evidence: daughterboard connector pinout,
 exact DRAM part/capacity, and the rotary encoder's exact protocol.
 
-## No-disassembly fallback path
+## Closed-unit validation path
 
-If the enclosure cannot be opened, interface validation is not a full stop,
-but it narrows to what is reachable from the outside:
+The enclosure remains closed. The project uses only the external Micro-USB
+service port, normal buttons, LEDs, Bluetooth, audio, and network behavior:
 
 - **USB service port** — the most promising avenue. Since the factory update
   path is confirmed to run over this same Micro-USB connector, it is worth
@@ -52,10 +59,11 @@ but it narrows to what is reachable from the outside:
   pairs and plays audio, the speaker/mic quality can be assessed without
   touching internals.
 
-This path cannot confirm the daughterboard connector pinout, digital-audio
-transport, or MCU control wiring, so it pushes the roadmap's reuse decision
-(stage 5) toward the "bypass electronics" or "salvage enclosure/speakers
-only" branches unless disassembly becomes possible later.
+This path does not need the daughterboard connector pinout to replace the final
+firmware. Software contracts are recovered from held binaries, emulation,
+interposed system calls, WAMP traffic, kernel interfaces, and live RAM-only
+logs. Unknown electrical details remain documented limitations, not blockers
+for a maintained userland on the working BG2CDP platform.
 
 ## Before powering a sample
 
@@ -75,9 +83,11 @@ only" branches unless disassembly becomes possible later.
 - Do not interrupt boot, write U-Boot environment, mount partitions read-write,
   or invoke update/recovery commands during the first pass.
 
-## Interface measurements
+## Optional electrical research
 
-Only after voltage levels and ground are established:
+Board-level measurements are outside the current project scope. They are not a
+prerequisite for software inventory, RAM boot, or service replacement. If a
+separate future hardware project opens a sacrificial unit, it can:
 
 1. Map both daughterboard connectors pin-by-pin with continuity testing while
    unpowered.
@@ -89,14 +99,15 @@ Only after voltage levels and ground are established:
    `runtime-interface-inventory.md`.
 5. Record captures, timestamps, probe settings, and sample ID as evidence.
 
-## Decision gate
+## Software replacement decision gate
 
-- If BG2CDP boots reliably and the local audio/UI/MCU boundary is usable,
-  prototype a maintained local service stack first.
-- If the compute module is unusable but interfaces are understood, evaluate a
-  replacement compute module.
-- If the audio/control boundary cannot be commanded, measure the acoustic
-  system before considering an electronics bypass.
+* Keep BG2CDP while yellow-mode RAM boot, USB recovery, networking, Bluetooth,
+  audio, buttons, LEDs, MCU control, and DSP loading remain usable.
+* Replace donor processes incrementally from software-derived contracts.
+* Treat board firmware and calibration as immutable assets when no maintained
+  replacement exists.
+* Consider replacing or bypassing electronics only as a separate future
+  project if the existing compute or audio/control path fails.
 
 Any firmware write, board modification, desoldering, or cloud-account action
 is outside this autonomous plan and requires explicit human control.

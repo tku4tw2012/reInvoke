@@ -281,33 +281,42 @@ build of the pinned open-source flasher at commit `63444e82`.
    mute-first A2DP-to-PCM pipeline. The attended audible Bluetooth acceptance
    test passed on 2026-09-03. See
    [bluetooth-stack.md](docs/emulation/bluetooth-stack.md) and `P1-045`.
-5. Replace donor MCU, DSP, and media adapters with reInvoke-owned services.
+5. **In progress:** replace donor MCU, DSP, and media adapters with
+   reInvoke-owned services. The media transport and host-side WAMP compatibility
+   service are owned. The owned MCU service now passes mute-first
+   initialization, default-deny unmute, five-second heartbeat, status, and
+   bidirectional rotary tests on hardware. The DSP image and protocol are
+   recovered; the owned DSP handshake remains under live validation. Opening
+   the enclosure or probing board-level buses is not part of this project.
 6. **In progress:** the physical-gated provisioning API and authenticated TLS
    parser, SD8887 `p2p0` radio adapter, isolated provisioning AP, real station
    application, and restart-safe owned DHCP/resolver lifecycle are implemented
    and live-validated in RAM. The packaged lifecycle image is reproducible and
    contains the reviewed components. Credential replacement while the owned
-   supervisor remained active also passed. The packaged image then cold-booted
-   in yellow mode with automatic networkd startup and no NAND mount; the
+   supervisor remained active also passed. The hardened packaged image then
+   cold-booted in yellow mode with automatic networkd startup and no NAND
+   mount; its live binary matched the newly built artifact, and the
    credential-free acceptance image correctly waited for a station supplicant.
    SSH is optional.
-7. **Next:** repeat recovery tests before designing any persistent NAND
-   installation.
-8. **Interface measurements** (unpowered continuity testing first): map both
-   daughterboard connectors pin-by-pin; identify power, ground, reset,
-   clocks, UART, I2C, SPI, USB, and digital-audio candidates; then use a
-   logic analyzer on suspected buses during ordinary boot and local playback.
-9. **Correlate and record:** update `runtime-interface-inventory.md` and the
-   decision-gate section of `hardware-validation-plan.md` with actual
-   captures, timestamps, probe settings, and sample ID.
-10. **Reuse decision (roadmap stage 5):** only after step 9 gives real
-   evidence: keep BG2CDP, replace the compute module, or bypass the electronics.
-   This should not be guessed ahead of evidence.
+7. **Done:** cold-boot the current checksum-gated RAM image, validate recovery
+   through the external USB and button sequence, and retain yellow mode as the
+   rollback path. The indefinite prompt waiter now remains armed until the
+   operator reaches yellow mode.
+8. **In progress:** recover the donor MCU, DSP, audio, source-manager, LED,
+   button, and update contracts through static analysis, emulation, interposed
+   system calls, WAMP capture, and live RAM-only diagnostics.
+9. **Owned replacement:** implement each recovered contract behind a stable
+   reInvoke API, replacing donor processes incrementally while preserving
+   known-good RAM rollback.
+10. **Persistence decision:** evaluate a NAND installation only after the owned
+    boot and service graph passes repeated cold-boot, audio, networking, and
+    recovery tests. A persistent install is optional, not the definition of
+    project success.
 
-Physical measurements, device modification, and firmware flashing require
-explicit human control and are outside autonomous work; documentation,
-correlation of captured evidence against the firmware findings, and decision
-write-ups can be done autonomously once data is provided.
+The supported physical control surface is the closed unit's Micro-USB port and
+buttons. Opening the enclosure, electrical probing, board modification, and
+firmware flashing remain outside autonomous work. Flashing requires a separate
+human-approved recovery and rollback plan.
 
 ### Smaller open items
 
@@ -352,6 +361,29 @@ write-ups can be done autonomously once data is provided.
 - **Boot-slot selection.** Still unresolved. The recovery updater targets
   `bootimgs` and `rootfs`, but no preserved state maps those writes to a
   specific active/inactive slot.
+- **DSP link contract.** **Done as static analysis confirmed on the wire.**
+  The donor `dsp-client` transport, frame layout, checksum, GPIO handshake
+  order, expander-backed reset, boot-image staging, and full command and event
+  vocabulary were recovered from the held binary without opening the unit.
+  Both directions share one five-byte header, and every frame moves one byte
+  per `SPI_IOC_MESSAGE`, which is what makes ioctl counts far exceed frame
+  counts. A byte-exact hardware capture then confirmed both directions. See
+  [dsp-boundary.md](docs/emulation/dsp-boundary.md), the passive decoder
+  `tools/control/dsp-frame-decode.mjs`, and the offline capture comparator
+  `tools/emulation/spi-capture-label.mjs`. Current limit: the multi-block
+  transmit path is understood from code only, only `getVer` has been seen on
+  the wire, and no DSP part identity is claimed.
+- **DSP wire capture.** **Done.** A byte-exact log-and-forward capture on the
+  physical unit, archived as
+  `hardware/software-captures/20260903T191657Z-dsp-ioctl-record/`, holds 40,121
+  four-byte image transfers plus 23 one-byte message transfers. The image
+  payloads concatenate to a byte-identical copy of the per-byte bit-reversed
+  `dsp-img.ldr`, and the predicted device frame `00 01 00 01 06 04 00 00` for
+  `EVENT_DSP_BOOTUP` appeared exactly as written. **The DSP program is
+  host-loaded and volatile**: the host resends all 160,484 bytes at every
+  service start, so `dsp-img.ldr` is part of a replacement's payload, not a
+  device property. Verified offline with
+  `tools/emulation/spi-capture-label.mjs`.
 - **USB download-mode feasibility.** No BootROM, OTP, or secure-boot source
   exists in the corpus, so this cannot be settled by analysis. It is a
   measurement, gated by the observation procedure.

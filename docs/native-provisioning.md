@@ -101,9 +101,11 @@ HTTPS API or teaching the parser about radio drivers.
 
 ## Physical validation
 
-The static ARMv7 binary is 4,784,128 bytes with SHA-256
-`2948300b5be513e57ec26302f3f393b15759344b5e3c5cabdb84061a3b8e1b70`.
-Two clean builds were byte-identical.
+The hardened static ARMv7 binary is 4,784,128 bytes with SHA-256
+`5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07`.
+Two clean builds were byte-identical. It keeps status requests responsive
+during a network apply and interrupts post-connect Unix socket I/O when the
+request context is canceled.
 
 The separate static ARMv7 Wi-Fi adapter has SHA-256
 `6697df000d130a6461d1e3f57b6ebe8b1ad1742984a94250bc1e243dca097610`.
@@ -205,8 +207,9 @@ The external evidence bundle is
 
 ## Owned network lifecycle
 
-The static ARMv7 `reinvoke-networkd` artifact is 2,293,760 bytes with SHA-256
-`e6d847fd20f0bb784f019169211f0200d2f43edb5ee8a030e17b6d636f58148f`.
+The hardened static ARMv7 `reinvoke-networkd` artifact is 2,293,760 bytes with
+SHA-256
+`cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66`.
 Two clean builds were byte-identical. The service uses only fixed,
 root-controlled executable paths and does not invoke a shell.
 
@@ -233,21 +236,25 @@ The initramfs builder checksum-gates the artifact and PID 1 auto-starts it when
 included. PID 1 sends daemon output to the bounded kernel log and restarts a
 failed supervisor after five seconds. The `reinvoke.networkd=off` kernel
 argument keeps the packaged service disabled for manual recovery. Two clean
-builds of the packaged initramfs were byte-identical. The external image is
-40,067,033 bytes and has SHA-256
-`01e0991ef140a8ab8d916796ae0248e0eb097e89c5f74e531a208af4d32e03a4`
+builds of the packaged initramfs were byte-identical. The final hardened
+external image is 40,068,440 bytes and has SHA-256
+`c056d21b0e147fb9fd38a9458952528be1f58b17566f1223a1147eca14d53e21`
 and contains the reviewed network daemon, provisioning adapters, pinned kernel
 module tree, release manifest, and PID 1. Provenance is recorded in
 [P1-046](../metadata/P1-046.json).
 
 ## Remaining validation
 
-The checksum-gated image cold-booted in yellow mode on 2026-09-03. PID 1
-automatically started `reinvoke-networkd`; the root filesystem contained only
-`rootfs`, `proc`, `sysfs`, `devtmpfs`, `devpts`, and `tmpfs` mounts, with no
-NAND or MTD block mounted. The SD8887 WLAN and Bluetooth drivers loaded, and
-the supervisor correctly remained waiting for a root-controlled station
-supplicant.
+The final hardened checksum-gated image cold-booted in yellow mode on
+2026-09-03.
+PID 1 automatically started `reinvoke-networkd`; its live SHA-256 was
+`cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66`.
+The packaged `reinvoke-provisiond` SHA-256 was
+`5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07`.
+The root filesystem contained only `rootfs`, `proc`, `sysfs`, `devtmpfs`,
+`devpts`, and `tmpfs` mounts, with no NAND or MTD block mounted. The SD8887
+WLAN and Bluetooth drivers loaded, and the supervisor correctly remained
+waiting for a root-controlled station supplicant.
 
 This image intentionally contained no station credentials, so association,
 DHCP, DNS, and default-route acquisition were not expected in this cold-boot

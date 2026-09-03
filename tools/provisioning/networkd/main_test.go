@@ -230,6 +230,7 @@ func TestRejectInvalidLeaseEnvironment(t *testing.T) {
 		{name: "zero lease", replacement: "lease=0"},
 	}
 	for index, test := range tests {
+		index := index
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
