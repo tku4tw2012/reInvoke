@@ -55,7 +55,7 @@ in part, shipped by the vendor. See
 |---|---|---|
 | 1 | Docs, metadata, hashes, extracted text layer | **This repository** (~480 KB) |
 | 2 | Firmware bundles (569 MB) | [GitHub Releases](../../releases) + Azure cold storage |
-| 3 | Full working set incl. Git mirrors (4.9 GB) | Azure Blob (`<resource-group>`, westus2) |
+| 3 | Full working set incl. Git mirrors (4.9 GB) | Private Azure Blob container |
 
 Every artifact held outside Git is indexed here by SHA-256 in [`metadata/`](metadata),
 so this repository remains the authoritative catalogue of the whole archive.

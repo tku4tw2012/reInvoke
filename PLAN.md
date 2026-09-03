@@ -136,7 +136,7 @@ location from its own path. Override with `--archive-root` or `$REINVOKE_ARCHIVE
 |---|---|---|
 | 1 | Docs, metadata, hashes, extracted text layer | This repository (~1.5 MB) |
 | 2 | Firmware bundles (569 MB) | [GitHub Releases](../../releases/tag/invoke-firmware-mirror) |
-| 3 | Full working set incl. Git mirrors (4.9 GB) | Azure Blob, `<resource-group>` / `<storage-account>` / `archive`, westus2, Cool, LRS |
+| 3 | Full working set incl. Git mirrors (4.9 GB) | Private Azure Blob container, Cool, LRS |
 
 Azure access is via Microsoft Entra ID; no keys are stored anywhere. Cost is
 approximately $0.58/year. Local, Azure, and the published release have been verified
