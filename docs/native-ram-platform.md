@@ -491,3 +491,8 @@ The current dependency-free WAMP client proves that USB and Wi-Fi can carry the
 same logical control API. The persistent platform may replace WAMP with a
 smaller authenticated protocol while retaining a compatibility bridge for
 tested MCU and audio procedures.
+
+The first replacement control-plane component is
+[native-provisioning.md](native-provisioning.md). Its static ARM daemon provides
+ephemeral TLS and token-authenticated credential delivery without exposing
+radio or shell privileges to the network parser.

@@ -89,6 +89,9 @@ Verified facts:
   the frames but does not wake its decoder/PCM client.
 - The checksum-gated service launcher rebuilds the complete RAM diagnostic
   graph from a clean service state and keeps amplifier, DAC, and NAND safe.
+- A static ARM provisioning daemon now provides ephemeral TLS, a 256-bit token,
+  bounded credential parsing, and Unix-socket handoff. It passed live loopback
+  security and expiry tests; SD8887 AP mode remains unverified.
 
 Artifact-backed findings:
 
@@ -271,8 +274,9 @@ build of the pinned open-source flasher at commit `63444e82`.
    volume, and SBC ingress are complete. Replace or bypass the donor decoder
    handoff so verified incoming media reaches the ALSA `music` PCM.
 5. Replace donor MCU, DSP, and media adapters with reInvoke-owned services.
-6. Implement physical-gated AP provisioning and an authenticated local control
-   API; SSH remains optional.
+6. **In progress:** the physical-gated provisioning API and authenticated TLS
+   parser are implemented. Add the SD8887 `p2p0` radio adapter, isolated
+   dnsmasq, and RAM-only station apply service; SSH remains optional.
 7. Repeat cold-boot and recovery tests before designing any persistent NAND
    installation.
 8. **Interface measurements** (unpowered continuity testing first): map both
