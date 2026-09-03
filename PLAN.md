@@ -285,9 +285,12 @@ build of the pinned open-source flasher at commit `63444e82`.
    reInvoke-owned services. The media transport and host-side WAMP compatibility
    service are owned. The owned MCU service now passes mute-first
    initialization, default-deny unmute, five-second heartbeat, status, and
-   bidirectional rotary tests on hardware. The DSP image and protocol are
-   recovered; the owned DSP handshake remains under live validation. Opening
-   the enclosure or probing board-level buses is not part of this project.
+   bidirectional rotary tests on hardware. The owned DSP service passes
+   exact-image download, physical boot-event, and `getVer` validation without
+   changing mute policy. The physical ALSA capture endpoint remains unresolved:
+   it enumerates but rejects the tested hardware parameters and captures zero
+   frames. Opening the enclosure or probing board-level buses is not part of
+   this project.
 6. **In progress:** the physical-gated provisioning API and authenticated TLS
    parser, SD8887 `p2p0` radio adapter, isolated provisioning AP, real station
    application, and restart-safe owned DHCP/resolver lifecycle are implemented
@@ -304,7 +307,9 @@ build of the pinned open-source flasher at commit `63444e82`.
    operator reaches yellow mode.
 8. **In progress:** recover the donor MCU, DSP, audio, source-manager, LED,
    button, and update contracts through static analysis, emulation, interposed
-   system calls, WAMP capture, and live RAM-only diagnostics.
+   system calls, WAMP capture, and live RAM-only diagnostics. MCU and DSP
+   control contracts have live RAM evidence; microphone capture is the
+   remaining audio-path gap.
 9. **Owned replacement:** implement each recovered contract behind a stable
    reInvoke API, replacing donor processes incrementally while preserving
    known-good RAM rollback.
