@@ -1,7 +1,7 @@
 ---
 title: reInvoke control tools
 description: Host-side tools for calling the Invoke native control plane
-ms.date: 2026-09-02
+ms.date: 2026-09-03
 ms.topic: how-to
 ---
 
@@ -32,6 +32,33 @@ arm-linux-gnueabihf-gcc -static -O2 -Wall -Wextra -Werror \
 The controlled iPhone and Ubuntu tests connected successfully but received zero
 decoded bytes. `CHECK_READY` returned failure acknowledgement `1`; this is an
 evidence probe, not a working media bridge.
+
+`hci-init.c` and `bluez-pairing-agent.c` are the owned control components for
+the RAM-only BlueZ replacement. No prebuilt copy is committed. Build both as
+static ARM binaries against the pinned BlueZ and D-Bus build trees:
+
+```bash
+arm-linux-gnueabihf-gcc -std=c11 -O2 -Wall -Wextra -Werror -static \
+  -Ipath/to/bluez-5.55 \
+  -Ipath/to/armhf-sysroot/usr/include \
+  tools/control/hci-init.c \
+  path/to/bluez-5.55/lib/.libs/libbluetooth-internal.a \
+  -o path/to/hci-init
+
+arm-linux-gnueabihf-gcc -std=c11 -O2 -Wall -Wextra -Werror -static \
+  -Ipath/to/dbus-1.12.20 \
+  -Ipath/to/dbus-1.12.20/dbus \
+  -Ipath/to/armhf-sysroot/usr/include \
+  tools/control/bluez-pairing-agent.c \
+  path/to/dbus-1.12.20/dbus/.libs/libdbus-1.a \
+  -lpthread \
+  -o path/to/bluez-pairing-agent
+```
+
+The pairing agent limits BlueZ authorization to one supplied peer address and
+the A2DP/AVRCP UUID set. The HCI initializer resets the controller and removes
+volatile keys before a clean reconstruction. Artifact hashes for the validated
+build are recorded in [P1-045](../../metadata/P1-045.json).
 
 Forward the RAM-native device's private WAMP port over USB:
 
