@@ -146,6 +146,10 @@ func transition(
 	return result, actionNone
 }
 
+func scheduleRecoveryRetry(now time.Time, retryDelay time.Duration) (time.Time, time.Duration) {
+	return now.Add(retryDelay), retryDelay
+}
+
 type lease struct {
 	Interface string   `json:"interface"`
 	Address   string   `json:"address"`
@@ -1844,13 +1848,10 @@ func supervise(
 				cleanupPending = false
 				log.Printf("network state removed")
 				if recoveringEvent {
-					nextRetry = time.Now().Add(retryDelay)
-					if retryDelay < 30*time.Second {
-						retryDelay *= 2
-						if retryDelay > 30*time.Second {
-							retryDelay = 30 * time.Second
-						}
-					}
+					nextRetry, retryDelay = scheduleRecoveryRetry(
+						time.Now(),
+						retryDelay,
+					)
 					recoveringEvent = false
 				}
 			}

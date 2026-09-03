@@ -85,6 +85,7 @@ type provisioningHandler struct {
 	applyTimeout time.Duration
 	mu           sync.Mutex
 	complete     bool
+	applying     bool
 }
 
 func (a unixApplier) Apply(ctx context.Context, request wifiRequest) error {
@@ -101,15 +102,32 @@ func (a unixApplier) Apply(ctx context.Context, request wifiRequest) error {
 	if err != nil {
 		return err
 	}
+	// Closing the connection is the only portable way to interrupt a blocked
+	// read or write after DialContext has returned.
+	ioDone := make(chan struct{})
+	defer close(ioDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = connection.Close()
+		case <-ioDone:
+		}
+	}()
 
 	deadline := time.Now().Add(a.timeout)
 	if err := connection.SetDeadline(deadline); err != nil {
 		return fmt.Errorf("set apply socket deadline: %w", err)
 	}
 	if err := json.NewEncoder(connection).Encode(request); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("send apply request: %w", err)
 	}
 	if err := unixConnection.CloseWrite(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("finish apply request: %w", err)
 	}
 
@@ -117,6 +135,9 @@ func (a unixApplier) Apply(ctx context.Context, request wifiRequest) error {
 	decoder := json.NewDecoder(io.LimitReader(connection, 1024))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&response); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("read apply response: %w", err)
 	}
 	if !response.Accepted {
@@ -274,7 +295,7 @@ func (h *provisioningHandler) handleStatus(
 	}
 
 	h.mu.Lock()
-	ready := !h.complete
+	ready := !h.complete && !h.applying
 	h.mu.Unlock()
 	remaining := time.Until(h.expiresAt)
 	if remaining < 0 {
@@ -329,15 +350,25 @@ func (h *provisioningHandler) handleWiFi(
 	}
 
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if h.complete {
+		h.mu.Unlock()
 		writeError(writer, http.StatusConflict, "provisioning already completed")
 		return
 	}
+	if h.applying {
+		h.mu.Unlock()
+		writeError(writer, http.StatusConflict, "provisioning already in progress")
+		return
+	}
+	h.applying = true
+	h.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(request.Context(), h.applyTimeout)
 	defer cancel()
 	if err := h.applier.Apply(ctx, wifi); err != nil {
+		h.mu.Lock()
+		h.applying = false
+		h.mu.Unlock()
 		log.Printf("provisioning adapter rejected the request")
 		writeError(
 			writer,
@@ -347,7 +378,10 @@ func (h *provisioningHandler) handleWiFi(
 		return
 	}
 
+	h.mu.Lock()
+	h.applying = false
 	h.complete = true
+	h.mu.Unlock()
 	writeJSON(writer, http.StatusAccepted, map[string]bool{"accepted": true})
 	select {
 	case h.applied <- struct{}{}:

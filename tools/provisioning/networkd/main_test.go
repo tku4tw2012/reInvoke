@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLifecycleTransitions(t *testing.T) {
@@ -113,6 +114,21 @@ func TestHookFailureRecoveryRestartsDHCP(t *testing.T) {
 	_, action = transition(recovering, observed, false, false)
 	if action != actionStart {
 		t.Fatalf("post-cleanup action = %d, want DHCP restart", action)
+	}
+}
+
+func TestScheduleRecoveryRetryPreservesBackoff(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.September, 3, 14, 26, 29, 0, time.UTC)
+	const retryDelay = 30 * time.Second
+
+	nextRetry, nextDelay := scheduleRecoveryRetry(now, retryDelay)
+
+	if want := now.Add(retryDelay); !nextRetry.Equal(want) {
+		t.Fatalf("next retry = %s, want %s", nextRetry, want)
+	}
+	if nextDelay != retryDelay {
+		t.Fatalf("retry delay = %s, want %s", nextDelay, retryDelay)
 	}
 }
 
