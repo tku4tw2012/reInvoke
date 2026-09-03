@@ -102,3 +102,8 @@ internet-facing parser never receives shell or raw driver privileges.
 The parser's `-apply-timeout` must be at least five seconds shorter than its
 window and longer than the adapter's `-connect-timeout`. Defaults are 25 and
 20 seconds respectively.
+
+The adapter acknowledges success at `wpa_state=COMPLETED`. DHCP and resolver
+configuration remain a separate lifecycle boundary so the privileged adapter
+does not gain route or DNS policy. An owned network service must supervise that
+boundary for unattended operation.

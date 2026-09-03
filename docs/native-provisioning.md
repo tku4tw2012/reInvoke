@@ -177,15 +177,37 @@ joining `mlan0` to an external network. No real network credential was used or
 retained. The proven default boot pair was restored to active host staging
 afterward.
 
+## Real station validation
+
+A subsequent RAM-only test cloned the Mac mini's active NetworkManager profile
+without printing the SSID or PSK. The shell held both values only in memory,
+constructed JSON through standard input, and sent the request through an ADB
+loopback forward. The Wi-Fi secret did not enter a process argument or host
+file.
+
+The physical Invoke then:
+
+* Returned HTTP 202 through `reinvoke-provisiond` and
+  `reinvoke-wifi-applyd`
+* Reached `wpa_state=COMPLETED` with the real `wpa_supplicant`
+* Matched the source SSID without logging it
+* Stored only a hexadecimal SSID and derived PSK in a mode-0600 RAM file
+* Acquired and renewed a DHCP lease
+* Reached the gateway, a public IPv4 address, and a DNS-resolved host
+* Kept IP forwarding disabled and NAND unmounted
+
+Both provisioning daemons removed their sockets and exited after success. The
+station supplicant, DHCP renewal client, derived configuration, and resolver
+state remain only in the current RAM boot.
+
 The external evidence bundle is
 `reinvoke-archive/hardware/usb-attempts/20260903T105444Z-sd8887-sta-uap-reconnect-arm-stock/`.
 
 ## Remaining validation
 
-Run the root-owned station adapter against a disposable external network using
-the real `wpa_supplicant` and `wpa_cli` paths. Verify association on `mlan0`,
-then confirm that credentials never appear in logs, process arguments, evidence
-summaries, or repository artifacts.
+Move DHCP acquisition and renewal into an owned, restart-safe network service,
+then repeat credential replacement and a cold RAM boot. The current DHCP hook
+is a validated runtime probe, not a packaged lifecycle component.
 
 Persistent storage remains out of scope until backup, rollback, and recovery
 are independently proven.

@@ -404,6 +404,13 @@ Forwarding remained disabled, NAND remained unmounted, and all temporary
 credentials and AP processes were removed. The active host staging directory
 was then restored to the proven audio/Bluetooth pair above.
 
+The same boot later cloned the Mac mini's active WPA2 profile through the
+authenticated parser without printing or storing the plaintext PSK on the
+host. The real station adapter reached `wpa_state=COMPLETED`, retained only a
+derived key in mode-0600 RAM, acquired a DHCP lease, and verified gateway,
+public IPv4, and DNS reachability. The station and renewal client remain
+ephemeral, and NAND remains unmounted.
+
 ## Rebuilding the RAM platform
 
 No proprietary image is committed. Build the sanitized initramfs from held

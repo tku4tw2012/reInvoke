@@ -94,7 +94,9 @@ Verified facts:
   bounded association. Live fail-closed and AP success-path tests pass.
 - The native SD8887 STA/uAP profile returns USB in five seconds, exposes
   `mlan0` and `p2p0`, and serves an isolated WPA2/DHCP provisioning network with
-  no gateway, DNS, or forwarding. A real external station join remains.
+  no gateway, DNS, or forwarding. Real `mlan0` association, DHCP renewal,
+  gateway reachability, and DNS resolution also pass without plaintext
+  credential persistence.
 
 Artifact-backed findings:
 
