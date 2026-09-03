@@ -32,13 +32,19 @@ were read only.
 | Nest bootloader | git-mirrors/google-nest/bootloader.git | main | Generic upstream U-Boot (Copybara), not Berlin |
 | Mainline berlin (sparse) | git-mirrors/linux/linux-berlin-sparse | master | dts/mach-berlin/clk/pinctrl only |
 | HKHacking | git-mirrors/community/HKHacking.git | main + tags | Community docs, no source |
+| courk/gmini-linux | github.com/courk/gmini-linux | master | Vendor Galois BSP, **kernel 3.8.13**, carries **BERLIN_BG2CDP** targets (added later — see Question 1a) |
+| fail0verflow/sony-psvr-linux | github.com/fail0verflow/sony-psvr-linux | master | Vendor Berlin BSP, **kernel 3.10.46**, `amp_core` audio split (added later — see Question 1a) |
 
 Key structural fact established up front: the Steam Link SDK ships a full
 Marvell vendor Berlin BSP under `kernel/arch/arm/mach-berlin/` (Galois
 codebase with `modules/` for pe, nfc, i2c, gpio, cc, shm, bt_sd8897,
 fastlogo, gpu, gpu3D, nfc). The Kinoma Acorn kernel's `mach-berlin/` is the
 mainline-style tree (berlin.c, platsmp.c) and does not carry the vendor audio
-or NAND modules. This makes Steam Link the primary transfer source.
+or NAND modules. This makes Steam Link the primary transfer source **among the
+trees originally mirrored**. That qualifier matters: two further vendor Berlin
+BSP trees were located afterwards, one of which (`courk/gmini-linux`) is both
+the same kernel version as the Invoke *and* BG2CDP-aware, making it the closer
+source. See Question 1a.
 
 ## Question 1 — Audio path
 
@@ -81,9 +87,148 @@ channel map, the I2S pair concept (`aip_i2s_pair`), and the exact IOCTL
 framing, but it is not a self-contained ASoC codec driver and does not by
 itself un-mute an external amplifier.
 
-Status: ANSWERED (existence and location of transferable Berlin audio-out
-source). The BG2CD variant of the DHUB map is present verbatim; the Invoke's
-BG2CDP map is the sibling of this file.
+Status: **REOPENED then RE-ANSWERED, with a correction.** The original answer
+was recorded as ANSWERED on the basis of Steam Link alone. That was premature:
+the corpus at the time contained only Steam Link and Acorn, and "not found in
+the mirrored trees" was recorded as if it were "does not exist." Two further
+vendor Berlin BSP trees have since been located (see Question 1a). One of them
+carries a **BG2CDP** build target — the Invoke's exact chip — which Steam Link
+does not. The Steam Link findings above remain correct and verbatim; they were
+simply not the closest available source.
+
+The BG2CD variant of the DHUB map is present verbatim in Steam Link; the
+Invoke's BG2CDP map is the sibling of that file.
+
+## Question 1a — Additional vendor Berlin BSP trees (BG2CDP and 3.10)
+
+Located by GitHub code search on `arch/arm/mach-berlin` module paths, after
+Question 1 had already been closed. Both trees were read via the GitHub API;
+nothing was executed.
+
+### Corpus addition
+
+| Mirror | Kernel | mach-berlin modules present | Nature |
+|---|---|---|---|
+| `courk/gmini-linux` | **Linux 3.8.13** | `pe`, `amp`, `gpu`, `gpu3D`, `fastlogo`, `fastlogo_bg2cd` | Vendor Galois BSP, **same kernel version as the Invoke** |
+| `fail0verflow/sony-psvr-linux` | **Linux 3.10.46** | `amp_core`, `gpu`, `ir`, `nfc`, `pwm`, `rf4ce`, `sm`, `tee`, `sd8777/8887/8897_mbtc`, `usb8797/8897_mbtc`, `tee` | Vendor Berlin BSP on a **3.10 LTS base**; Sony PlayStation VR breakout unit |
+
+### Findings
+
+| Repo | Path | What it establishes |
+|---|---|---|
+| courk/gmini-linux @ master | `arch/arm/mach-berlin/modules/pe/pe_driver.c` | **31 occurrences of `BERLIN_BG2CDP`.** Contains explicit BG2CDP conditional paths, e.g. `#if (BERLIN_CHIP_VERSION != BERLIN_BG2CD_A0 && BERLIN_CHIP_VERSION != BERLIN_BG2CDP)` at lines 674, 684, 739, 1157–1189, 1652, and `#if (BERLIN_CHIP_VERSION != BERLIN_BG2CDP)` at 692, 748, 758, 1478, 1523 |
+| courk/gmini-linux @ master | `arch/arm/mach-berlin/modules/pe/Makefile` | Same `galois_pe` build (`pe_driver.o avio_dhub_drv.o pe_agent_driver.o`), `mv88de3100.mk`, `gsinc/$(FIRMWARE)` header selection, `-DBERLIN_SINGLE_CPU` |
+| fail0verflow/sony-psvr-linux @ master | `arch/arm/mach-berlin/modules/amp_core/kernel/drv_aout.c` | 556-line AOUT driver on 3.10. Same core primitives as Steam Link's `pe_driver.c`: `AOUT_PATH_CMD_FIFO`, `p_ma_fifo`/`p_sa_fifo`/`p_spdif_fifo`/`p_hdmi_fifo`, `aout_start_cmd`, `AoutFifoGetKernelRdDMAInfo`, `AoutFifoKernelRdUpdate`, `AoutFifoCheckKernelFullness` |
+| fail0verflow/sony-psvr-linux @ master | same file, lines 46–56, 104–116 | SoC-variant selection is a **compile-time conditional over the same channel-map symbols**: `avioDhubChMap_aio64b_MA0_R..MA3_R` for BG4_CD/BG4_CT, `avioDhubChMap_ag_MA0_R..MA3_R` otherwise |
+| fail0verflow/sony-psvr-linux @ master | same file, line 147 | `avioDhubChMap_ag_PDM_MIC_ch1` — a **PDM microphone capture channel** on the `ag_` (BG2-family) map |
+
+Verifiable excerpt (`drv_aout.c`, PSVR 3.10.46):
+
+```c
+static INT32 pri_audio_chanId[4] = {
+#if ((BERLIN_CHIP_VERSION == BERLIN_BG4_CD) || (BERLIN_CHIP_VERSION == BERLIN_BG4_CT))
+    avioDhubChMap_aio64b_MA0_R,
+    avioDhubChMap_aio64b_MA1_R,
+    avioDhubChMap_aio64b_MA2_R,
+    avioDhubChMap_aio64b_MA3_R,
+#else
+    avioDhubChMap_ag_MA0_R,
+    avioDhubChMap_ag_MA1_R,
+    avioDhubChMap_ag_MA2_R,
+    avioDhubChMap_ag_MA3_R,
+#endif
+};
+```
+
+Compare Steam Link 3.8 (`pe_driver.h`), which has the same four `ag_MA*_R`
+entries **unconditionally**. The 3.10 tree did not replace the BG2-family map;
+it added a newer BG4 map alongside it and selected between them at compile
+time.
+
+### Thesis — what the 3.8 → 3.10 transition actually cost Marvell
+
+Derived by reading both trees. Labeled inference where it is inference.
+
+1. **The audio core did not change.** The FIFO protocol, the kernel/user DMA
+   ring, the `p_*_fifo` path pointers, the start/resume command flow, and the
+   DHUB channel-map symbol names are common to the 3.8 and 3.10 drivers. This
+   is the same driver lineage, not a rewrite. *(Observed.)*
+
+2. **What changed is packaging, not mechanism.** The 3.8 trees carry AOUT
+   inside `modules/pe/` (presentation engine, ~3,035 lines in `pe_driver.c`,
+   mixing audio with video/VPP concerns). The 3.10 tree splits it into
+   `modules/amp_core/kernel/` with discrete `drv_aout.c` (556 lines),
+   `drv_vpp.c`, `drv_vpu.c`, `drv_avif.c`, `drv_msg.c`. The restructuring is a
+   separation of concerns within the vendor codebase. *(Observed.)*
+
+3. **The driver barely touches the kernel API.** Across `drv_aout.c` the only
+   in-tree kernel API surface is a single `irqreturn_t` ISR signature. There
+   are no `platform_*`, `of_*`, `dma_*`, `ioremap`, or `copy_*_user` calls in
+   this file; DMA is handled through the vendor DHUB layer and its own
+   `dma_info` structures (51 references). **The port surface across kernel
+   versions is therefore very small for this file specifically.** The API
+   churn a forward-port must absorb lives in the surrounding module glue —
+   DHUB, shm, cc, the character-device and ioctl registration, and the build
+   system — not in the audio logic. *(Observed for this file; inference for
+   the module as a whole, which has not yet been read in full.)*
+
+4. **Chip variance is expressed as compile-time conditionals over a stable
+   symbol vocabulary.** Both generations select channel maps via
+   `BERLIN_CHIP_VERSION` against `avioDhubChMap_*` names that persist across
+   versions. A BG2CDP target is therefore a *configuration* of an existing
+   code path rather than a new driver. *(Observed.)*
+
+5. **`courk/gmini-linux` is the closest known source to the Invoke.** It is
+   the same kernel version (3.8.13) *and* carries explicit `BERLIN_BG2CDP`
+   conditionals, which Steam Link's BG2CD tree does not. For any question
+   about what the Invoke's own audio/video path does, this tree should be
+   consulted before Steam Link. *(Observed.)*
+
+6. **A PDM microphone DHUB channel exists on the BG2-family map.**
+   `avioDhubChMap_ag_PDM_MIC_ch1` appears in the 3.10 AOUT ISR. Steam Link's
+   BG2CD `avioDhubChMap` header also lists `vip_MIC0_W..MIC3_W`. This is
+   directly relevant to the unrecovered microphone contract in roadmap
+   stage 4. *(Observed. Whether these channels correspond to the Invoke's
+   physical mic array is **not established** and requires device evidence.)*
+
+### Consequence for the reuse decision
+
+The practical case for staying on 3.8.13 is **unchanged but better
+understood**. It does not rest on "no newer vendor audio source exists" — that
+claim was wrong and is retracted. It rests on:
+
+- a working, hardware-verified `3.8.13-reinvoke-gcc49` that already produces
+  audible output;
+- a BG2CDP-aware 3.8.13 vendor tree (`courk/gmini-linux`) now available as a
+  reference for the *current* kernel, with no port required;
+- a 3.10 path whose benefit is packaging and LTS lineage rather than new
+  capability, and whose cost is unquantified module-glue churn plus blind
+  bring-up on hardware with no early console.
+
+A 3.10 forward-port is therefore **viable and no longer speculative**, but it
+remains an optional future project rather than a prerequisite. Its strongest
+argument is not modernity; it is that `amp_core` is a cleaner starting point
+than `pe` if the audio path ever needs substantial modification.
+
+### Open items created by this finding
+
+| # | Item | Status |
+|---|---|---|
+| 1a-1 | Read `courk/gmini-linux` BG2CDP conditionals in full and diff against the Invoke's own GPL `pe_driver.c` | not started |
+| 1a-2 | Determine which BG2CDP code paths are *excluded* by those conditionals and why | not started |
+| 1a-3 | Read `amp_core` module glue (ioctl/chardev/DHUB registration) to quantify real port cost | not started |
+| 1a-4 | Establish whether `avioDhubChMap_ag_PDM_MIC_ch1` / `vip_MIC*_W` correspond to the Invoke mic array | requires device evidence |
+| 1a-5 | Mirror both trees locally under the repository's storage policy | not started |
+
+### Method note
+
+This entry exists because a closed question was re-opened by a direct
+challenge to an unverified assertion. The original ANSWERED status generalized
+from an incomplete corpus. Recording the correction is required by the
+governing rule: *a claim must be traceable to evidence, or it remains
+explicitly unknown or hypothetical.* Absence of evidence in a partial mirror
+set is not evidence of absence, and should be recorded as corpus scope rather
+than as a finding.
 
 ## Question 2 — I2C and MCU
 
