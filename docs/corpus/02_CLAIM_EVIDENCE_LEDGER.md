@@ -140,6 +140,11 @@ Each row is intentionally atomic. An LLM should prefer the row's `status` and `e
 | HKI-FW-015 | The OTA configuration records recovery-kernel operation, installer type settings, and a no-reboot policy for the RB_UA installer. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
 | HKI-FW-016 | The exact A/B boot-slot selection and rollback algorithm is not established by the preserved scripts/configuration. | unknown | UNKNOWN | high | [PHASE3-FINDINGS] |
 | HKI-FW-017 | The newer normal rootfs carries Invoke-era `sd8887` firmware and July 2016 LS9 calibration profiles, while `99_IMAGE` carries older May 2016 LS9 calibration data and broader generic Marvell firmware inventory. | confirmed | DERIVED | high | [PHASE3-FINDINGS] |
+| HKI-FW-018 | The physical unit's active SquashFS identifies as `Barracuda_libre-12.2050.3`. | confirmed | OBS-RUNTIME | high | [NATIVE-RAM] |
+| HKI-BOOT-003 | A custom PID 1 and initramfs booted from DRAM and exposed root ADB without mounting NAND. | confirmed | OBS-RUNTIME | high | [NATIVE-RAM] |
+| HKI-STOR-008 | A complete 268,435,456-byte logical NAND data image was read through a kernel read-only MTD node. | confirmed | OBS-RUNTIME | high | [NATIVE-RAM] |
+| HKI-RF-011 | The physical unit enumerates Marvell SDIO functions `02df:9135`, `02df:9136`, and `02df:9137`. | confirmed | OBS-RUNTIME | high | [NATIVE-RAM] |
+| HKI-RF-012 | Native SD8887 Wi-Fi firmware and LS9AD calibration loaded successfully, and `mlan0` completed a scan. | confirmed | OBS-RUNTIME | high | [NATIVE-RAM] |
 
 ## Contradiction / caution register
 
@@ -251,3 +256,15 @@ Archived copy: `reinvoke-archive/web-pages/harman-cortana-sdk-opensource-2023120
 ## LINUX-MARVELL
 Linux kernel documentation, *ARM Marvell SoCs — Berlin family*.  
 https://docs.kernel.org/5.19/arm/marvell.html
+
+## NATIVE-RAM
+
+Project-local hardware observations and hashes in
+`docs/native-ram-platform.md` and
+`reinvoke-archive/hardware/dumps/20260902T215700Z-native-ram/`.
+
+## ARISTODDLE-INVOKE
+
+`Aristoddle/hk-invoke-opensource-speaker`, pinned at
+`948e85e2ddbdd560e186913cdfaad3f57f118c93`. Provisional review:
+`docs/research/provisional/aristoddle-invoke-review.md`.

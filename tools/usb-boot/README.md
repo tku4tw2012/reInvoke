@@ -1,7 +1,7 @@
 ---
 title: USB boot session tooling
 description: Host tools for observing the Invoke Marvell boot endpoint without known NAND writes
-ms.date: 2026-09-02
+ms.date: 2026-09-03
 ms.topic: how-to
 ---
 
@@ -20,10 +20,13 @@ separately.
 |---|---|
 | `99-marvell-invoke.rules` | udev rule granting unprivileged access to the Marvell boot endpoint, and triggering descriptor capture on attach |
 | `attach-console.sh` | Waits for either boot tool to open its TCP console before attaching the console client |
+| `boot-native-ram.sh` | Stages checksum-gated kernel and initramfs payloads, sends only volatile U-Boot commands, and reports bounded boot progress |
 | `build-arm-flasher.sh` | Builds the pinned `jryruegas92` implementation natively from its preserved Git mirror |
 | `capture-attempt.sh` | Creates a timestamped evidence bundle containing usbmon, kernel, ADB, descriptor, protocol, and console logs |
 | `capture-descriptor.sh` | Dumps the full USB descriptor when the device appears. The boot window is only a few seconds, too short to run `lsusb -v` by hand |
+| `build-native-initramfs.sh` | Builds a sanitized RAM-only initramfs from reviewed held artifacts |
 | `monitor-descriptors.sh` | Polls sysfs during an attempt and captures every distinct Marvell enumeration |
+| `native-ram-init` | Replacement PID 1 for root ADB, read-only NAND access, and SD8887 Wi-Fi bring-up |
 | `uboot-console.py` | Console client for the `usb_boot` TCP relay. Strips telnet negotiation, logs the transcript, and forwards commands from a FIFO |
 | `start-session.sh` | Brings up either reviewed boot tool and refuses to run if flashable images or automatic commands are staged |
 
@@ -69,6 +72,63 @@ Stage a sibling directory at `../invoke-boot` containing `usb_boot`,
 `bcm_erom.bin.usb`, `bootloader.img`, `sysinit.img`, `drm_erom.img`, the
 numbered protocol files, and a comment-only `79_IMAGE`. Override it with
 `INVOKE_FIRMWARE_DIR` when needed.
+
+## Build the native RAM initramfs
+
+The native RAM platform uses proprietary recovery and board-firmware inputs
+from the external archive. The builder verifies the reviewed OTA2 recovery
+initramfs, replaces PID 1, removes the vendor flash launcher, and injects the
+SD8887 Wi-Fi and Bluetooth firmware plus board calibration from an extracted
+donor rootfs:
+
+```bash
+tools/usb-boot/build-native-initramfs.sh \
+  --source-initramfs ../reinvoke-archive/extracted/ota2/OTA2/82_IMAGE \
+  --donor-rootfs ../reinvoke-archive/hardware/dumps/20260902T215700Z-native-ram/rootfs-extracted/primary \
+  --kernel-modules ../reinvoke-archive/build/artifacts/invoke-kernel-acast/modules \
+  --output ../invoke-boot/82_IMAGE.native-ram
+```
+
+The generated file remains outside Git. See
+[native-ram-platform.md](../../docs/native-ram-platform.md) for the verified
+U-Boot load addresses, runtime evidence, component audit, and safety boundary.
+See [Invoke kernel build](../kernel/README.md) for the replacement-kernel
+source, compatibility patch, and artifact pipeline.
+
+When the supplied module tree includes the repository-built `bt8xxx.ko`, PID 1
+loads it with the stock volatile firmware parameters. This creates `hci0`
+without changing module metadata or starting a pairing service.
+
+After a capture session reports the live `MV88DE3100|>` prompt, stage and boot
+a reviewed native pair with elapsed progress and a bounded USB criterion:
+
+```bash
+tools/usb-boot/boot-native-ram.sh \
+  --kernel ../reinvoke-archive/build/artifacts/invoke-native-audio/81_IMAGE.reinvoke-audio \
+  --kernel-sha256 <reviewed-kernel-sha256> \
+  --initramfs ../reinvoke-archive/build/artifacts/invoke-native-ram-audio/82_IMAGE.reinvoke-audio \
+  --initramfs-sha256 <reviewed-initramfs-sha256>
+```
+
+The loader verifies the kernel's `0x02008000` load and entry address, rejects
+staged `83_IMAGE` and `99_IMAGE`, and sends only `usbload`, `set bootargs`, and
+`bootm`. Use `--prepare-only` to validate and stage without touching the live
+console.
+
+After ADB returns, start the minimum diagnostic service graph:
+
+```bash
+tools/usb-boot/start-native-services.sh \
+  --rootfs ../reinvoke-archive/hardware/dumps/20260902T215700Z-native-ram/installed-rootfs-region.bin
+```
+
+The launcher checksum-gates the block-aligned rootfs carve, mounts its host copy
+read-only from RAM, starts only Bonefish and the MCU, DSP, audio, source, and
+optional Bluetooth adapters, and initializes music volume at 20 percent. DSP
+startup is disabled by default because its normal boot event transiently
+unmutes the amplifier and DAC before the launcher can reassert mute. Pass
+`--start-dsp` only for attended audio work and `--pair` only for a bounded
+pairing window. The launcher never starts the stock supervisor or updater.
 
 ## Pinned open-source tool
 

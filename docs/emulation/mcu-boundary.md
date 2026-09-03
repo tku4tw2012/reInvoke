@@ -1,15 +1,13 @@
 ---
 title: MCU boundary
 description: Recovered I2C behavior and evidence limits at the Invoke companion-MCU boundary
-ms.date: 2026-09-02
+ms.date: 2026-09-03
 ms.topic: concept
 ---
 
-What the companion-MCU boundary looks like from the preserved rootfs and from
-running `mcu-interface` under emulation: the host-side transport, the observed
-startup transaction order, and the limits of that evidence.
-
-No physical unit was involved. No real I2C bus was accessed.
+What the companion-MCU boundary looks like from the preserved rootfs, emulation,
+and a later RAM-native hardware run: the host-side transport, startup
+transaction order, and limits of each evidence source.
 
 ## Evidence classification
 
@@ -21,6 +19,9 @@ Verified facts:
   GPIO paths and `/dev/mem`.
 * Under emulation, the service emits the bring-up log shown below and registers
   MCU-related WAMP procedures after startup.
+* On the physical unit, the replacement kernel registers `gpio_soc_0` at base 0.
+  `mcu-interface` configures GPIO 3 as a falling-edge input and completes its
+  MCU queries.
 
 Artifact-backed findings:
 
@@ -38,11 +39,58 @@ Inference:
 
 Current limits:
 
-* The trace is not a physical bus capture.
-* Synthetic acknowledgements do not prove that the same values are accepted by
-  the real devices.
-* Register meanings, GPIO line numbers, and exact MCU/device identities remain
-  unresolved.
+* The emulation trace is not a physical bus capture.
+* Register meanings and exact MCU/device identities remain unresolved.
+* The physical run establishes host calls and successful startup, but not an
+  electrical trace of I2C lines.
+
+## Physical RAM-native validation
+
+A custom initramfs booted as PID 1 on `myInvoke-1` with the GCC 4.9
+SPI-plus-GPIO kernel. It mounted a RAM copy of the installed
+`Barracuda_libre-12.2050.3` SquashFS read-only and started Bonefish,
+`mcu-interface`, and `dsp-client`.
+
+The real adapter:
+
+* Opened `/dev/i2c-0`
+* Read IO-expander state `0xfb`
+* Performed the mute-first amplifier and DAC sequence
+* Powered the DSP and initialized the DAC
+* Reported MCU application version `000116`
+* Reported recovery flag `0`
+* Configured GPIO 3 as a falling-edge input
+* Joined realm `default`
+* Registered LED, MCU status, power, DAC mute, and amplifier mute procedures
+* Handled the DSP boot event's DAC and amplifier unmute requests
+
+A bounded `strace` run captured:
+
+```text
+open("/sys/class/gpio/export", O_WRONLY)
+open("/sys/class/gpio/gpio3/direction", O_WRONLY)
+open("/sys/class/gpio/gpio3/edge", O_WRONLY)
+open("/sys/class/gpio/gpio3/value", O_RDONLY|O_NONBLOCK)
+```
+
+The earlier recovery kernel assigned `gpio_soc_0` base `224`, whereas the normal
+userspace expects GPIO `3`. The replacement DTB adds the Invoke driver's
+required `base-gpio = <0>` property. The resulting kernel registers
+`gpiochip0` at base 0, and the unmodified service successfully configures its
+expected GPIO 3 path.
+
+Physical rotation then produced 63 volume-up and 57 volume-down messages. Every
+MCU message produced one matching Bonefish publication, for 120 paired
+observations such as:
+
+```text
+MCU key event Volume up received!
+com.harman.test.inputEvent ["volumeup", "2"]
+```
+
+This verifies the GPIO interrupt, MCU command decoding, rotary hardware, and
+WAMP publication path. The event payload's second value varies with the
+observed rotation step.
 
 ## What the MCU is
 
@@ -225,7 +273,8 @@ unknown physical parts.
 The register maps behind each write. Register indices and values are recorded;
 their meanings are not documented anywhere in the corpus.
 
-The GPIO line numbers used for the MCU interrupt and handshake.
+The handshake GPIO line and confirmation that recovery-kernel GPIO `227`
+corresponds to the normal-kernel interrupt GPIO `3`.
 
 The exact MCU part number. Firmware size and command set are consistent with a
 small microcontroller, but no identification is claimed.

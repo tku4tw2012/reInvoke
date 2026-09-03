@@ -1,14 +1,15 @@
 ---
 title: Project plan and handoff
 description: Current evidence, project status, and next steps for reInvoke
-ms.date: 2026-09-02
+ms.date: 2026-09-03
 ms.topic: overview
 ---
 
-Current state, established facts, and next steps. This file exists so work can resume
-in a fresh session — or from GitHub on the web — without the original conversation.
+Current state, established facts, and next steps. This file exists so work can
+resume in a fresh session or from GitHub on the web without the original
+conversation.
 
-**Last updated:** 2026-09-02
+**Last updated:** 2026-09-03
 
 ---
 
@@ -24,20 +25,21 @@ in a fresh session — or from GitHub on the web — without the original conver
 | Analysis — unpack and understand the firmware | **Done** |
 | Control-plane emulation — device userland runs off-device | **Done** — see [control-plane-emulation.md](docs/emulation/control-plane-emulation.md) |
 | Evidence closure — FCC exhibits, OTA2, sibling cross-index | **Done** |
-| Hardware validation — donor device(s) available | **In progress** — Bluetooth works; **interactive U-Boot console reached over USB** via yellow service mode, see [uboot-access.md](docs/uboot-access.md); NAND healthy and mapped read-only; firmware version still unread |
+| Hardware validation, donor device available | **In progress**: U-Boot and custom RAM Linux reached over USB; Wi-Fi, MCU, DSP, ALSA, audible output, rotary volume, native HCI, peer pairing, A2DP negotiation, and SBC ingress are verified; donor Bluedroid does not release decoded PCM; see [native-ram-platform.md](docs/native-ram-platform.md) |
 
 ### The finding that reframes the project
 
 Harman's final firmware, `Barracuda_libre-12.2134.0` in the OTA2 bundle, removes
 Cortana, the Cortana harness, Spotify, and the Skype call library. It adds
-`oobe-ui` and a `wifi-blocker` service.
+`oobe-ui` and a `wifi-blocker` service. The physical unit carries the earlier
+`Barracuda_libre-12.2050.3` rootfs.
 
 Artifact-backed finding: Harman shipped a firmware line whose service set is
 consistent with a local Bluetooth-speaker role after the cloud assistant was
-removed. Inference: the project's stated end goal, repurposing completeness, may
-therefore be partly reachable on stock software rather than by replacing it.
-Confirming which firmware a physical unit carries remains the highest-value
-observation, which is why it leads the hardware procedure.
+removed. That image is now a donor and comparison point rather than the target
+runtime. The verified direction is a reInvoke-owned PID 1, rootfs, and
+application stack that reuse only the required kernel support, firmware,
+calibration, MCU protocol, and DSP/audio boundary.
 
 ### The control-plane emulation result
 
@@ -73,6 +75,20 @@ Verified facts:
   recorded.
 - The WAMP router and selected services run under `qemu-user`, and audio
   volume/mute calls changed emulated service state.
+- A GCC 4.9 replacement kernel registers the first GPIO bank at base 0 while
+  retaining USB, Wi-Fi, and SPI.
+- The physical MCU reports application version `000116` and recovery flag `0`.
+- The physical DSP reports `0.0.64.58`, packed as WAMP value `25688`.
+- ALSA card 1 accepts 48 kHz stereo `S32_LE`, and the speaker audibly reproduced
+  a guarded -48 dBFS tone.
+- The physical rotary ring produced 120 matched MCU and WAMP direction events.
+- Native `bt8xxx.ko` enables `hci0`; Bluedroid enables A2DP Sink and both AVRCP
+  roles and enters discoverable pairing mode.
+- Both iPhone and Ubuntu peers pair and send RTP/SBC media. Ubuntu's BlueZ and
+  PulseAudio source path was independently verified. Donor Bluedroid receives
+  the frames but does not wake its decoder/PCM client.
+- The checksum-gated service launcher rebuilds the complete RAM diagnostic
+  graph from a clean service state and keeps amplifier, DAC, and NAND safe.
 
 Artifact-backed findings:
 
@@ -135,9 +151,10 @@ mtdparts=mv_nand:
   1M(bbt)
 ```
 
-- The recovery command's partitions sum to exactly 512 MiB. Third-party
-  `/proc/mtd` output reports a 256 MiB aggregate device, so physical capacity and
-  applicability of the recovery map remain unresolved.
+- The recovery command's partitions sum to exactly 512 MiB and do not describe
+  this unit's physical NAND. U-Boot and RAM-native Linux both identify a 256 MiB
+  Toshiba NAND, and a complete 268,435,456-byte logical data image has been
+  captured. The active SquashFS begins at `0x02920000`.
 - Several regions are paired (`post-bootloader` twice, `tz_en`/`tz_en-B`, and
   `bootimgs`/`bootimgs-B`). Their names suggest redundancy, but slot-selection
   and fallback semantics remain unresolved.
@@ -226,52 +243,47 @@ this session those claims cited evidence the project did not possess.
 
 **The two observations that matter most:**
 
-1. Does the unit pair over Bluetooth and play audio? Harman's final firmware
-   is already a Bluetooth-speaker build, so a working unit may substantially
-   satisfy the end goal with no intervention.
+1. Does the unit pair over Bluetooth and play audio? **Partially answered:**
+   iPhone and Ubuntu peers pair, A2DP/AVRCP initialize, and RTP/SBC media reaches
+   the Invoke. The speaker path plays direct ALSA audio, but donor Bluedroid does
+   not hand decoded Bluetooth PCM to ALSA.
 2. Does the Micro-USB service port expose a Marvell boot endpoint?
-   **Answered 2026-09-01: yes, but the host's iROM bootstrap path is not
-   entered.** The unit
-   presents `1286:8174`, the BG2CDP Boot Device, for roughly four seconds on
-   every power-on. `usb_boot` reaches it, claims the interface, and reports a
-   complete `08_IMAGE` transfer. However `bDeviceSubClass` reads 254 on every
-   captured attempt, and `usb_boot` only enters its iROM bootstrap path on
-   `0xFF`. The vendor button sequence produces the yellow panel indication and
-   a sustained retry loop, but not a captured subclass change, so no U-Boot
-   console has been reached. Details are in
-   [usb-service-mode.md](docs/usb-service-mode.md).
+   **Answered 2026-09-02: yes.** Yellow service mode transitions through
+   Marvell USB stages and reaches interactive RAM-loaded U-Boot. U-Boot then
+   loads a custom initramfs whose PID 1 exposes root ADB without mounting NAND.
+   The verified path, image request sequence, and safety boundary are in
+   [uboot-access.md](docs/uboot-access.md) and
+   [native-ram-platform.md](docs/native-ram-platform.md).
 
 Host preparation is complete for the next controls: ADB 1.0.41, libusb 1.0.25,
 bus-specific usbmon capture, timestamped attempt bundles, and a native x86-64
 build of the pinned open-source flasher at commit `63444e82`.
 
-**Remaining steps, once those two are answered:**
+**Remaining steps after native RAM bring-up:**
 
-1. **Before powering on:** assign the unit a sample ID, photograph enclosure
-   labels and every board (including both sides of the daughterboard and its
-   connector area), record visible IC markings/board revisions, and confirm
-   the power adapter rating. Keep the known-good firmware image + SHA-256
-   manifest offline — do not flash it.
-2. **No-disassembly observations first** (useful regardless of whether the
-   unit will also be opened): measure adapter output unloaded and at the
-   device input; passively observe DHCP/mDNS/UPnP/network behavior on boot;
-   attempt read-only USB descriptor enumeration on the Micro-USB service port
-   (no vendor commands that could trigger a flash); correlate button/LED
-   behavior against `runtime-interface-inventory.md`.
-3. **First powered observations:** capture serial output at 115200 baud if
-   service pads are identified safely; record boot messages, `/proc/mtd`,
-   memory size, network interfaces, and process/service state, all
-   read-only. Do not interrupt boot, write U-Boot environment, mount
-   partitions read-write, or invoke update/recovery commands.
-4. **Interface measurements** (unpowered continuity testing first): map both
+1. **Done:** establish reproducible rebuilt-kernel boot profiles using NDK r10e
+   GCC 4.9, the verified `0x02008000` layout, and checksum-gated device trees.
+2. **Done:** add DesignWare SPI, low GPIO numbering, and verify MCU/DSP
+   bidirectional startup.
+3. **Done:** enable Berlin ASoC and ALSA loopback, enumerate both cards, pass a
+   muted zero-data test, and audibly verify a guarded low-level tone.
+4. **In progress:** native SD8887 HCI, peer pairing, A2DP/AVRCP, absolute
+   volume, and SBC ingress are complete. Replace or bypass the donor decoder
+   handoff so verified incoming media reaches the ALSA `music` PCM.
+5. Replace donor MCU, DSP, and media adapters with reInvoke-owned services.
+6. Implement physical-gated AP provisioning and an authenticated local control
+   API; SSH remains optional.
+7. Repeat cold-boot and recovery tests before designing any persistent NAND
+   installation.
+8. **Interface measurements** (unpowered continuity testing first): map both
    daughterboard connectors pin-by-pin; identify power, ground, reset,
    clocks, UART, I2C, SPI, USB, and digital-audio candidates; then use a
    logic analyzer on suspected buses during ordinary boot and local playback.
-5. **Correlate and record:** update `runtime-interface-inventory.md` and the
+9. **Correlate and record:** update `runtime-interface-inventory.md` and the
    decision-gate section of `hardware-validation-plan.md` with actual
    captures, timestamps, probe settings, and sample ID.
-6. **Reuse decision (roadmap stage 5):** only after step 5 gives real
-   evidence — keep BG2CDP / replace compute module / bypass electronics.
+10. **Reuse decision (roadmap stage 5):** only after step 9 gives real
+   evidence: keep BG2CDP, replace the compute module, or bypass the electronics.
    This should not be guessed ahead of evidence.
 
 Physical measurements, device modification, and firmware flashing require

@@ -1,0 +1,17 @@
+{
+  "archive_md5": "688a23bdf0f214ce5a2fc3d61eae9518",
+  "archive_path": "originals/harman/invoke/Invoke-kernel.tar",
+  "archive_sha1": "0ebb18b574b83f5bf153b0a9355aad74c196ff0a",
+  "archive_sha256": "bd19dff0f8ef8879b82d4cdeec9f127a105905ea0aa47e76de31192a79a79126",
+  "archive_size": 545398784,
+  "archive_url": "https://archive.org/download/invoke-kernel/Invoke-kernel.tar",
+  "entries": 45088,
+  "extracted_path": "sources/harman/invoke-kernel/Invoke-kernel",
+  "id": "P1-041",
+  "kernel_version": "3.8.13",
+  "kind": "download",
+  "license": "GPL-2.0-only",
+  "provenance_page": "https://archive.org/details/invoke-kernel",
+  "retrieved_utc": "2026-09-02T22:39:49Z",
+  "status": "ACQUIRED_AND_EXTRACTED"
+}

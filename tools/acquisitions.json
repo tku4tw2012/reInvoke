@@ -87,6 +87,24 @@
     "note": "Mainline Linux maintainer tree. Previously ranked cite-only because a full mirror is multi-GB. That ranking weighed size against the whole tree rather than against the Berlin subset, which is the de facto pinmux, clock, and board documentation for this SoC family. Acquired instead as a shallow blobless sparse checkout (~44 MB). Note that sound/soc/berlin and drivers/soc/berlin do not exist upstream, and the tree carries berlin2cd (BG2CD) but no BG2CDP board file; both absences are themselves evidence."
   },
   {
+    "id": "P1-041",
+    "kind": "download",
+    "source_url": "https://archive.org/download/invoke-kernel/Invoke-kernel.tar",
+    "provenance_page": "https://archive.org/details/invoke-kernel",
+    "destination": "originals/harman/invoke/Invoke-kernel.tar",
+    "extract": true,
+    "note": "Community-hosted GPLv2 Linux 3.8.13 source for the Invoke/BG2CDP platform. Archive paths were validated before extraction. Internet Archive MD5 and SHA-1 were verified; repository metadata records the computed SHA-256."
+  },
+  {
+    "id": "P1-042",
+    "kind": "download",
+    "source_url": "https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip",
+    "provenance_page": "https://packages.ubuntu.com/noble/google-android-ndk-r10e-installer",
+    "destination": "toolchains/android-ndk-r10e/android-ndk-r10e-linux-x86_64.zip",
+    "extract": true,
+    "note": "Official Google NDK r10e archive. Ubuntu's installer package independently supplies the verified SHA-1. Only the ARM GCC 4.9 prebuilt subtree was extracted."
+  },
+  {
     "id": "P2-001",
     "kind": "git_mirror",
     "source_url": "https://github.com/coggy9/HKHacking.git",
@@ -104,5 +122,22 @@
     "source_url": "https://github.com/jryruegas92/hk-invoke-arm-flasher.git",
     "destination": "git-mirrors/community/hk-invoke-arm-flasher.git",
     "required_commit": "63444e82cc5274abe31ec49ad55ee552b50b64b3"
+  },
+  {
+    "id": "P2-004",
+    "kind": "git_mirror",
+    "source_url": "https://github.com/Aristoddle/hk-invoke-opensource-speaker.git",
+    "destination": "git-mirrors/community/hk-invoke-opensource-speaker.git",
+    "required_commit": "948e85e2ddbdd560e186913cdfaad3f57f118c93",
+    "note": "Provisional community reference. Claims require independent evidence review before promotion."
+  },
+  {
+    "id": "P2-005",
+    "kind": "download",
+    "source_url": "https://raw.githubusercontent.com/courk/gmini-linux/764b617b647c91fe969332ceb690282ecdad4e0c/sound/soc/berlin/pcm.c",
+    "provenance_page": "https://github.com/courk/gmini-linux/tree/764b617b647c91fe969332ceb690282ecdad4e0c",
+    "destination": "originals/github/courk/gmini-linux/764b617b647c91fe969332ceb690282ecdad4e0c/sound/soc/berlin/pcm.c",
+    "extract": false,
+    "note": "Pinned GPL Berlin PCM source used only to compare the older direct-card path with Harman's Invoke ASoC integration."
   }
 ]

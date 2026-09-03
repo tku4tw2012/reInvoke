@@ -1,0 +1,21 @@
+{
+  "archive_path": "toolchains/android-ndk-r10e/android-ndk-r10e-linux-x86_64.zip",
+  "archive_sha1": "f692681b007071103277f6edc6f91cb5c5494a32",
+  "archive_sha256": "ee5f405f3b57c4f5c3b3b8b5d495ae12b660e03d2112e4ed5c728d349f1e520c",
+  "archive_size": 1110915721,
+  "archive_url": "https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip",
+  "compiler": "arm-linux-androideabi-gcc (GCC) 4.9 20140827 (prerelease)",
+  "compiler_sha256": "a838490fd49184f1f104027239f0a46671c743c29c17a33f6d5daad3c2a379a6",
+  "extracted_path": "toolchains/android-ndk-r10e/extracted/android-ndk-r10e/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64",
+  "id": "P1-042",
+  "kind": "download",
+  "license_files": {
+    "COPYING": "231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c",
+    "COPYING.LIB": "a9bdde5616ecdd1e980b44f360600ee8783b1f99b8cc83a2beb163a0a390e861",
+    "COPYING.RUNTIME": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74"
+  },
+  "provenance_page": "https://packages.ubuntu.com/noble/google-android-ndk-r10e-installer",
+  "retrieved_utc": "2026-09-03T01:32:00Z",
+  "sha1_verification_source": "Ubuntu google-android-ndk-r10e-installer 10.4+1710437545-3build2",
+  "status": "ACQUIRED_AND_PARTIALLY_EXTRACTED"
+}

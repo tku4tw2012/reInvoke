@@ -6,11 +6,13 @@ ms.topic: concept
 ---
 
 What can and cannot be reached in the preserved `Barracuda_libre-12.2134.0`
-build. The physical unit's exact installed version has not been read.
+build. The physical unit's extracted active rootfs is the earlier
+`Barracuda_libre-12.2050.3` release.
 
 Everything below is static analysis of the preserved rootfs, corroborated by
-running the same binaries under emulation. None of it has been tested against
-the physical unit.
+running the same binaries under emulation. Selected Wi-Fi, Bluetooth, and MCU
+boundaries were later tested on the physical unit under a custom RAM-native
+initramfs; see [native-ram-platform.md](../native-ram-platform.md).
 
 ## Evidence classification
 
