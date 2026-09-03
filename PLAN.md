@@ -89,9 +89,10 @@ Verified facts:
   the frames but does not wake its decoder/PCM client.
 - The checksum-gated service launcher rebuilds the complete RAM diagnostic
   graph from a clean service state and keeps amplifier, DAC, and NAND safe.
-- A static ARM provisioning daemon now provides ephemeral TLS, a 256-bit token,
-  bounded credential parsing, and Unix-socket handoff. It passed live loopback
-  security and expiry tests; SD8887 AP mode remains unverified.
+- Static ARM provisioning and station-apply daemons now provide ephemeral TLS,
+  a 256-bit token, root-peer verification, derived WPA2 configuration, and
+  bounded association. Live fail-closed tests pass; SD8887 AP mode remains
+  unverified.
 - A separate native SD8887 STA/uAP kernel and provisioning initramfs are built
   and isolated from the proven boot pair pending attended yellow-mode testing.
 

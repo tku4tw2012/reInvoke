@@ -63,6 +63,18 @@ properties:
 * Root ownership checks on the socket directory, socket node, and connected
   peer through `SO_PEERCRED`
 
+The separate `reinvoke-wifi-applyd` adapter:
+
+* Requires root and a root-only ramfs/tmpfs runtime directory
+* Accepts only a UID-0 Unix-socket peer
+* Revalidates request bounds and fields
+* Derives the 256-bit WPA2 PSK with PBKDF2-HMAC-SHA1 and 4,096 iterations
+* Writes SSID and derived PSK as hexadecimal values, never the passphrase
+* Invokes fixed root-controlled `wpa_supplicant` and `wpa_cli` binaries without
+  a shell
+* Acknowledges success only after `wpa_state=COMPLETED`
+* Terminates the supplicant and removes the RAM config after a failed attempt
+
 The TLS key never leaves process memory. The descriptor is removed when the
 request succeeds, the timer expires, or the process receives a termination
 signal.
@@ -90,8 +102,12 @@ HTTPS API or teaching the parser about radio drivers.
 ## Physical validation
 
 The static ARMv7 binary is 4,784,128 bytes with SHA-256
-`a4024dac2b178e1060eda8a240f644b0981c66ee82e8c32c7da34d59184a07b1`.
+`2948300b5be513e57ec26302f3f393b15759344b5e3c5cabdb84061a3b8e1b70`.
 Two clean builds were byte-identical.
+
+The separate static ARMv7 Wi-Fi adapter has SHA-256
+`6697df000d130a6461d1e3f57b6ebe8b1ad1742984a94250bc1e243dca097610`.
+Two clean adapter builds were also byte-identical.
 
 On Linux `3.8.13-reinvoke-audio`, a loopback-only test verified:
 
@@ -107,9 +123,16 @@ On Linux `3.8.13-reinvoke-audio`, a loopback-only test verified:
 * Refusal to run as an unprivileged host user
 * Root ownership checks before any Unix-socket credential write
 * Descriptor deletion after a live termination signal
+* A mode-0600 root-owned apply socket on the physical Invoke
+* No station config before a credential request
+* Apply-socket removal on a live termination signal
+* End-to-end root peer checks and strict JSON framing between both daemons
+* Derived-config removal and HTTP 502 when a fake supplicant failed
 
 Unit and race tests also verify successful delivery to a trusted same-UID Unix
-peer and rejection when the adapter directory is group/world writable.
+peer, rejection when the adapter directory is group/world writable, the
+standard IEEE WPA2 PSK vector, and replacement of an existing 0770
+`wpa_supplicant` control socket for a second provisioning window.
 
 The adapter-rejection test used only fake credentials and did not touch a radio
 or persistent storage.
@@ -121,12 +144,12 @@ The unbooted AP candidate is staged outside the normal boot directory:
 | Artifact | SHA-256 |
 |----------|---------|
 | `3.8.13-reinvoke-audio-sd8887` kernel | `4dbfc484c3ff99325b293aa02810d9e97396252a70d89fdf47dead5443135c4c` |
-| Native SD8887 provisioning initramfs | `30886634cff8c210ed3fdb30523159cc7d4676e87166b4e2d6d72f9fa1697ceb` |
+| Native SD8887 provisioning initramfs | `8e087c98d8823544a2a004c46d5868fed0106cc788b029b022c3b48d24a549c6` |
 
 The kernel contains loadable native `mlan.ko`, `sd8xxx.ko`, `bt8xxx.ko`, and
 `btmrvl.ko` modules with matching
 `3.8.13-reinvoke-audio-sd8887` vermagic. The initramfs includes those modules
-and the checksum-gated provisioning daemon. Station-only remains its default;
+and both checksum-gated provisioning daemons. Station-only remains its default;
 `reinvoke.wifi_mode=sta-uap` is required to request `p2p0`.
 
 This pair has not been booted. It remains in isolated staging until an operator
@@ -139,9 +162,9 @@ The next hardware increment must:
 3. Bind dnsmasq only to `p2p0`.
 4. Confirm that no forwarding or upstream DNS path exists.
 5. Run the HTTPS test through the AP instead of USB loopback.
-6. Implement the root-owned station adapter with RAM-only
-   `wpa_supplicant` state.
-7. Join a disposable test network and verify that credentials never appear in
+6. Run the implemented root-owned station adapter against a disposable test
+   network using RAM-only `wpa_supplicant` state.
+7. Verify that credentials never appear in
    logs, process arguments, or repository artifacts.
 
 Persistent storage remains out of scope until backup, rollback, and recovery

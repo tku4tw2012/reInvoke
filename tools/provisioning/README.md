@@ -10,6 +10,16 @@ configuration to a separate network adapter. It replaces the retained
 Chromecast setup page, which posts plaintext credentials over unauthenticated
 HTTP.
 
+`reinvoke-wifi-applyd` is the separate privileged adapter. It accepts only a
+root peer on a root-owned Unix socket, derives the WPA2 PSK in memory, writes a
+mode-0600 configuration containing no plaintext passphrase to ramfs/tmpfs, and
+starts fixed root-controlled `wpa_supplicant` and `wpa_cli` paths without a
+shell.
+
+Opening a later physical provisioning window cleanly terminates an existing
+root-owned supplicant before applying the replacement network. The total
+replacement, launch, and association path is bounded by `-connect-timeout`.
+
 ## Security boundary
 
 The daemon:
@@ -47,6 +57,10 @@ access are disabled during the build:
 ```bash
 tools/provisioning/build.sh \
   --output ../reinvoke-archive/build/artifacts/reinvoke-provisiond
+
+tools/provisioning/build.sh \
+  --component wifi-applyd \
+  --output ../reinvoke-archive/build/artifacts/reinvoke-wifi-applyd
 ```
 
 ## Run
@@ -59,6 +73,7 @@ reinvoke-provisiond \
   -listen 192.168.43.1:8443 \
   -apply-socket /run/reinvoke/wifi-apply.sock \
   -descriptor /run/reinvoke/provisioning.json \
+  -apply-timeout 25s \
   -lifetime 5m
 ```
 
@@ -83,3 +98,7 @@ The credential request is:
 The daemon does not configure `p2p0`, dnsmasq, hostapd, or
 `wpa_supplicant`. Those hardware-specific adapters remain separate so this
 internet-facing parser never receives shell or raw driver privileges.
+
+The parser's `-apply-timeout` must be at least five seconds shorter than its
+window and longer than the adapter's `-connect-timeout`. Defaults are 25 and
+20 seconds respectively.

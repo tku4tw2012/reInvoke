@@ -16,6 +16,7 @@ Usage: build.sh --output PATH [options]
 
 Options:
   --archive-root PATH  External reInvoke archive root
+  --component NAME     provisiond or wifi-applyd (default: provisiond)
   --output PATH        New ARMv7 binary path
   --help               Show this help
 EOF
@@ -37,6 +38,8 @@ main() {
   local archive_root
   local goroot
   local go_binary
+  local component="provisiond"
+  local package_path="."
   local output_path=""
   local partial_path
 
@@ -56,6 +59,11 @@ main() {
         output_path="$2"
         shift 2
         ;;
+      --component)
+        [[ -n "${2:-}" ]] || err "--component requires a value"
+        component="$2"
+        shift 2
+        ;;
       --help|-h)
         usage
         ;;
@@ -68,9 +76,21 @@ main() {
   [[ -n "${output_path}" ]] || err "--output is required"
   [[ ! -e "${output_path}" ]] ||
     err "refusing to overwrite output: ${output_path}"
-  for command_name in file mkdir mv sha256sum; do
+  for command_name in file mkdir mv realpath sha256sum; do
     require_command "${command_name}"
   done
+  case "${component}" in
+    provisiond)
+      package_path="."
+      ;;
+    wifi-applyd)
+      package_path="./applyd"
+      ;;
+    *)
+      err "--component must be provisiond or wifi-applyd"
+      ;;
+  esac
+  output_path="$(realpath --canonicalize-missing "${output_path}")"
 
   goroot="${archive_root}/toolchains/ubuntu-go-1.18.1/extracted/usr/lib/go-1.18"
   go_binary="${goroot}/bin/go"
@@ -101,7 +121,7 @@ main() {
       -buildvcs=false \
       -ldflags="-s -w" \
       -o "${partial_path}" \
-      .
+      "${package_path}"
   )
 
   mv "${partial_path}" "${output_path}"
