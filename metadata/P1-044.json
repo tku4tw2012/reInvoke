@@ -1,0 +1,33 @@
+{
+  "artifact": {
+    "path": "build/artifacts/reinvoke-provisiond-20260903/reinvoke-provisiond",
+    "sha256": "a4024dac2b178e1060eda8a240f644b0981c66ee82e8c32c7da34d59184a07b1",
+    "size": 4784128
+  },
+  "compiler": {
+    "path": "toolchains/ubuntu-go-1.18.1/extracted/usr/lib/go-1.18/bin/go",
+    "sha256": "91e7a78b1e449f8ebd59de015db7bb3ac49c6d94d416d45957790184c49baa3a",
+    "version": "go1.18.1 linux/amd64"
+  },
+  "copyright_file": {
+    "path": "toolchains/ubuntu-go-1.18.1/extracted/usr/share/doc/golang-1.18-go/copyright",
+    "sha256": "3438b01d606caa8a2240889fc80c9cd51b44ea87ac97bcedf670713027fd7df1",
+    "size": 35513
+  },
+  "id": "P1-044",
+  "kind": "local_toolchain",
+  "packages": {
+    "golang-1.18-go_1.18.1-1ubuntu1.2_amd64.deb": {
+      "repository": "jammy-updates/main",
+      "sha256": "360fea84e0eb6a11482a79103b7e5d1bb32a820529c0a9518a0a7dddad94a43c",
+      "size": 66110058
+    },
+    "golang-1.18-src_1.18.1-1ubuntu1.2_all.deb": {
+      "repository": "jammy-updates/main",
+      "sha256": "2acf24c8e6971ee48ea645e853c7e398fc809c198bbf8387daf5705e993d6586",
+      "size": 16255242
+    }
+  },
+  "retrieved_utc": "2026-09-03T06:18:34Z",
+  "status": "ACQUIRED_UBUNTU_PACKAGES_AND_BUILT"
+}
