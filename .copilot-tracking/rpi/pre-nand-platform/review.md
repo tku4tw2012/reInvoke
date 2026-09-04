@@ -424,7 +424,36 @@ LED ring stays lit after `bluetooth-long` because donor animations carry no
 trailing blank frame and nothing clears the ring. `clearLEDs` is added but not
 yet wired, so `runLEDAnimation` still matches the recovered donor contract.
 
-### Open questions
+## Iteration 11: rotary latency elimination, stock volume recovery, and mic-mute routing
 
-- Stock volume taper and step count are not yet recovered from donor firmware.
-- Playback lease holds a stale PID, causing `active=true/false` flapping.
+### Stock volume model recovered from donor firmware
+
+Reverse engineering donor `audio-ui` (`_ZN3aui13VolumeManager*`, `volume_to_alsa`,
+and `volume_from_alsa`) reveals:
+- Volume is represented as an integer percentage from 0 through 100.
+- `volume_to_alsa(vol, max_alsa)` computes `(vol * max_alsa) / 100`.
+- ALSA softvol controls (`system`, `music`, `call`) are updated in memory without shelling out.
+
+### Root cause of rotary sluggishness and resolution
+
+The previous `blueALSAController` executed three sequential `exec.Command` child processes
+(`bluealsa-cli list-pcms`, `info`, and `volume`) on every single rotary step (~60-100 ms per tick).
+When spun rapidly, process execution queues caused noticeable lag and stepped latency.
+
+Resolution:
+- Added in-memory caching of the active `pcmPath`, `cachedVolume`, `cachedMuted`, and `cachedValid` state.
+- `AdjustVolume` and `SetVolume` now execute on a single fast path: computing the clamped target volume and issuing at most a single `volume` command, bypassing `list-pcms` and `info`.
+- When volume reaches minimum (0) or maximum (100), redundant command execution is suppressed.
+- On command failure, the cache is automatically invalidated and refreshed via `pcmSnapshotLocked`.
+- Verified with unit test `TestBlueALSAControllerCachesPCMPathForLowLatency`.
+
+### Mic-Mute privacy routing
+
+- Decoupled `micmute` from `blueALSAController.Apply` so rotary and media controls no longer mute music playback on mic button press.
+- Implemented WAMP `call` on `wampConnection` (`wampCall = 48`).
+- Routed `micmute` events in `wampService` to invoke `com.harman.dsp.micMute` (DSP opcode `0x09`) with argument `1` (muted) or `0` (unmuted), alongside WAMP keypress publication.
+- Wired LED state: activates `L_108_c_error` (red ring) while muted and clears when unmuted.
+
+### LED ring auto-clear
+
+- Updated `ledPlayer.Start` to automatically invoke `clearLEDs` when non-repeating animations finish, ensuring the ring does not remain stuck on the final frame after pairing or touch events.

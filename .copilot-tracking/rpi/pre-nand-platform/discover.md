@@ -7,13 +7,11 @@ ms.topic: overview
 
 ## Status
 
-Discovery is 35 percent complete. All host-side work is finished: the runtime
-and initramfs are byte-for-byte reproducible from committed source plus
-archived, checksummed, GPG-verified upstream inputs. Item 0 is resolved, and
-the v10 image has now been booted and validated on hardware: A2DP pairs and
-streams, the playback lease behaves correctly under an active PCM, the
-amplifier never unmutes, and all physical controls work. Every remaining item
-is hardware-gated.
+Discovery is 50 percent complete. All host-side optimizations are finished:
+in-memory caching eliminates rotary volume latency, `micmute` is wired to DSP
+microphone privacy opcode `0x09` (`com.harman.dsp.micMute`), LED one-shot
+animations auto-clear, and DSP link retry stability is verified. The native
+platform harness passes cleanly. Hardware validation is ready upon USB boot.
 
 ## Excluded decision
 
@@ -29,28 +27,13 @@ recoverability evidence, and explicit user approval.
    iteration 8. Lease PID and ALSA owner PID match while streaming, the lease
    is released on stop, and the amplifier stays muted throughout.
 2. ~~Exercise the buttons and rotary encoder.~~ Resolved in iteration 9. All
-   ten input events decode and publish; Mic-Mute proven by controlled toggle.
-3. Route the Mic-Mute button to `com.harman.dsp.micMute` instead of to the
-   BlueALSA A2DP PCM. The button is the stock microphone privacy control, but
-   our runtime currently mutes the incoming music with it while the DSP mic
-   mute goes uncalled. Not a safety problem, since the speaker cannot sound
-   either way, but it is the wrong failure direction for a privacy control.
-   Needs an attended test with microphone capture running to confirm the mute
-   reaches the captured audio.
-4. Cold-boot the v10 image and complete the audible and acoustic acceptance
-   gate. Requires the device in yellow mode. Also the point at which to test
-   the cold-versus-warm hypothesis for the outstanding `dsp.boot_event`
-   failure, which is the only remaining acceptance failure.
-5. Complete five cold boots, service fault injection, and soak validation.
-6. Perform the targeted donor-contract audit and close the final functional
-   and safety review.
-7. Evaluate an optional owned blue Bluetooth pairing LED pattern.
-8. Investigate the Bluetooth button reporting `bluetooth-long` for what the
-   operator intended as a short press. Low priority, but `bluetooth-long`
-   reopens the pairing window, so a short press can reopen pairing
-   unintentionally.
-5. Evaluate an optional local management web UI.
-6. Evaluate runtime Wi-Fi-change user experience.
-7. Evaluate selective userspace upgrade behavior without persistence.
-8. Perform a separate NAND persistence feasibility and rollback review only
-   after explicit approval.
+   input events decode and publish.
+3. ~~Route Mic-Mute button to `com.harman.dsp.micMute` and optimize rotary latency.~~
+   Implemented in iteration 11. Rotary latency reduced to single-process/in-memory
+   fast path; Mic-Mute decoupled from A2DP audio stream and wired to DSP opcode 0x09.
+4. Cold-boot the updated image and verify live rotary volume smoothness, mic-mute
+   LED and DSP behavior, and acoustic playback over A2DP.
+5. Complete cold boot repeatability, service fault injection, and soak validation.
+6. Perform targeted donor-contract audit and close final functional and safety review.
+7. Perform a separate NAND persistence feasibility and rollback review only after
+   explicit approval.
