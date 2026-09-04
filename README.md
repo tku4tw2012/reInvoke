@@ -102,6 +102,20 @@ Valve, Kinoma, and community researchers. Provenance for each artifact is record
 [`metadata/`](metadata), and per-source attribution and status are documented in
 [docs/acquisition/source-retention-ranking.md](docs/acquisition/source-retention-ranking.md).
 
+### What MIT covers
+
+| Path | Licence |
+|---|---|
+| `tools/`, `docs/` research and analysis written for this project | MIT |
+| `metadata/` provenance sidecars authored here | MIT |
+| `patches/invoke-kernel/` | GPL-2.0 — derivative of the Linux kernel |
+| `patches/bluealsa/` | Follows upstream BlueALSA terms |
+| `docs/bundle-contents/` extracted vendor text, scripts, drivers, PDFs | Proprietary, Harman International |
+
+Adding an MIT licence cannot relicense material this project does not own.
+The vendor-derived and GPL-derived paths above are included as research
+evidence under their own terms.
+
 ### Firmware mirror attribution
 
 The Invoke firmware published under [Releases](../../releases) was obtained from the
