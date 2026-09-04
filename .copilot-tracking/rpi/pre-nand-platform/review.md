@@ -156,3 +156,43 @@ Pinned sources are archived under `sources/upstream/` at Tier 2:
 
 Neither tarball enters Git. They are build-time inputs held in archive
 storage, consistent with the documented tier policy.
+
+### Packaging gate reproducibility
+
+Every gate constant in `build-native-runtime.sh` was checked against archived
+artifacts and, where source exists, against a fresh local build.
+
+| Binary | Gate status |
+|---|---|
+| `reinvoke-mcu-interface` | Rebuilt from source to the exact digest `c9102b23...`, byte-identical across two builds |
+| `reinvoke-dsp-interface` | Rebuilt from source to the exact digest `f5b36cc3...` |
+| `bluealsa-aplay` | Gate digest matches the v9 artifact; lease patch confirmed present; two archived builds byte-identical |
+| `bluealsa`, `bluealsa-cli`, `bluetoothd` | Gate digests match the v1 artifact set |
+| `hci-init` | Gate digest matches the v1 artifact set |
+| `bluez-pairing-agent` | No archived artifact matches gate `ae60d800...` |
+
+The MCU result is the important one. It closes the packaging gate that
+iteration 5 left open: the digest was recorded after the pinmux correction but
+never reproduced. It now rebuilds deterministically from committed source.
+
+### Open item: pairing agent digest
+
+`PAIRING_AGENT_SHA256` is `ae60d800...`, and no archived artifact carries that
+digest. Four different variants exist across artifact sets, none matching. A
+fresh build from `tools/control/bluez-pairing-agent.c` against the archived
+dbus-1.12.20 produces `faaba0eb...` deterministically across two builds, with
+a functionally identical D-Bus surface and the same A2DP/AVRCP UUID allowlist.
+
+The gate digest therefore refers to a binary built by a toolchain that was
+never recorded. Two options exist, and the choice should be deliberate:
+
+1. Repin `PAIRING_AGENT_SHA256` to the reproducible local build. This makes
+   the whole stack rebuildable from archived inputs, but replaces a pinned
+   value with one produced by the current toolchain.
+2. Keep the existing pin and locate the original binary. This preserves the
+   original attestation but leaves one component unreproducible.
+
+Option 1 is preferred on reproducibility grounds, but repinning a checksum
+gate is exactly the kind of change that should not happen silently, so it is
+recorded here rather than applied. The rebuilt binary and its build notes are
+archived under `build/pairing-agent-rebuild-20260904/`.
