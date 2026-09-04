@@ -127,12 +127,17 @@ fetches these sources themselves.
 |---|---|---|
 | [BlueALSA](https://github.com/arkq/bluez-alsa) | 4.0.0 | MIT |
 | [BlueZ](https://www.bluez.org/) | 5.55 | GPL-2.0-or-later (daemon), LGPL-2.1-or-later (libraries) |
+| [SBC](https://www.kernel.org/pub/linux/bluetooth/) | 2.0 | GPL-2.0-or-later |
+| [D-Bus](https://dbus.freedesktop.org/) | 1.12.20 | AFL-2.1 OR GPL-2.0-or-later |
+
+Recorded URLs, checksums, and build flags for each are in
+[metadata/P1-045.json](metadata/P1-045.json).
 
 `patches/bluealsa/` applies to BlueALSA, which is MIT, so the patch is MIT and
-retains upstream copyright. BlueZ is used as an unmodified build-time
-dependency and reached over D-Bus at runtime; because this repository conveys
-no BlueZ binary, its copyleft distribution obligations are not triggered here.
-They would apply to anyone who chooses to distribute a built image.
+retains upstream copyright. The copyleft dependencies are used unmodified at
+build time and reached over D-Bus at runtime; because this repository conveys
+no binary built from them, their distribution obligations are not triggered
+here. They would apply to anyone who chooses to distribute a built image.
 
 ### Firmware mirror attribution
 
