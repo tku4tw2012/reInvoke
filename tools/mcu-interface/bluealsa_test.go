@@ -75,6 +75,54 @@ func TestBlueALSAControllerAppliesRotaryStep(t *testing.T) {
 	}
 }
 
+func TestBlueALSAControllerCachesPCMPathForLowLatency(t *testing.T) {
+	var calls [][]string
+	run := func(ctx context.Context, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string(nil), args...))
+		switch args[0] {
+		case "list-pcms":
+			return []byte(
+				"/org/bluealsa/hci0/dev_AA_BB_CC_11_22_33/a2dpsnk/source\n",
+			), nil
+		case "info":
+			return []byte("Volume: L: 64 R: 64\nMuted: L: N R: N\n"), nil
+		case "volume":
+			return nil, nil
+		default:
+			return nil, errors.New("unexpected command")
+		}
+	}
+	controller, err := newBlueALSAController(
+		"bluealsa-cli",
+		"aa:bb:cc:11:22:33",
+		run,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Initial snapshot primes cache (list-pcms + info)
+	if _, err := controller.Snapshot(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	initialCallCount := len(calls)
+	if initialCallCount != 2 {
+		t.Fatalf("expected 2 calls for initial snapshot, got %d", initialCallCount)
+	}
+	// Subsequent rotary step should ONLY execute "volume", not "list-pcms" or "info"
+	if err := controller.Apply(
+		context.Background(),
+		inputEvent{Name: "volumeup", Step: "2"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != initialCallCount+1 {
+		t.Fatalf("expected exactly 1 call for cached volume step, got %d", len(calls)-initialCallCount)
+	}
+	if calls[len(calls)-1][0] != "volume" {
+		t.Fatalf("expected volume command, got %s", calls[len(calls)-1][0])
+	}
+}
+
 func TestParseBlueALSAMutedRequiresSynchronizedChannels(t *testing.T) {
 	muted, err := parseBlueALSAMuted("Muted: L: Y R: Y\n")
 	if err != nil || !muted {

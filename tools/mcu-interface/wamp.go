@@ -18,6 +18,8 @@ const (
 	wampWelcome    = 2
 	wampError      = 8
 	wampPublish    = 16
+	wampCall       = 48
+	wampResult     = 50
 	wampRegister   = 64
 	wampRegistered = 65
 	wampInvocation = 68
@@ -48,6 +50,7 @@ type wampService struct {
 	events      eventSource
 	version     string
 	flushEvents bool
+	micMuted    bool
 }
 
 type wampConnection struct {
@@ -142,6 +145,21 @@ func (service *wampService) run(ctx context.Context) error {
 			topic, args := event.publication()
 			if err := client.publish(topic, args); err != nil {
 				return err
+			}
+			if event.Name == "micmute" {
+				service.micMuted = !service.micMuted
+				muteArg := 0
+				if service.micMuted {
+					muteArg = 1
+				}
+				_ = client.call("com.harman.dsp.micMute", []interface{}{muteArg})
+				if service.lights != nil {
+					if service.micMuted {
+						_ = service.lights.Start(sessionContext, "L_108_c_error", true)
+					} else {
+						_ = service.lights.Clear()
+					}
+				}
 			}
 		case message, ok := <-messages:
 			if !ok {
@@ -542,6 +560,19 @@ func (client *wampConnection) publish(
 		client.requestID(),
 		map[string]interface{}{},
 		topic,
+		args,
+	})
+}
+
+func (client *wampConnection) call(
+	procedure string,
+	args []interface{},
+) error {
+	return client.writeFrame([]interface{}{
+		wampCall,
+		client.requestID(),
+		map[string]interface{}{},
+		procedure,
 		args,
 	})
 }

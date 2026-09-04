@@ -80,8 +80,17 @@ func (player *ledPlayer) Start(
 			player.logf != nil {
 			player.logf("LED animation %s: %v", name, err)
 		}
+		if !repeat && ctx.Err() == nil {
+			if err := clearLEDs(player.writer); err != nil && player.logf != nil {
+				player.logf("clear LED after animation %s: %v", name, err)
+			}
+		}
 	}()
 	return nil
+}
+
+func (player *ledPlayer) Clear() error {
+	return player.Stop()
 }
 
 func (player *ledPlayer) Stop() error {
