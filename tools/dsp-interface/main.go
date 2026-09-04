@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -51,10 +52,15 @@ func main() {
 		"",
 		"procedure of the service that owns the amplifier and DAC mute policy",
 	)
+	bootStatePath := flag.String(
+		"boot-state",
+		"",
+		"RAM marker created after EVENT_DSP_BOOTUP; empty disables",
+	)
 	allowStateChanging := flag.Bool(
 		"allow-state-changing-procedures",
 		false,
-		"allow DSP state-changing WAMP procedures; default is read-only",
+		"allow unverified DSP command procedures; default transmits no command",
 	)
 	dryRun := flag.Bool(
 		"dry-run",
@@ -64,7 +70,7 @@ func main() {
 	useWAMP := flag.Bool("wamp", true, "join the WAMP router after boot")
 	readyTimeout := flag.Duration(
 		"ready-timeout",
-		2*time.Second,
+		500*time.Millisecond,
 		"how long to wait for the DSP ready line before failing a transmit",
 	)
 	flag.Parse()
@@ -78,8 +84,12 @@ func main() {
 	policy := mutePolicy{
 		NotifyTopic:     *bootupTopic,
 		PolicyProcedure: *mutePolicyProcedure,
+		BootStatePath:   *bootStatePath,
 	}
 	if err := policy.validate(); err != nil {
+		log.Fatal(err)
+	}
+	if err := clearDSPBootState(*bootStatePath); err != nil {
 		log.Fatal(err)
 	}
 
@@ -156,7 +166,15 @@ func main() {
 		safeOnly: !*allowStateChanging,
 		logf:     log.Printf,
 	}
-	runErr := service.run(ctx)
+	runErr := runWithReconnect(
+		ctx,
+		wampReconnectDelay,
+		service.run,
+		func(err error) bool {
+			return !errors.Is(err, errDSPLinkFailure)
+		},
+		log.Printf,
+	)
 	closeErr := dsp.Close()
 	if runErr != nil || closeErr != nil {
 		if runErr != nil {

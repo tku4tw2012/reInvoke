@@ -40,7 +40,8 @@ type hardware interface {
 }
 
 type mutePolicy struct {
-	AllowUnmute bool
+	AllowUnmute         bool
+	AllowPlaybackUnmute bool
 }
 
 type controller struct {
@@ -138,6 +139,12 @@ func (c *controller) setAmpMuteLocked(muted bool) error {
 		if err := c.unmuteAllowedLocked(); err != nil {
 			return err
 		}
+	}
+	return c.writeAmpMuteLocked(muted)
+}
+
+func (c *controller) writeAmpMuteLocked(muted bool) error {
+	if !muted {
 		if c.dacMuted {
 			return errors.New("DAC must be unmuted before amplifier")
 		}
@@ -161,7 +168,10 @@ func (c *controller) setDACMuteLocked(muted bool) error {
 			return err
 		}
 	}
+	return c.writeDACMuteLocked(muted)
+}
 
+func (c *controller) writeDACMuteLocked(muted bool) error {
 	err := c.updateExpanderLocked(func(value byte) byte {
 		if muted {
 			return value &^ dacMuteMask
@@ -172,6 +182,37 @@ func (c *controller) setDACMuteLocked(muted bool) error {
 		c.dacMuted = muted
 	}
 	return err
+}
+
+func (c *controller) setPlaybackActive(active bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !active {
+		ampErr := c.writeAmpMuteLocked(true)
+		dacErr := c.writeDACMuteLocked(true)
+		if ampErr != nil {
+			return fmt.Errorf("mute amplifier: %w", ampErr)
+		}
+		if dacErr != nil {
+			return fmt.Errorf("mute DAC: %w", dacErr)
+		}
+		return nil
+	}
+	if !c.initialized {
+		return errors.New("audio path is not initialized")
+	}
+	if !c.policy.AllowPlaybackUnmute {
+		return errors.New("playback unmute denied by local policy")
+	}
+	if err := c.writeDACMuteLocked(false); err != nil {
+		return fmt.Errorf("unmute DAC: %w", err)
+	}
+	if err := c.writeAmpMuteLocked(false); err != nil {
+		_ = c.writeDACMuteLocked(true)
+		return fmt.Errorf("unmute amplifier: %w", err)
+	}
+	return nil
 }
 
 func (c *controller) unmuteAllowedLocked() error {

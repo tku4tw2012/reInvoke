@@ -115,6 +115,77 @@ checksum-gated network lifecycle service starts at boot and waits for a
 root-controlled station supplicant before acquiring DHCP state. See
 [Native Wi-Fi provisioning boundary](../../docs/native-provisioning.md).
 
+## Build the autonomous runtime bundle
+
+`build-native-runtime.sh` assembles only the services required by the owned
+RAM speaker path. It checksum-gates owned MCU/DSP binaries, the volatile DSP
+image, BlueZ, BlueALSA, the pairing/HCI helpers, and an isolated Bonefish/D-Bus
+runtime. It never copies the full donor SquashFS. The donor EGLIBC 2.23
+libraries remain under `/opt/reinvoke/lib` and are invoked through their own
+loader, so they cannot replace the recovery image's EGLIBC 2.12 libraries.
+
+The builder requires a peer address because the current pairing agent accepts
+only one reviewed peer during its bounded window. The generated configuration
+and all binaries remain outside Git:
+
+```bash
+tools/usb-boot/build-native-runtime.sh \
+  --donor-rootfs ../reinvoke-archive/hardware/dumps/<dump>/rootfs-extracted/primary \
+  --mcu-interface <owned-mcu-binary> \
+  --dsp-interface <owned-dsp-binary> \
+  --dsp-image <dsp-img.ldr> \
+  --bluetoothd <bluez-5.55-bluetoothd> \
+  --bluealsa <bluealsa-4.0.0> \
+  --bluealsa-aplay <bluealsa-aplay-4.0.0> \
+  --bluealsa-cli <bluealsa-cli-4.0.0> \
+  --hci-init <owned-hci-init> \
+  --pairing-agent <owned-pairing-agent> \
+  --peer-address <allowlisted-peer> \
+  --output-dir ../reinvoke-archive/build/artifacts/reinvoke-native-runtime
+```
+
+Pass the resulting directory and the SHA-256 of its `SHA256SUMS` file to the
+initramfs builder:
+
+```bash
+tools/usb-boot/build-native-initramfs.sh \
+  <existing-reviewed-inputs> \
+  --runtime-bundle ../reinvoke-archive/build/artifacts/reinvoke-native-runtime \
+  --runtime-manifest-sha256 <reviewed-manifest-sha256> \
+  --output ../reinvoke-archive/build/artifacts/reinvoke-native/82_IMAGE
+```
+
+When the bundle is present, the builder removes unused recovery graphics/media
+payloads and enforces a 60 MiB output budget below the U-Boot overlap limit.
+PID 1 starts and supervises the router, MCU, DSP, D-Bus, BlueZ, BlueALSA,
+playback, and pairing services. Add `reinvoke.runtime=off`,
+`reinvoke.router=off`, `reinvoke.mcu=off`, `reinvoke.dsp=off`, or
+`reinvoke.bluetooth=off` to the volatile kernel command line for isolation.
+
+The playback service emits a RAM-only active-PCM lease. The MCU policy opens
+the physical DAC and amplifier only when the lease thread ID matches ALSA's
+`owner_pid`, ALSA reports `RUNNING`, and `/proc/<tid>/exe` identifies the
+packaged player. Silence, disconnect, process exit, and shutdown remove
+authorization and reassert mute.
+
+Service output passes through BusyBox syslog with a 256 KiB active file and one
+rotated backup. If syslog is unavailable, services use the bounded kernel log.
+
+## Collect autonomous acceptance evidence
+
+The packaged `/usr/sbin/reinvoke-acceptance` command checks runtime hashes,
+NAND isolation, raw MTD-node removal, radio/audio devices, service PID files,
+zombies, and fatal kernel messages. Collect a complete host-side evidence
+bundle after each boot:
+
+```bash
+tools/usb-boot/collect-native-acceptance.sh \
+  --output-dir ../reinvoke-archive/hardware/usb-attempts/<timestamp>/acceptance
+```
+
+The collector also calls the owned MCU and DSP WAMP surfaces and retains all
+service logs. It exits nonzero after evidence collection if any check fails.
+
 After a capture session reports the live `MV88DE3100|>` prompt, stage and boot
 a reviewed native pair with elapsed progress and a bounded USB criterion:
 

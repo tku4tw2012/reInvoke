@@ -1,0 +1,36 @@
+{
+  "id": "P1-050",
+  "kind": "physical_microphone_capture",
+  "retrieved_utc": "2026-09-03T22:57:37Z",
+  "status": "HARDWARE_DMA_VALIDATED_ACOUSTIC_CORRELATION_PENDING",
+  "device": "myInvoke-1",
+  "alsa": {
+    "card": 1,
+    "device": 0,
+    "format": "S32_LE",
+    "channels": 2,
+    "rate_hz": 48000,
+    "period_frames": 256,
+    "periods": 16,
+    "buffer_frames": 4096
+  },
+  "capture": {
+    "frames": 121344,
+    "nonzero_percent": 99.97527689873418,
+    "left_rms": 113974016.5441133,
+    "right_rms": 113974295.2543493,
+    "left_right_correlation": 0.9745972087281433,
+    "evidence_path": "reinvoke-archive/hardware/usb-attempts/20260903T225737Z-microphone-capture-original-absent/native-platform-evidence",
+    "sha256": "37a12f97066562c1f239c5f1632014ef47b3525622d02d66bff35a95e3a28067"
+  },
+  "findings": [
+    "The Berlin capture endpoint uses one fixed 2048-byte period and 16-period geometry.",
+    "TinyALSA defaults failed in ALSA core because they requested an incompatible period count.",
+    "The exact geometry reached RUNNING with matching advancing hardware and application pointers.",
+    "Amplifier and DAC mute remained asserted for the complete capture."
+  ],
+  "remaining_acceptance": [
+    "Run one attended speech or enclosure-tap stimulus.",
+    "Correlate stimulus timing and RMS change before claiming acoustic microphone acceptance."
+  ]
+}

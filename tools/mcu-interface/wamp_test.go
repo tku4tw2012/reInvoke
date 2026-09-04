@@ -5,9 +5,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 )
@@ -20,11 +22,34 @@ func (source channelEventSource) Events(context.Context) <-chan inputEvent {
 	return source.events
 }
 
+func TestDiscardPendingInputEventsKeepsFutureEvents(t *testing.T) {
+	channel := make(chan inputEvent, 2)
+	channel <- inputEvent{Name: "stale"}
+	events := discardPendingInputEvents(channel)
+	select {
+	case event := <-events:
+		t.Fatalf("stale event was retained: %#v", event)
+	default:
+	}
+	fresh := inputEvent{Name: "fresh"}
+	channel <- fresh
+	if event := <-events; event != fresh {
+		t.Fatalf("event = %#v, want %#v", event, fresh)
+	}
+}
+
 func TestMinimumWAMPSurface(t *testing.T) {
 	expected := []string{
 		"com.harman.vui.getmcustatus",
 		"com.harman.vui.mutedaccontrol",
 		"com.harman.vui.muteampcontrol",
+		"com.harman.volumeGet",
+		"com.harman.volumeSet",
+		"com.harman.volumeAdjust",
+		"com.harman.musicMuteSet",
+		"com.harman.musicMuteToggle",
+		"com.harman.ledAnimate",
+		"com.harman.ledOff",
 	}
 	if !reflect.DeepEqual(procedures, expected) {
 		t.Fatalf("procedures = %#v, want %#v", procedures, expected)
@@ -77,6 +102,56 @@ func TestWAMPUnmuteIsDeniedByDefault(t *testing.T) {
 	}
 }
 
+func TestVolumeSetUsesBlueALSAAsAuthority(t *testing.T) {
+	var calls [][]string
+	media, err := newBlueALSAController(
+		"bluealsa-cli",
+		"AA:BB:CC:11:22:33",
+		func(ctx context.Context, args ...string) ([]byte, error) {
+			calls = append(calls, append([]string(nil), args...))
+			switch args[0] {
+			case "list-pcms":
+				return []byte(
+					"/org/bluealsa/hci0/dev_AA_BB_CC_11_22_33/a2dpsnk/source\n",
+				), nil
+			case "info":
+				return []byte(
+					"Volume: L: 64 R: 64\nMuted: L: N R: N\n",
+				), nil
+			case "volume":
+				return nil, nil
+			default:
+				return nil, errors.New("unexpected command")
+			}
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := wampService{media: media}
+	response := invokeForTest(
+		t,
+		&service,
+		"com.harman.volumeSet",
+		[]interface{}{uint64(25), "music"},
+	)
+	if messageType(response) != wampYield {
+		t.Fatalf("response = %#v", response)
+	}
+	wantCall := []string{
+		"volume",
+		"/org/bluealsa/hci0/dev_AA_BB_CC_11_22_33/a2dpsnk/source",
+		"32",
+		"32",
+	}
+	if !reflect.DeepEqual(calls[len(calls)-1], wantCall) {
+		t.Fatalf("volume call = %v, want %v", calls[len(calls)-1], wantCall)
+	}
+	if !reflect.DeepEqual(response[3], []interface{}{uint64(25), "music"}) {
+		t.Fatalf("result args = %#v", response[3])
+	}
+}
+
 func TestMessagePackWAMPRoundTrip(t *testing.T) {
 	message := []interface{}{
 		wampPublish,
@@ -85,6 +160,7 @@ func TestMessagePackWAMPRoundTrip(t *testing.T) {
 		"com.harman.test.inputEvent",
 		[]interface{}{"volumeup", "3"},
 	}
+
 	payload, err := encodeMessagePack(message)
 	if err != nil {
 		t.Fatal(err)
@@ -102,6 +178,33 @@ func TestMessagePackWAMPRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(decoded, expected) {
 		t.Fatalf("decoded = %#v, want %#v", decoded, expected)
+	}
+}
+
+func TestRequestIDsAreUniqueAcrossConcurrentPublishers(t *testing.T) {
+	client := &wampConnection{nextID: 1}
+	const count = 100
+	ids := make(chan uint64, count)
+	var publishers sync.WaitGroup
+	for index := 0; index < count; index++ {
+		publishers.Add(1)
+		go func() {
+			defer publishers.Done()
+			ids <- client.requestID()
+		}()
+	}
+	publishers.Wait()
+	close(ids)
+
+	seen := make(map[uint64]bool, count)
+	for id := range ids {
+		if seen[id] {
+			t.Fatalf("duplicate request ID %d", id)
+		}
+		seen[id] = true
+	}
+	if len(seen) != count {
+		t.Fatalf("request ID count = %d, want %d", len(seen), count)
 	}
 }
 
@@ -248,6 +351,7 @@ func invokeForTest(
 	done := make(chan error, 1)
 	go func() {
 		done <- service.handleInvocation(
+			context.Background(),
 			client,
 			map[uint64]string{77: procedure},
 			[]interface{}{
@@ -260,9 +364,16 @@ func invokeForTest(
 		)
 	}()
 
-	response, err := peer.readFrame()
-	if err != nil {
-		t.Fatal(err)
+	var response []interface{}
+	for {
+		var err error
+		response, err = peer.readFrame()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if messageType(response) != wampPublish {
+			break
+		}
 	}
 	select {
 	case err := <-done:

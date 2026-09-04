@@ -40,11 +40,12 @@ const (
 	resetSettleDelay  = 10 * time.Millisecond
 	downloadStageWait = 10 * time.Millisecond
 	handshakeDelay    = time.Microsecond
-	requestPulseDelay = 20 * time.Millisecond
 	releaseDelay      = 2 * time.Microsecond
-	readyPollInterval = 200 * time.Microsecond
+	readyPollInterval = 100 * time.Millisecond
 	maxDevicePayload  = 64
 	maxHeaderShifts   = 4
+	maxReceiveRetries = 3
+	receiveRetryDelay = 100 * time.Millisecond
 )
 
 // pinout holds the five handshake lines. The roles are inferred from the order
@@ -84,7 +85,6 @@ type link struct {
 	stats linkStats
 
 	booted bool
-	image  []byte
 }
 
 type linkOptions struct {
@@ -96,11 +96,12 @@ type linkOptions struct {
 func newLink(spi spiBus, gpio gpioLines, i2c i2cBus, options linkOptions) *link {
 	sleep := options.Sleep
 	if sleep == nil {
-		sleep = time.Sleep
+		sleep = hardwareDelay
 	}
+
 	timeout := options.ReadyTimeout
 	if timeout <= 0 {
-		timeout = 2 * time.Second
+		timeout = 500 * time.Millisecond
 	}
 	return &link{
 		spi:          spi,
@@ -109,6 +110,16 @@ func newLink(spi spiBus, gpio gpioLines, i2c i2cBus, options linkOptions) *link 
 		pins:         options.Pins,
 		sleep:        sleep,
 		readyTimeout: timeout,
+	}
+}
+
+func hardwareDelay(delay time.Duration) {
+	if delay >= time.Millisecond {
+		time.Sleep(delay)
+		return
+	}
+	started := time.Now()
+	for time.Since(started) < delay {
 	}
 }
 
@@ -184,7 +195,6 @@ func (l *link) BootContext(ctx context.Context, image bootImage) error {
 	}
 	l.mu.Lock()
 	l.booted = true
-	l.image = append([]byte(nil), image.Stream...)
 	l.mu.Unlock()
 	return nil
 }
@@ -336,10 +346,11 @@ func (l *link) Poll() (*frame, bool, error) {
 			l.requeue(message)
 			return nil, false, nil
 		}
-		if err := l.transmit(message); err != nil {
-			return nil, false, err
+		received, err := l.transmit(message)
+		if err != nil {
+			return nil, true, err
 		}
-		return nil, true, nil
+		return received, true, nil
 	}
 
 	ready, err := l.gpio.Read(l.pins.Ready)
@@ -356,33 +367,40 @@ func (l *link) Poll() (*frame, bool, error) {
 	return received, true, nil
 }
 
-func (l *link) transmit(message []byte) error {
+func (l *link) transmit(message []byte) (*frame, error) {
 	if err := l.gpio.Write(l.pins.Active, true); err != nil {
-		return fmt.Errorf("raise transfer line: %w", err)
+		return nil, fmt.Errorf("raise transfer line: %w", err)
 	}
-	l.sleep(requestPulseDelay)
+	l.sleep(handshakeDelay)
+	if _, err := l.transferSerial(message, false); err != nil {
+		return nil, l.finishTransfer(fmt.Errorf("send frame: %w", err))
+	}
+	l.sleep(handshakeDelay)
 	if err := l.gpio.Write(l.pins.Active, false); err != nil {
-		return l.finishTransfer(fmt.Errorf("lower transfer line: %w", err))
+		return nil, l.finishTransfer(fmt.Errorf("lower transfer line: %w", err))
 	}
 	if err := l.waitReady(); err != nil {
-		l.requeue(message)
-		return l.finishTransfer(err)
-	}
-	if err := l.strobe(); err != nil {
-		l.requeue(message)
-		return l.finishTransfer(err)
-	}
-	if _, err := l.transferSerial(message, false); err != nil {
-		return l.finishTransfer(fmt.Errorf("send frame: %w", err))
-	}
-	if err := l.finishTransfer(nil); err != nil {
-		return err
+		return nil, l.finishTransfer(err)
 	}
 
 	l.mu.Lock()
 	l.stats.FramesSent++
 	l.mu.Unlock()
-	return nil
+	var lastError error
+	for attempt := 0; attempt < maxReceiveRetries; attempt++ {
+		received, err := l.receive()
+		if err == nil {
+			return received, nil
+		}
+		if !isFrameError(err) {
+			return nil, err
+		}
+		lastError = err
+		if attempt+1 < maxReceiveRetries {
+			l.sleep(receiveRetryDelay)
+		}
+	}
+	return nil, fmt.Errorf("DSP response retries exhausted: %v", lastError)
 }
 
 func (l *link) receive() (*frame, error) {
@@ -436,7 +454,8 @@ func (l *link) readSynchronizedHeader() ([]byte, int, error) {
 		}
 		if shift == maxHeaderShifts {
 			return nil, 0, fmt.Errorf(
-				"device frame synchronization failed: header=%x",
+				"%w: synchronization failed: header=%x",
+				errFrameRejected,
 				header,
 			)
 		}
@@ -489,18 +508,7 @@ func (l *link) waitReady() error {
 			return nil
 		}
 		if !time.Now().Before(deadline) {
-			l.mu.Lock()
-			image := append([]byte(nil), l.image...)
-			l.mu.Unlock()
-			if len(image) > 0 {
-				if err := l.download(context.Background(), image); err != nil {
-					return fmt.Errorf(
-						"DSP did not report ready; recovery download: %w",
-						err,
-					)
-				}
-			}
-			return errors.New("DSP did not report ready after recovery download")
+			return errors.New("DSP did not report ready")
 		}
 		l.sleep(readyPollInterval)
 	}
@@ -515,7 +523,7 @@ func (l *link) transferSerial(buffer []byte, read bool) ([]byte, error) {
 		var rx []byte
 		if read {
 			rx = out[index : index+1]
-			tx = nil
+			tx = []byte{0}
 		}
 		if err := l.spi.Transfer(
 			tx,

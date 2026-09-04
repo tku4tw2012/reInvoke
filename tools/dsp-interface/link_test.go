@@ -165,8 +165,8 @@ func TestPollDecodesCapturedBootEvent(t *testing.T) {
 		t.Fatalf("unexpected poll result: worked=%t event=%#v", worked, event)
 	}
 	for _, transfer := range spi.Recorded {
-		if len(transfer.TX) != 0 {
-			t.Fatalf("receive transfer transmitted %x", transfer.TX)
+		if len(transfer.TX) != 1 || transfer.TX[0] != 0 {
+			t.Fatalf("receive transfer did not transmit zero: %x", transfer.TX)
 		}
 	}
 }
@@ -201,5 +201,99 @@ func TestPollResynchronizesObservedLeadingZero(t *testing.T) {
 	}
 	if got := link.Stats().FrameResyncs; got != 1 {
 		t.Fatalf("frame resyncs = %d, want 1", got)
+	}
+}
+
+func TestTransmitUsesRecoveredMicrosecondHandshake(t *testing.T) {
+	spi := newMemorySPI()
+	spi.KeepTransfers = true
+	spi.Queue([]byte{0x00, 0x01, 0x00, 0x01, 0x06, 0x04, 0x00, 0x00})
+	gpio := newMemoryGPIO()
+	gpio.OnRead = func(pin int, current bool) bool {
+		return false
+	}
+
+	var sleeps []time.Duration
+	link := newLink(spi, gpio, newMemoryI2C(), linkOptions{
+		Pins: defaultPinout(),
+		Sleep: func(delay time.Duration) {
+			sleeps = append(sleeps, delay)
+		},
+	})
+	link.booted = true
+	if err := link.Enqueue(messageIDControl, []byte{0x08}); err != nil {
+		t.Fatal(err)
+	}
+
+	event, worked, err := link.Poll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !worked || event == nil || event.ID != messageIDBoot {
+		t.Fatalf("unexpected transmit result: worked=%t event=%#v", worked, event)
+	}
+	want := []time.Duration{
+		time.Microsecond,
+		time.Microsecond,
+		time.Microsecond,
+		time.Microsecond,
+		2 * time.Microsecond,
+	}
+	if len(sleeps) != len(want) {
+		t.Fatalf("sleep sequence = %v, want %v", sleeps, want)
+	}
+	for index := range want {
+		if sleeps[index] != want[index] {
+			t.Fatalf("sleep sequence = %v, want %v", sleeps, want)
+		}
+	}
+
+	commandLength := frameLength(1)
+	responseLength := frameLength(1)
+	if len(spi.Recorded) != commandLength+responseLength {
+		t.Fatalf("transfer count = %d", len(spi.Recorded))
+	}
+	for index, transfer := range spi.Recorded {
+		hasTransmit := len(transfer.TX) != 0
+		if index < commandLength && !hasTransmit {
+			t.Fatalf("command transfer %d was receive-only", index)
+		}
+		if index >= commandLength &&
+			(!hasTransmit || len(transfer.TX) != 1 || transfer.TX[0] != 0) {
+			t.Fatalf("response transfer %d transmitted %x", index, transfer.TX)
+		}
+	}
+}
+
+func TestTransmitRetriesRejectedResponse(t *testing.T) {
+	spi := newMemorySPI()
+	spi.Queue([]byte{
+		0xff, 0, 0, 0, 0, 0, 0, 0, 0,
+		0x00, 0x01, 0x00, 0x01, 0x06, 0x04, 0x00, 0x00,
+	})
+	gpio := newMemoryGPIO()
+	gpio.OnRead = func(pin int, current bool) bool { return false }
+	var retryDelayCount int
+	link := newLink(spi, gpio, newMemoryI2C(), linkOptions{
+		Pins: defaultPinout(),
+		Sleep: func(delay time.Duration) {
+			if delay == receiveRetryDelay {
+				retryDelayCount++
+			}
+		},
+	})
+	link.booted = true
+	if err := link.Enqueue(messageIDControl, []byte{0x08}); err != nil {
+		t.Fatal(err)
+	}
+	event, worked, err := link.Poll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !worked || event == nil || event.ID != messageIDBoot {
+		t.Fatalf("unexpected retry result: worked=%t event=%#v", worked, event)
+	}
+	if retryDelayCount != 1 {
+		t.Fatalf("retry delays = %d, want 1", retryDelayCount)
 	}
 }
