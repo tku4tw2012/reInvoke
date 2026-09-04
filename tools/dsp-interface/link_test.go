@@ -297,3 +297,40 @@ func TestTransmitRetriesRejectedResponse(t *testing.T) {
 		t.Fatalf("retry delays = %d, want 1", retryDelayCount)
 	}
 }
+
+// TestTransmitWaitsForReadyBetweenRetries proves the link re-checks the Ready
+// line before each retry. A DSP that deasserts Ready while it computes a
+// response returns an all-zero header; without waiting, every retry clocks a
+// silent bus and the link dies on the first command it is ever sent.
+func TestTransmitWaitsForReadyBetweenRetries(t *testing.T) {
+	spi := newMemorySPI()
+	spi.Queue([]byte{
+		0x00, 0x00, 0x00, 0x00, 0x00, 0, 0, 0, 0,
+		0x00, 0x01, 0x00, 0x01, 0x06, 0x04, 0x00, 0x00,
+	})
+	gpio := newMemoryGPIO()
+	var readyReads int
+	gpio.OnRead = func(pin int, current bool) bool {
+		if pin != defaultPinout().Ready {
+			return false
+		}
+		readyReads++
+		// Busy (high) on the read that follows the first failed receive.
+		return readyReads == 2
+	}
+	link := newLink(spi, gpio, newMemoryI2C(), linkOptions{
+		Pins:  defaultPinout(),
+		Sleep: func(time.Duration) {},
+	})
+	link.booted = true
+	if err := link.Enqueue(messageIDControl, []byte{0x04, 0x1e}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := link.Poll()
+	if err != nil {
+		t.Fatalf("transmit failed despite DSP becoming ready again: %v", err)
+	}
+	if readyReads < 2 {
+		t.Fatalf("ready line read %d times, want the retry to re-check it", readyReads)
+	}
+}

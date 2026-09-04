@@ -185,10 +185,18 @@ start_autonomous_runtime() {
       --lights-dir "${runtime_root}/share/lights"
   fi
   if ! cmdline_has reinvoke.dsp=off; then
+    # Without state-changing procedures the DSP never receives its volume
+    # setting and stays silent, and it never emits EVENT_DSP_BOOTUP. Boot with
+    # reinvoke.dsp=safe to withhold every DSP command instead.
+    dsp_state_flag="-allow-state-changing-procedures"
+    if cmdline_has reinvoke.dsp=safe; then
+      dsp_state_flag=""
+    fi
     supervise dsp-interface \
       "${runtime_bin}/reinvoke-dsp-interface" \
       -image "${runtime_root}/share/dsp-img.ldr" \
       -boot-state /run/reinvoke/dsp-booted \
+      ${dsp_state_flag} \
       -router-host 127.0.0.1 -router-port 9999
   fi
   if ! cmdline_has reinvoke.bluetooth=off; then
