@@ -132,6 +132,14 @@ the A2DP/AVRCP UUID set. The HCI initializer resets the controller and removes
 volatile keys before a clean reconstruction. Artifact hashes for the validated
 build are recorded in [P1-045](../../metadata/P1-045.json).
 
+The pairing-agent digest gated by `build-native-runtime.sh` is
+`faaba0eb1d350ee6210cc629c956a63ca313e65fe91441bfbf5093fbb2dfdbdc`, produced by
+`arm-linux-gnueabihf-gcc` 11.4.0 with the flags above. Reproduce it by building
+against the pinned dbus-1.12.20 source archived under `sources/upstream/`. An
+earlier pin, `ae60d800...`, was superseded because it matched no archived
+artifact and its toolchain was never recorded; see
+[P1-049](../../metadata/P1-049.json) for the substitution record.
+
 `build-bluealsa-aplay.sh` applies the reviewed active-PCM lease patch to the
 pinned BlueALSA 4.0.0 source. It checksum-gates the source, patch, compiler,
 strip tool, and final static ARM binary:

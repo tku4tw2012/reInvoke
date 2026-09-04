@@ -169,30 +169,78 @@ artifacts and, where source exists, against a fresh local build.
 | `bluealsa-aplay` | Gate digest matches the v9 artifact; lease patch confirmed present; two archived builds byte-identical |
 | `bluealsa`, `bluealsa-cli`, `bluetoothd` | Gate digests match the v1 artifact set |
 | `hci-init` | Gate digest matches the v1 artifact set |
-| `bluez-pairing-agent` | No archived artifact matches gate `ae60d800...` |
+| `bluez-pairing-agent` | Repinned to `faaba0eb...`, rebuilt from source, byte-identical across two builds |
 
 The MCU result is the important one. It closes the packaging gate that
 iteration 5 left open: the digest was recorded after the pinmux correction but
 never reproduced. It now rebuilds deterministically from committed source.
 
-### Open item: pairing agent digest
+### Resolved: pairing agent digest repinned
 
-`PAIRING_AGENT_SHA256` is `ae60d800...`, and no archived artifact carries that
-digest. Four different variants exist across artifact sets, none matching. A
+`PAIRING_AGENT_SHA256` was `ae60d800...`, and no archived artifact carried that
+digest. Four different variants existed across artifact sets, none matching. A
 fresh build from `tools/control/bluez-pairing-agent.c` against the archived
 dbus-1.12.20 produces `faaba0eb...` deterministically across two builds, with
 a functionally identical D-Bus surface and the same A2DP/AVRCP UUID allowlist.
 
-The gate digest therefore refers to a binary built by a toolchain that was
-never recorded. Two options exist, and the choice should be deliberate:
+The old gate digest referred to a binary built by a toolchain that was never
+recorded, so it could not be reproduced or re-verified by anyone. On explicit
+user decision, the gate was repinned to the reproducible build.
 
-1. Repin `PAIRING_AGENT_SHA256` to the reproducible local build. This makes
-   the whole stack rebuildable from archived inputs, but replaces a pinned
-   value with one produced by the current toolchain.
-2. Keep the existing pin and locate the original binary. This preserves the
-   original attestation but leaves one component unreproducible.
+What this buys: every binary in the runtime is now rebuildable from committed
+source plus archived, checksummed, GPG-verified upstream inputs. Nothing in the
+stack depends on an artifact of unknown origin.
 
-Option 1 is preferred on reproducibility grounds, but repinning a checksum
-gate is exactly the kind of change that should not happen silently, so it is
-recorded here rather than applied. The rebuilt binary and its build notes are
-archived under `build/pairing-agent-rebuild-20260904/`.
+What it costs: the `ae60d800...` value was an original attestation, and it is
+now superseded. It is preserved in `metadata/P1-049.json` under
+`superseded_sha256` so the substitution stays auditable rather than silent.
+
+Toolchain of record: `arm-linux-gnueabihf-gcc` 11.4.0, flags
+`-std=c11 -O2 -Wall -Wextra -Werror -static`. The rebuilt binary and its build
+notes are archived under `build/pairing-agent-rebuild-20260904/`.
+
+## Iteration 7: fully reproducible runtime, v10
+
+With the pairing-agent pin resolved, the whole stack was repackaged from
+verified inputs. Recorded as [P1-051](../../../metadata/P1-051.json).
+
+### Result
+
+| Stage | Outcome |
+|---|---|
+| Owned Go binaries | All five rebuild from source to their exact gate digests |
+| Pairing agent | Rebuilds to its repinned digest |
+| Runtime directory | Built twice, byte-for-byte identical, manifest `449bf750...` |
+| Initramfs | Built twice, byte-for-byte identical, `38a90212...`, 29,217,281 bytes |
+| Host suites | MCU, DSP, provisioning, native platform harness all pass |
+
+This is the first image where nothing depends on an artifact of unknown
+origin. Every binary traces to committed source plus archived, checksummed,
+GPG-verified upstream inputs.
+
+### A gate caught a real mistake
+
+The first packaging attempt used `extracted/phase3/stockroot/rootfs` as the
+donor. It failed on the LED animation manifest: that tree carries 28 lights
+assets, while the reviewed set carries 8. The correct donor is
+`extracted/ota2/83_members/rootfs`.
+
+Worth recording plainly. The donor rootfs was chosen from memory of an earlier
+note rather than resolved from the gate, and the gate is the only reason a
+wrong-donor image did not get built and booted. The lesson generalises: resolve
+each input from its own pinned digest instead of from recollection. Every other
+input in this run was resolved by digest search, which is why nothing else
+needed correcting.
+
+### Reproduction command inputs
+
+- donor rootfs `extracted/ota2/83_members/rootfs`
+- source initramfs `extracted/ota2/OTA2/82_IMAGE`
+- kernel modules `build/artifacts/invoke-kernel-gcc49-audio-sd8887-spi-timeout-20260903/modules`
+- Bluetooth daemon trio and `hci-init` from `reinvoke-native-runtime-20260903/bin`
+- `bluealsa-aplay` from `reinvoke-native-runtime-v9-repro-20260904/bin`
+
+### Not yet done
+
+The v10 image has never been booted. Every remaining acceptance item is
+hardware-gated and needs the device in yellow mode.
