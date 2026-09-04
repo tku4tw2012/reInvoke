@@ -399,3 +399,32 @@ that does not disturb the volume setting.
 The general point is the same one from Iteration 8: a single observation taken
 after an event proves nothing about a toggle. Establish the starting state, act,
 then observe.
+
+## Iteration 10: first audible playback, DSP command path
+
+Operator confirmed audible 440 Hz playback over A2DP on the native platform,
+and confirmed rotary volume up and down by ear during live playback.
+
+Root cause of the silence: `reinvoke-dsp-interface` was launched without
+`-allow-state-changing-procedures`, so `safeOnly` was true and `dispatch`
+refused every DSP command before transmission. The DSP therefore never
+received `com.harman.dsp.volumeSet` and never emitted `EVENT_DSP_BOOTUP`.
+One defect, two symptoms: silence and the `dsp.boot_event` acceptance failure.
+Verified by restarting the service by hand with the flag: `/run/reinvoke/dsp-booted`
+appeared and `volumeSet` was accepted and queued as `04 1e`.
+
+Enabling the flag exposed a latent defect the safe mode had masked. `transmit`
+called `waitReady()` once, then retried `receive()` without re-checking Ready.
+A DSP that deasserts Ready while computing returns an all-zero header, so every
+retry clocked a silent bus and the link died on the first command it was ever
+sent (`header=0000000000`). Fixed by re-waiting for Ready between retries.
+`TestTransmitWaitsForReadyBetweenRetries` was confirmed to fail without the fix.
+
+LED ring stays lit after `bluetooth-long` because donor animations carry no
+trailing blank frame and nothing clears the ring. `clearLEDs` is added but not
+yet wired, so `runLEDAnimation` still matches the recovered donor contract.
+
+### Open questions
+
+- Stock volume taper and step count are not yet recovered from donor firmware.
+- Playback lease holds a stale PID, causing `active=true/false` flapping.

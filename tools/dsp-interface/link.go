@@ -398,6 +398,12 @@ func (l *link) transmit(message []byte) (*frame, error) {
 		lastError = err
 		if attempt+1 < maxReceiveRetries {
 			l.sleep(receiveRetryDelay)
+			// The DSP may deassert Ready while it computes a response. Waiting
+			// for it again avoids clocking a silent bus, which returns an
+			// all-zero header and burns the remaining retries.
+			if err := l.waitReady(); err != nil {
+				return nil, l.finishTransfer(err)
+			}
 		}
 	}
 	return nil, fmt.Errorf("DSP response retries exhausted: %v", lastError)
