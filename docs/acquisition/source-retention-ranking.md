@@ -43,23 +43,33 @@ Inputs used here are the verified facts provided on 2026-08-26:
 ## Build-time upstream sources
 
 These are toolchain inputs rather than research evidence, so they sit outside
-the fragility ranking above. Both are widely mirrored and at low custody risk;
+the fragility ranking above. All are widely mirrored and at low custody risk;
 they are archived to make the runtime build reproducible rather than to
-preserve endangered material.
+preserve endangered material. Canonical URLs, checksums, and build flags are
+recorded in [metadata/P1-045.json](../../metadata/P1-045.json).
 
-| Source | Version | Retention | Fragility | Notes |
-|---|---|---|---|---|
-| bluez-alsa release tarball | 4.0.0 | 5/5 | 1/5 | MIT. Target of `patches/bluealsa/`. Version confirmed against the `v4.0.0` string in shipped binaries. |
-| BlueZ release tarball | 5.55 | 5/5 | 1/5 | GPL-2.0-or-later. Build-time only; version confirmed against the `5.55` string in shipped `bluetoothd`. |
+| Source | Version | Licence | Provenance |
+|---|---|---|---|
+| bluez-alsa | 4.0.0 | MIT | sha256 only; upstream publishes no signature |
+| BlueZ | 5.55 | GPL-2.0-or-later | Good GPG signature, maintainer key |
+| SBC | 2.0 | GPL-2.0-or-later | Good GPG signature, maintainer key |
+| D-Bus | 1.12.20 | AFL-2.1 OR GPL-2.0-or-later | Good GPG signature, maintainer key |
 
-Stored at Tier 2 under `sources/upstream/` in the archive root. Recorded
-checksums:
-
-- `bluez-alsa-4.0.0.tar.gz` —
-  `ce5e060e61669d61d44f5f9bad34a7b88378376e9d49d31482406a68127a6b29`
-- `bluez-5.55.tar.xz` —
-  `8863717113c4897e2ad3271fc808ea245319e6fd95eed2e934fae8e0894e9b88`
-
-The BlueZ tarball carries a good GPG signature from the maintainer key
-`E932 D120 BC2A EC44 4E55 8F01 06CA 9F5D 1DCF 2659`. Neither tarball is
+Stored at Tier 2 under `sources/upstream/` in the archive root. Every digest
+matches the value already recorded in P1-045, and none of these tarballs is
 committed to Git.
+
+Signing keys observed:
+
+- BlueZ and SBC — Marcel Holtmann,
+  `E932 D120 BC2A EC44 4E55 8F01 06CA 9F5D 1DCF 2659`
+- D-Bus — Simon McVittie,
+  `DA98 F25C 0871 C49A 59EA FF2C 4DE8 FF2A 63C7 CC90`
+
+### Recorded URL drift
+
+The D-Bus 1.12.20 `.tar.xz` URL in P1-045 now returns 404. Upstream publishes
+that release only as `.tar.gz`, whose digest matches the recorded sha256
+exactly, so the hash always described the gzip artifact and no content
+changed. P1-045 has been corrected. This is a useful reminder that recorded
+URLs decay faster than recorded digests, which is why both are kept.
