@@ -93,6 +93,10 @@ Firmware images are retained as research evidence, not as a distribution channel
 
 ## Licensing and attribution
 
+The original work in this repository — documentation, research notes, and the
+tooling under [`tools/`](tools) — is released under the [MIT License](LICENSE).
+
+Third-party material is not covered by that licence and retains its own terms.
 Material originates from multiple parties under differing terms — Harman, Google/Nest,
 Valve, Kinoma, and community researchers. Provenance for each artifact is recorded in
 [`metadata/`](metadata), and per-source attribution and status are documented in
