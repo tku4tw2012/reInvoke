@@ -201,6 +201,53 @@ func TestShutdownMutesAmplifierBeforeDAC(t *testing.T) {
 	}
 }
 
+func TestPlaybackPolicyOwnsOrderedUnmuteAndRemute(t *testing.T) {
+	hardware := newRecordingHardware(0x00)
+	control := newController(hardware, mutePolicy{
+		AllowPlaybackUnmute: true,
+	})
+	control.sleep = func(time.Duration) {}
+	if err := control.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	start := len(hardware.operations)
+
+	if err := control.setPlaybackActive(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := control.setPlaybackActive(false); err != nil {
+		t.Fatal(err)
+	}
+
+	var writes []hardwareOperation
+	for _, operation := range hardware.operations[start:] {
+		if operation.kind == "write" {
+			writes = append(writes, operation)
+		}
+	}
+	want := []byte{0x1f, 0x1d, 0x1f, 0x1b}
+	if len(writes) != len(want) {
+		t.Fatalf("playback writes = %#v", writes)
+	}
+	for index, value := range want {
+		if writes[index].value != value {
+			t.Fatalf("playback writes = %#v, want values %x", writes, want)
+		}
+	}
+}
+
+func TestPlaybackUnmuteIsDeniedWithoutLocalMonitor(t *testing.T) {
+	hardware := newRecordingHardware(0x00)
+	control := newController(hardware, mutePolicy{})
+	control.sleep = func(time.Duration) {}
+	if err := control.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := control.setPlaybackActive(true); err == nil {
+		t.Fatal("playback unmute succeeded without local monitor policy")
+	}
+}
+
 func TestDACFailureReassertsBothMutes(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
 	hardware.failDACAt = 0x25

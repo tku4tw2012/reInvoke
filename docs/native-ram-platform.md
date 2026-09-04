@@ -342,15 +342,23 @@ xrun, DMA error, or kernel fault. A second guarded test:
 The operator audibly confirmed the tone. This proves the RAM-owned
 kernel-to-speaker output path.
 
-The capture side is not yet operational. On 2026-09-03, the target exposed
-card 1 PCM 0 as a capture substream, but the donor `tinycap` utility could not
-set hardware parameters on that device. The failure reproduced before DSP
-startup, after the owned DSP image booted, and after `micTestNormal`, including
-the documented 48 kHz stereo `S32_LE` format and several period sizes. Each
-attempt captured zero frames. Card 0 loopback capture did open, so the utility
-and ALSA capture ioctl path work; this does not constitute microphone evidence.
-Microphone support remains blocked on identifying the required Berlin/WM8904
-capture configuration or completing the kernel capture path.
+The capture endpoint uses one fixed buffer geometry inherited from the Berlin
+playback callbacks: 2,048-byte periods, 16 periods, and a 32 KiB buffer.
+TinyALSA defaults and the first parameter sweep were invalid because they did
+not request all 16 periods. With amplifier and DAC mute asserted, this command
+opened card 1 PCM 0:
+
+```text
+tinycap /tmp/mic-evidence.wav -D 1 -d 0 -c 2 -r 48000 -b 32 -p 256 -n 16
+```
+
+The active stream reported stereo 48 kHz `S32_LE`, a 256-frame period, a
+4,096-frame buffer, and matching advancing hardware/application pointers. The
+five-second capture contained 121,344 frames; 99.98 percent were nonzero, and
+left/right correlation was 0.975. Evidence is retained under
+`hardware/usb-attempts/20260903T225737Z-microphone-capture-original-absent/`
+in the external archive. An attended speech or tapping correlation remains
+before claiming acoustic microphone acceptance.
 
 The physical rotary ring also produced 63 volume-up and 57 volume-down MCU
 events. Bonefish recorded exactly 120 matching
@@ -510,6 +518,19 @@ procedures explicitly unmuted the amplifier and DAC, the paired Mac mini sent a
 speaker output. The host volume was then restored to one percent; the physical
 outputs remain under the MCU mute procedures.
 Provenance is in [P1-045](../metadata/P1-045.json).
+
+The first autonomous automatic-unmute attempt later reached ALSA `RUNNING` but
+produced no audible sound and coincided with sustained I2C arbitration loss.
+That candidate was rejected. ALSA `RUNNING` alone can represent rendered
+silence, so it is not physical-unmute authorization.
+
+The v9 candidate patches `bluealsa-aplay` to create a RAM lease only after
+positive PCM FIFO reads. The lease carries the ALSA-owning worker thread ID.
+The MCU service requires that ID to match ALSA `owner_pid` and the expected
+`/proc/<tid>/exe` while the PCM is `RUNNING`. GPIO handling now requires a real
+`POLLPRI` edge before reading the MCU, preventing the prior I2C read flood.
+This candidate has complete host and reproducibility validation but still
+requires a clean cold-boot and attended audible test.
 
 ## Rebuilding the RAM platform
 

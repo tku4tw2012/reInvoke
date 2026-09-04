@@ -56,7 +56,7 @@ to 28, but that additional registration has not been observed live.
 
 | Procedures | Contract status |
 |---|---|
-| `com.harman.ledAnimate`, `ledSet`, `ledOff` | Registered; LED purpose follows the names, arguments and results unknown |
+| `com.harman.ledAnimate`, `ledSet`, `ledOff` | Registered; disassembly shows `ledAnimate` receives a pattern string and one byte, loads `/usr/share/lights/<pattern>.bin`, and sends animation chunks to MCU address `0x36`; `ledSet` and `ledOff` remain unresolved |
 | `com.harman.vui.setDeviceColor`, `getDeviceColor`, `SetRGBLEDBrightness` | Registered; arguments and results unknown |
 | `com.harman.vui.getmcustatus` | Registered; call is `[]`; verified live success is positional result `["000116"]` with no kwargs; returns `com.harman.error` with `["No MCU version :("]` when no MCU version is available |
 | `com.harman.vui.setmcupowermode` | Registered; handler logs one string argument; accepted values and result unknown |
@@ -82,12 +82,51 @@ unknown. Its observed and candidate outbound topics are:
 | `com.harman.heartbeat.mcu-interface` | Observed repeatedly as no positional args plus `{"bootflag":""}` |
 | `com.harman.test.inputEvent` | Observed rotary events as `["volumeup", "<step>"]` or `["volumedown", "<step>"]`; step was a decimal string from `1` through `5` |
 | `com.harman.ready.mcu-interface` | Outbound URI string; message kind, payload, and live transmission not retained |
-| `com.harman.vui.keypress` | Outbound URI string; message kind and payload unknown |
+| `com.harman.vui.keypress` | Disassembly shows a one-string positional publication for non-rotary physical keys; names are listed below |
 | `com.harman.vui.mcustatus` | Outbound URI string; message kind and payload unknown |
 | `com.harman.vui.mcuupgraderesult` | Outbound URI string; message kind and payload unknown |
 
 `com.harman.error` is also used as a WAMP error URI. No authentication or
 authorization is visible in the observed MCU session.
+
+### Recovered physical key map
+
+The donor constructor builds two integer-keyed maps. The first maps raw MCU
+event codes to log descriptions; the second maps the same codes to WAMP names.
+The interrupt handler indexes both maps with byte 1 of an inbound `0x04` frame.
+
+| Code | Physical event | Published name |
+|------|----------------|----------------|
+| `0x00` | Touch panel short press | `action` |
+| `0x01` | Touch panel long press | `action-long` |
+| `0x02` | Bluetooth short press | `bluetooth` |
+| `0x03` | Bluetooth long press | `bluetooth-long` |
+| `0x04` | Microphone short press | `micmute` |
+| `0x05` | Microphone long press | `micmute-long` |
+| `0x06` | Reset short press | `reset` |
+| `0x07` | Reset long press | `reset-long` |
+| `0x08` | Rotary clockwise | `volumeup` |
+| `0x09` | Rotary counter-clockwise | `volumedown` |
+| `0x0a` | Bluetooth plus microphone long press | Disabled in the shipped service |
+
+Codes `0x08` and `0x09` retain the observed second positional step string.
+Codes `0x00` through `0x07` publish their single canonical name on
+`com.harman.vui.keypress`.
+
+### Recovered LED animation transport
+
+Each held `L_*.bin` animation is an exact multiple of 13 bytes, one intensity
+byte for each top-panel LED per animation frame. The donor player reads at most
+390 bytes (30 frames) per chunk and sends one I2C message to address `0x36`:
+
+```text
+0e <first-chunk-flag> <up to 390 animation bytes>
+```
+
+The first-chunk flag is `01` and subsequent chunks use `00`. The player waits
+280 ms between chunks. This establishes the `ledAnimate` asset transport
+without assigning semantics to the unresolved direct `ledSet` or `ledOff`
+procedures.
 
 ## Physical RAM-native validation
 

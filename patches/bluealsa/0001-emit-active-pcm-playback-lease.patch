@@ -1,0 +1,146 @@
+diff --git a/utils/aplay/aplay.c b/utils/aplay/aplay.c
+index 6e35021..1c9a474 100644
+--- a/utils/aplay/aplay.c
++++ b/utils/aplay/aplay.c
+@@ -14,6 +14,7 @@
+ 
+ #include <assert.h>
+ #include <errno.h>
++#include <fcntl.h>
+ #include <getopt.h>
+ #include <math.h>
+ #include <poll.h>
+@@ -23,6 +24,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <sys/syscall.h>
+ #include <unistd.h>
+ 
+ #include <alsa/asoundlib.h>
+@@ -52,6 +54,8 @@ struct pcm_worker {
+ 	snd_mixer_elem_t *mixer_elem;
+ 	/* if true, playback is active */
+ 	bool active;
++	/* if true, this worker owns one playback lease reference */
++	bool lease_active;
+ 	/* human-readable BT address */
+ 	char addr[18];
+ };
+@@ -70,6 +74,9 @@ static size_t ba_addrs_count = 0;
+ static unsigned int pcm_buffer_time = 500000;
+ static unsigned int pcm_period_time = 100000;
+ static bool pcm_mixer = true;
++static const char *playback_lease_path = NULL;
++static pthread_mutex_t playback_lease_lock = PTHREAD_MUTEX_INITIALIZER;
++static unsigned int playback_lease_users = 0;
+ 
+ static struct ba_dbus_ctx dbus_ctx;
+ static char dbus_ba_service[32] = BLUEALSA_SERVICE;
+@@ -93,6 +100,55 @@ static void main_loop_stop(int sig) {
+ 	main_loop_on = false;
+ }
+ 
++static void playback_lease_acquire(struct pcm_worker *worker) {
++
++	if (playback_lease_path == NULL || worker->lease_active)
++		return;
++
++	pthread_mutex_lock(&playback_lease_lock);
++	if (playback_lease_users == 0) {
++		char lease[32];
++		pid_t owner = syscall(SYS_gettid);
++		int lease_len = snprintf(lease, sizeof(lease), "%d\n", owner);
++		int fd = open(playback_lease_path,
++				O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
++		if (fd == -1) {
++			error("Couldn't create playback lease: %s", strerror(errno));
++			pthread_mutex_unlock(&playback_lease_lock);
++			return;
++		}
++		ssize_t written = write(fd, lease, lease_len);
++		if (written != lease_len) {
++			if (written == -1)
++				error("Couldn't write playback lease: %s", strerror(errno));
++			else
++				error("Couldn't write complete playback lease");
++			close(fd);
++			unlink(playback_lease_path);
++			pthread_mutex_unlock(&playback_lease_lock);
++			return;
++		}
++		close(fd);
++	}
++	playback_lease_users++;
++	worker->lease_active = true;
++	pthread_mutex_unlock(&playback_lease_lock);
++}
++
++static void playback_lease_release(struct pcm_worker *worker) {
++
++	if (playback_lease_path == NULL || !worker->lease_active)
++		return;
++
++	pthread_mutex_lock(&playback_lease_lock);
++	worker->lease_active = false;
++	if (playback_lease_users > 0 && --playback_lease_users == 0 &&
++			unlink(playback_lease_path) == -1 &&
++			errno != ENOENT)
++		error("Couldn't remove playback lease: %s", strerror(errno));
++	pthread_mutex_unlock(&playback_lease_lock);
++}
++
+ static int parse_bt_addresses(char *argv[], size_t count) {
+ 
+ 	ba_addrs_count = count;
+@@ -402,6 +457,7 @@ static int pcm_worker_mixer_volume_update(
+ }
+ 
+ static void pcm_worker_routine_exit(struct pcm_worker *worker) {
++	playback_lease_release(worker);
+ 	if (worker->ba_pcm_fd != -1) {
+ 		close(worker->ba_pcm_fd);
+ 		worker->ba_pcm_fd = -1;
+@@ -485,6 +541,7 @@ static void *pcm_worker_routine(struct pcm_worker *w) {
+ 		case 0:
+ 			debug("Device marked as inactive: %s", w->addr);
+ 			pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
++			playback_lease_release(w);
+ 			pcm_max_read_len = pcm_max_read_len_init;
+ 			pause_counter = pause_bytes = 0;
+ 			ffb_rewind(&buffer);
+@@ -583,6 +640,8 @@ static void *pcm_worker_routine(struct pcm_worker *w) {
+ 		}
+ 
+ 		/* mark device as active and set timeout to 500ms */
++		if (ret > 0)
++			playback_lease_acquire(w);
+ 		w->active = true;
+ 		timeout = 500;
+ 
+@@ -681,6 +741,7 @@ static struct pcm_worker *supervise_pcm_worker_start(const struct ba_pcm *ba_pcm)
+ 	memcpy(&worker->ba_pcm, ba_pcm, sizeof(worker->ba_pcm));
+ 	ba2str(&worker->ba_pcm.addr, worker->addr);
+ 	worker->active = false;
++	worker->lease_active = false;
+ 	worker->ba_pcm_fd = -1;
+ 	worker->ba_pcm_ctrl_fd = -1;
+ 	worker->pcm = NULL;
+@@ -823,6 +883,17 @@ int main(int argc, char *argv[]) {
+ 
+ 	int opt;
+ 	const char *opts = "hVvlLB:D:M:";
++	playback_lease_path = getenv("REINVOKE_PLAYBACK_LEASE");
++	if (playback_lease_path != NULL) {
++		if (playback_lease_path[0] != '/') {
++			error("Playback lease path must be absolute");
++			return EXIT_FAILURE;
++		}
++		if (unlink(playback_lease_path) == -1 && errno != ENOENT) {
++			error("Couldn't remove stale playback lease: %s", strerror(errno));
++			return EXIT_FAILURE;
++		}
++	}
+ 	const struct option longopts[] = {
+ 		{ "help", no_argument, NULL, 'h' },
+ 		{ "version", no_argument, NULL, 'V' },

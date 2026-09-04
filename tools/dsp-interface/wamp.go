@@ -39,6 +39,8 @@ const (
 	wampInvocation  = 68
 	wampYield       = 70
 	wampMaxFrameLen = 0xffffff
+
+	wampReconnectDelay = 5 * time.Second
 )
 
 const (
@@ -53,6 +55,8 @@ var forbiddenProcedures = []string{
 	"com.harman.vui.muteampcontrol",
 }
 
+var errDSPLinkFailure = errors.New("DSP link failure")
+
 type procedureSpec struct {
 	Name string
 
@@ -63,9 +67,6 @@ type procedureSpec struct {
 
 	// Arguments is how many byte arguments the procedure takes.
 	Arguments int
-
-	// SideEffectFree marks the one procedure that does not change DSP state.
-	SideEffectFree bool
 }
 
 // procedures are the eight registrations recovered from the donor's msgwrite
@@ -76,7 +77,7 @@ var procedures = []procedureSpec{
 	{Name: "com.harman.dsp.micTestNormal", ID: messageIDTest, Opcode: 0x02},
 	{Name: "com.harman.test.dspBypassMode", ID: messageIDTest, Opcode: 0x03, Arguments: 1},
 	{Name: "com.harman.dsp.volumeSet", ID: messageIDControl, Opcode: 0x04, Arguments: 1},
-	{Name: "com.harman.dsp.getVer", ID: messageIDControl, Opcode: 0x08, SideEffectFree: true},
+	{Name: "com.harman.dsp.getVer", ID: messageIDControl, Opcode: 0x08},
 	{Name: "com.harman.dsp.micMute", ID: messageIDControl, Opcode: 0x09, Arguments: 1},
 	{Name: "com.harman.dsp.dumpDspMemory", ID: messageIDControl, Opcode: 0x0c, Arguments: 2},
 }
@@ -98,6 +99,9 @@ type mutePolicy struct {
 	// PolicyProcedure is an optional procedure of the mute policy owner, which
 	// remains free to keep the outputs muted.
 	PolicyProcedure string
+
+	// BootStatePath records successful DSP boot in volatile runtime state.
+	BootStatePath string
 }
 
 func (policy mutePolicy) validate() error {
@@ -119,8 +123,8 @@ type wampService struct {
 	link    *link
 	policy  mutePolicy
 
-	// safeOnly answers every state changing procedure with an error while
-	// still registering it, so that callers keep working.
+	// safeOnly answers every DSP command with an error while still registering
+	// the recovered surface. Device responses remain unverified.
 	safeOnly bool
 
 	// idle is how long the message loop sleeps when it moved no traffic.
@@ -189,9 +193,12 @@ func (service *wampService) serve(
 	service.log("registered %d procedures, subscribed to %s",
 		len(registrations), stateTopic)
 
+	sessionContext, stopSession := context.WithCancel(ctx)
 	router := make(chan []interface{})
 	routerErrors := make(chan error, 1)
+	routerDone := make(chan struct{})
 	go func() {
+		defer close(routerDone)
 		defer close(router)
 		for {
 			message, err := client.readFrame()
@@ -201,16 +208,19 @@ func (service *wampService) serve(
 			}
 			select {
 			case router <- message:
-			case <-ctx.Done():
+			case <-sessionContext.Done():
 				return
 			}
 		}
 	}()
 
-	pumpContext, stopPump := context.WithCancel(ctx)
+	pumpContext, stopPump := context.WithCancel(sessionContext)
 	pumpDone := make(chan struct{})
 	defer func() {
+		stopSession()
 		stopPump()
+		_ = client.connection.Close()
+		<-routerDone
 		<-pumpDone
 	}()
 	device := make(chan frame)
@@ -228,10 +238,10 @@ func (service *wampService) serve(
 		case err := <-routerErrors:
 			return err
 		case err := <-deviceErrors:
-			return err
+			return fmt.Errorf("%w: %v", errDSPLinkFailure, err)
 		case received, ok := <-device:
 			if !ok {
-				return errors.New("DSP link closed")
+				return fmt.Errorf("%w: link closed", errDSPLinkFailure)
 			}
 			if err := service.handleDeviceFrame(client, received); err != nil {
 				return err
@@ -362,7 +372,7 @@ func (service *wampService) dispatch(
 	spec procedureSpec,
 	args []interface{},
 ) error {
-	if service.safeOnly && !spec.SideEffectFree {
+	if service.safeOnly {
 		return fmt.Errorf("%s is disabled by local policy", spec.Name)
 	}
 	payload, err := encodeCall(spec, args)
@@ -500,6 +510,9 @@ func (service *wampService) handleDeviceFrame(
 
 // reportBootup notifies the mute policy owner. It never requests unmute.
 func (service *wampService) reportBootup(client *wampConnection) error {
+	if err := recordDSPBootState(service.policy.BootStatePath); err != nil {
+		return err
+	}
 	if service.policy.NotifyTopic != "" {
 		if err := client.publish(
 			service.policy.NotifyTopic,

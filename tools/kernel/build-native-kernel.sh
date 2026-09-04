@@ -9,6 +9,9 @@ set -euo pipefail
 readonly SOURCE_ARCHIVE_SHA256="bd19dff0f8ef8879b82d4cdeec9f127a105905ea0aa47e76de31192a79a79126"
 readonly NDK_ARCHIVE_SHA256="ee5f405f3b57c4f5c3b3b8b5d495ae12b660e03d2112e4ed5c728d349f1e520c"
 readonly COMPILER_SHA256="a838490fd49184f1f104027239f0a46671c743c29c17a33f6d5daad3c2a379a6"
+readonly SPI_SOURCE_SHA256="684795ce44de9d10133260c3195dfb42b454478bba7e5406decabda3f4edbe9f"
+readonly SPI_PATCHED_SOURCE_SHA256="e02935b6f6d5c715a856d735f7274b3aab1214749686668db75059e659e108e7"
+readonly SPI_PATCH_SHA256="a92b98acb2272575c0497770172d79b104a1377d0083d67943b62681eecb738d"
 readonly LOAD_ADDRESS="0x02008000"
 
 usage() {
@@ -68,6 +71,9 @@ main() {
   local cross_prefix
   local compiler
   local linker
+  local spi_patch
+  local spi_source
+  local spi_source_sha256
   local module_count
   local mkimage_version
   local bt_module_dir="arch/arm/mach-berlin/modules/bt_sd8887"
@@ -179,7 +185,7 @@ main() {
   [[ ! -e "${partial_output}" ]] ||
     err "stale partial output exists: ${partial_output}"
 
-  for command_name in find make mkimage realpath sha256sum; do
+  for command_name in find make mkimage patch realpath sha256sum; do
     require_command "${command_name}"
   done
 
@@ -199,6 +205,29 @@ main() {
   printf "%s  %s\n" "${COMPILER_SHA256}" "${compiler}" |
     sha256sum --check --status ||
     err "Android NDK r10e compiler checksum mismatch"
+
+  spi_patch="${repo_root}/patches/invoke-kernel/0002-bound-spi-gpio-ready-wait.patch"
+  spi_source="${source_dir}/drivers/spi/spi-dw.c"
+  [[ -f "${spi_patch}" ]] || err "SPI timeout patch not found: ${spi_patch}"
+  [[ -f "${spi_source}" ]] || err "DesignWare SPI source not found"
+  printf "%s  %s\n" "${SPI_PATCH_SHA256}" "${spi_patch}" |
+    sha256sum --check --status ||
+    err "SPI timeout patch checksum mismatch"
+  spi_source_sha256="$(sha256sum "${spi_source}" | cut -d " " -f 1)"
+  case "${spi_source_sha256}" in
+    "${SPI_SOURCE_SHA256}")
+      patch --batch --forward --directory="${source_dir}" --strip=1 \
+        < "${spi_patch}"
+      ;;
+    "${SPI_PATCHED_SOURCE_SHA256}")
+      ;;
+    *)
+      err "DesignWare SPI source has unexpected modifications"
+      ;;
+  esac
+  printf "%s  %s\n" "${SPI_PATCHED_SOURCE_SHA256}" "${spi_source}" |
+    sha256sum --check --status ||
+    err "failed to apply the bounded SPI GPIO wait"
 
   actual_dtb_sha256="$(sha256sum "${dtb_path}" | cut -d " " -f 1)"
   [[ "${actual_dtb_sha256}" == "${dtb_sha256}" ]] ||
@@ -388,6 +417,7 @@ main() {
     printf "kernel_load_address=%s\n" "${LOAD_ADDRESS}"
     printf "compiler=%s\n" "$("${compiler}" --version | sed -n '1p')"
     printf "compiler_sha256=%s\n" "${COMPILER_SHA256}"
+    printf "spi_timeout_patch_sha256=%s\n" "${SPI_PATCH_SHA256}"
     printf "linker=%s\n" "$("${linker}" --version | sed -n '1p')"
     printf "mkimage=%s\n" "${mkimage_version}"
     printf "module_count=%s\n" "${module_count}"

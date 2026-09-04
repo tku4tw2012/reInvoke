@@ -1,7 +1,7 @@
 ---
 title: Owned Bluetooth speaker control boundary
 description: WAMP contract inventory and minimum replacement for music-source-manager and audio-ui
-ms.date: 2026-09-03
+ms.date: 2026-09-04
 ms.topic: concept
 ---
 
@@ -29,7 +29,9 @@ legacy local WAMP API. That bridge should:
 5. publish changes observed from either D-Bus or WAMP.
 
 The physical amplifier and DAC mute gates remain a separate safety boundary.
-The bridge must not automatically call MCU unmute procedures.
+The compatibility bridge must not call MCU unmute procedures. The MCU policy
+owner may open the gates only for a verified active-PCM lease whose thread ID
+matches ALSA and the expected playback executable.
 
 The bridge has one authority for each value:
 

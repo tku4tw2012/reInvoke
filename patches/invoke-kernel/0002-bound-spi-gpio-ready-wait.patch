@@ -1,0 +1,38 @@
+--- a/drivers/spi/spi-dw.c
++++ b/drivers/spi/spi-dw.c
+@@ -371,6 +371,8 @@ static void poll_transfer(struct dw_spi *dws)
+ 
+ 	dw_spi_xfer_done(dws);
+ }
++#define DW_SPI_GPIO_READY_TIMEOUT_MS 100
++
+ volatile u32* gpioreg;
+ static void pump_transfers(unsigned long data)
+ {
+@@ -386,6 +388,7 @@ static void pump_transfers(unsigned long data)
+ 	u16 txint_level = 0;
+ 	u16 clk_div = 0;
+ 	u32 speed = 0;
++	unsigned long gpio_ready_timeout;
+ 	u32 cr0 = 0;
+ 
+ 	/* Get current state information */
+@@ -417,7 +420,17 @@ static void pump_transfers(unsigned long data)
+ 			udelay(previous->delay_usecs);
+ 	}
+ 	gpioreg = (volatile u32*)0xF7E80450;
+-               while((*gpioreg & 0x2000) == 0);
++	gpio_ready_timeout = jiffies +
++		msecs_to_jiffies(DW_SPI_GPIO_READY_TIMEOUT_MS);
++	while ((*gpioreg & 0x2000) == 0) {
++		if (time_after_eq(jiffies, gpio_ready_timeout)) {
++			dev_err(&dws->master->dev,
++				"timed out waiting for GPIO ready\n");
++			message->status = -ETIMEDOUT;
++			goto early_exit;
++		}
++		cpu_relax();
++	}
+ 
+ 	dws->n_bytes = chip->n_bytes;
+ 	dws->dma_width = chip->dma_width;

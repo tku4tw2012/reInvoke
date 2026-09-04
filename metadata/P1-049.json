@@ -1,0 +1,67 @@
+{
+  "id": "P1-049",
+  "kind": "autonomous_ram_runtime_candidate",
+  "retrieved_utc": "2026-09-04T01:00:00Z",
+  "status": "V9_HOST_VALIDATED_HARDWARE_BOOT_PENDING",
+  "artifacts": {
+    "kernel_image": {
+      "sha256": "9a6851c3bd7635b05683715bb38abd174dbda298d236cb229480a209ffbacb7f",
+      "size": 3548055
+    },
+    "initramfs_v9": {
+      "sha256": "202504d1edc1043531d76a36e13148acade56a5fb81c68c6b33f8b079827ff5c",
+      "size": 29212479
+    },
+    "runtime_manifest": {
+      "sha256": "beb0acacc27cb3643be1399c077536e5b9726dc59ffa125aca2e6f4663cff7ca"
+    },
+    "owned_mcu_interface": {
+      "sha256": "c9102b23af4ca77d8d27a4e3892e1dfe927c39b7b33adbe6f4de4858f8e79763"
+    },
+    "owned_dsp_interface": {
+      "sha256": "f5b36cc396a07158ead5ad62d9f6da0899dbef6dc1dcb5e319a5e8b713e989b8"
+    },
+    "pairing_agent": {
+      "sha256": "ae60d80061f2bf214c996bba26d1618a601cbc4bc589aa3d77355aea094b1a9b"
+    },
+    "bluealsa_aplay": {
+      "sha256": "4c9978214873589991b995b482b5503fe16b9607e6a8c8896cef251ad3b1d937"
+    },
+    "bluealsa_playback_lease_patch": {
+      "sha256": "627e3d3e8649054a8aa73b1f716bb438b4c8ca0828f71e840625775d4c1d3317"
+    }
+  },
+  "implemented_contracts": [
+    "PID 1 supervision with bounded restart backoff and shutdown markers",
+    "isolated Bonefish and D-Bus runtime without donor SquashFS mounting",
+    "owned MCU heartbeat independent of WAMP connectivity",
+    "owned DSP boot, exact image download, command-response order, and process-level recovery",
+    "BlueZ and BlueALSA autonomous startup with readiness ordering",
+    "active-PCM lease, ALSA RUNNING, owner-TID, and executable-gated physical mute policy",
+    "BlueALSA-backed WAMP volume and mute procedures",
+    "rotary volume coalescing independent of WAMP availability",
+    "Bluetooth-long-press pairing-window signal",
+    "microphone-button software mute toggle",
+    "13-byte-frame MCU LED animation transport",
+    "machine-readable on-device and host acceptance collection"
+  ],
+  "validation": [
+    "The predecessor autonomous image booted from RAM in five seconds and started router, MCU, DSP, D-Bus, BlueZ, BlueALSA, playback, pairing, and network services without host staging.",
+    "A fresh allowlisted RAM bond completed and a muted five-second A2DP stream advanced ALSA hardware pointers.",
+    "MCU process survival and hardware heartbeat continued across a router restart.",
+    "The kernel SPI GPIO wait returned ETIMEDOUT instead of leaving an unkillable spidev_sync thread.",
+    "The v8 image cold-booted and passed all 20 machine checks plus physical control, pairing, and muted A2DP acceptance.",
+    "The v8 guarded audible test produced no sound and exposed I2C arbitration loss plus an over-broad ALSA RUNNING policy.",
+    "The corrected v9 runtime, BlueALSA player, MCU and DSP services, and initramfs are byte-for-byte reproducible and pass the complete host and race suites.",
+    "The v9 image has not been booted."
+  ],
+  "safety": [
+    "No NAND filesystem is mounted.",
+    "Writable raw MTD nodes are removed; only /dev/reinvoke-nand-ro mode 0400 remains.",
+    "External WAMP unmute remains denied.",
+    "Automatic physical unmute requires a live BlueALSA PCM-data lease whose worker TID matches both ALSA owner_pid and the expected executable.",
+    "GPIO processing requires a real POLLPRI edge before reading the MCU over I2C.",
+    "Service logs are bounded by rotating syslog storage with a kernel-ring fallback.",
+    "NAND persistence and boot-slot work remain explicitly excluded."
+  ]
+}
