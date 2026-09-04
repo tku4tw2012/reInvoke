@@ -102,6 +102,17 @@ main() {
   local donor_version
   local lights_manifest_sha256
   local -a required_paths
+  local local_conf
+
+  # Host-specific values live in an untracked local.conf so that Bluetooth
+  # addresses never reach the repository. Command-line flags override it.
+  local_conf="$(dirname "${BASH_SOURCE[0]}")/local.conf"
+  if [[ -f "${local_conf}" ]]; then
+    # shellcheck source=/dev/null
+    source "${local_conf}"
+    peer_address="${REINVOKE_PEER_ADDRESS:-${peer_address}}"
+    pair_seconds="${REINVOKE_PAIR_SECONDS:-${pair_seconds}}"
+  fi
 
   while (( $# > 0 )); do
     case "$1" in

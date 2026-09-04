@@ -1,0 +1,38 @@
+# Sample local configuration for reInvoke host-side tooling.
+#
+# Copy this file to `local.conf` in the same directory and edit the values to
+# match your own machine. `local.conf` is ignored by Git so that host-specific
+# identifiers never reach the repository.
+#
+#   cp tools/usb-boot/local.conf.sample tools/usb-boot/local.conf
+#
+# Every value below is optional. Scripts that read this file fall back to their
+# own defaults, or to an explicit command-line flag, when a value is unset. A
+# command-line flag always wins over a value set here.
+
+# Bluetooth address of the A2DP source you intend to pair with, in the form
+# AA:BB:CC:DD:EE:FF. This is compiled into the runtime image at build time and
+# becomes the sole entry in the pairing allowlist, so the device will refuse to
+# pair with anything else.
+#
+# On a Linux host running BlueZ, find your adapter address with:
+#
+#   bluetoothctl list
+#
+# Note that this is the address of the machine or phone that will *send* audio,
+# not the address of the speaker.
+#REINVOKE_PEER_ADDRESS='AA:BB:CC:DD:EE:FF'
+
+# How long the pairing window stays open, in seconds, from 0 to 300. The window
+# is deliberately short because the device is discoverable and pairable only
+# while it is open. Pairing, trusting and connecting must all complete inside a
+# single window.
+#REINVOKE_PAIR_SECONDS='120'
+
+# Directory holding the `usb_boot` tool and the signed bootloader images used to
+# place the device in download mode. This lives outside the repository because
+# it contains vendor binaries that are not ours to redistribute.
+#INVOKE_FIRMWARE_DIR="${HOME}/harman-kardon/invoke-boot"
+
+# ADB serial of the device, only needed when more than one device is attached.
+#REINVOKE_ADB_SERIAL=''

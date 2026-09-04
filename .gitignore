@@ -37,3 +37,8 @@ __pycache__/
 !.vscode/extensions.json
 !.vscode/launch.json
 !.vscode/tasks.json
+
+# Host-specific configuration. Holds Bluetooth addresses and local paths that
+# identify a particular machine, so it must never be committed. The tracked
+# sample alongside it documents every supported value.
+tools/usb-boot/local.conf
