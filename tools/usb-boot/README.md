@@ -144,6 +144,26 @@ tools/usb-boot/build-native-runtime.sh \
   --output-dir ../reinvoke-archive/build/artifacts/reinvoke-native-runtime
 ```
 
+### Host-specific values
+
+The allowlisted peer is a Bluetooth address that identifies a particular
+machine, so it should not be typed into commands that end up in shell history,
+issues or commits. Copy the sample configuration and edit it instead:
+
+```bash
+cp tools/usb-boot/local.conf.sample tools/usb-boot/local.conf
+```
+
+`local.conf` is ignored by Git. `build-native-runtime.sh` reads
+`REINVOKE_PEER_ADDRESS` and `REINVOKE_PAIR_SECONDS` from it, so `--peer-address`
+and `--pair-seconds` can then be omitted. An explicit flag still overrides the
+file when you need a one-off value.
+
+Note that the peer address is baked into the image at build time and becomes the
+only entry in the pairing allowlist. Changing the peer requires a rebuild and a
+reboot, which is deliberate: the device cannot be re-targeted at a different
+source while it is running.
+
 Pass the resulting directory and the SHA-256 of its `SHA256SUMS` file to the
 initramfs builder:
 

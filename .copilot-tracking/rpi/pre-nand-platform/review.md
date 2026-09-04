@@ -244,3 +244,158 @@ needed correcting.
 
 The v10 image has never been booted. Every remaining acceptance item is
 hardware-gated and needs the device in yellow mode.
+
+## Iteration 8 — active-PCM mute test on hardware
+
+The v10 image has now been booted and the first genuinely new hardware result is
+in. Superseding the closing line of Iteration 7.
+
+### What was tested
+
+The attended active-PCM mute test, which had been blocked for several iterations
+because no A2DP source was ever connected and so BlueALSA never held an active
+PCM. With the host adapter allowlisted into the image and paired, a 20-second
+44.1 kHz stereo tone was streamed from the host to the device's A2DP sink while
+the amplifier state was observed.
+
+### Result: pass
+
+The playback lease behaves exactly as designed.
+
+- During the stream, `/run/reinvoke/bluealsa-playback-active` contained `1754`
+  and `/proc/asound/card1/pcm0p/sub0/status` reported `state: RUNNING` with
+  `owner_pid: 1754`. The lease PID and the ALSA owner PID matched, which is the
+  condition `playbackPolicy` requires before it will treat playback as real.
+- The MCU tracked the transitions accurately, logging `physical playback path
+  active=true` on each stream start and `active=false` on each stop.
+- When the stream ended the lease file was unlinked and the PCM closed.
+
+Most importantly, the amplifier never unmuted. The only unmute-related line in
+the entire boot log is the startup line `hardware initialized muted; WAMP unmute
+policy=false`. Real audio flowed through a real PCM with a valid lease and the
+policy still declined to unmute, because no unmute has been authorised.
+
+### A false alarm worth recording
+
+An earlier reading of this test appeared to show a missing lease file and I
+briefly believed the producer side was misconfigured. That was wrong, and the
+error was mine: the tone had already finished playing by the time the lease was
+read, so the absent file was correct behaviour rather than a defect.
+
+The detour did confirm the wiring, which is worth keeping. The lease is produced
+by `bluealsa-aplay` reading the `REINVOKE_PLAYBACK_LEASE` environment variable
+set in `/init`, not from a command-line flag, and the running process was
+verified to have inherited it. The `--playback-lease` flag on
+`reinvoke-mcu-interface` is the consumer side. Producer and consumer are
+configured independently and both were correct.
+
+The general lesson is to sample a transient signal while it is live. A single
+observation taken after the event proves nothing about the mechanism.
+
+### Acceptance status
+
+21 checks run, 1 failure, unchanged from the previous boot: `dsp.boot_event`.
+Still the absent `EVENT_DSP_BOOTUP` hardware event on a warm-reset boot, with
+the DSP otherwise healthy. The cold-versus-warm hypothesis remains untested and
+should be checked on the next cold boot before being treated as a defect.
+
+## Iteration 9 — physical controls
+
+The buttons and rotary encoder had never been exercised on any native image, so
+the whole input chain was unproven on hardware. It was tested attended, with the
+operator pressing each control in turn.
+
+Pressing a control is safe regardless of outcome. `micmute` reaches only the
+BlueALSA software mute on the incoming A2DP stream, and the hardware amplifier
+path is gated behind `AllowPlaybackUnmute`, which is false. No input event can
+unmute the amplifier.
+
+### Result: the input chain works
+
+All five inputs decoded and published correctly through the MCU to the WAMP
+router. Action, Bluetooth and Mic-Mute arrived on `com.harman.vui.keypress`, and
+both rotary directions arrived on `com.harman.test.inputEvent` carrying step
+values from 1 through 4. The stepped encoding is genuine velocity data: a slow
+rotation produced steps of 1 and 2, a faster one produced 3 and 4. Acceptance
+was rerun afterwards and still showed the same single `dsp.boot_event` failure,
+so nothing regressed.
+
+One press was misidentified at the time. The operator pressed the Bluetooth
+button briefly but the MCU reported `bluetooth-long`, which is a hardware or
+firmware timing threshold rather than a fault in our code. Worth noting because
+`bluetooth-long` is the event that restarts the pairing window, so a short press
+can reopen pairing unintentionally.
+
+### A real finding: AVRCP absolute volume is unsupported by the peer
+
+Every `volumedown` event logged `Couldn't set BT device volume:
+UnknownProperty: No such property 'Volume'`, while `volumeup` did not. The
+asymmetry looked like a directional bug in `AdjustVolume`, and it is not.
+
+The volume was already at 95 and climbing, so each `volumeup` clamped to the
+same value and BlueALSA had no change to propagate. Only `volumedown` produced
+an actual change, and it was the propagation that failed. Setting the volume
+manually to 60 and to 0 reproduced the same warning, which rules out direction
+as a factor.
+
+The cause is on the peer. The host exposes no `org.bluez.MediaTransport1`
+interface for the device, so it does not implement AVRCP absolute volume
+control. BlueALSA correctly applies the volume locally through SoftVolume, which
+is enabled, and then warns that it could not also inform the peer.
+
+This is benign for our purposes. Local volume control works, the warning is
+purely about remote synchronisation, and the operator is the one holding both
+ends. It should not be treated as a defect in the runtime.
+
+### Defect: the Mic-Mute button does not mute the microphone
+
+The button is the stock far-field microphone mute, a privacy control whose
+purpose is to cut the mic array so the speaker cannot listen. The donor
+boundary documentation records code `0x04` as "Microphone short press", and the
+DSP exposes the matching control as `com.harman.dsp.micMute`, opcode `0x09`,
+with the DSP reporting `EVENT_MIC_MUTE` in return.
+
+Our runtime routes it somewhere else. `blueALSAController.Apply` intercepts the
+`micmute` event and calls `ToggleMuted`, which resolves the PCM through
+`selectBlueALSAPCM` against the allowlisted peer and lands on
+`.../a2dpsnk/source`, the incoming A2DP music stream. `com.harman.dsp.micMute`
+is registered by the DSP interface but never called by anything.
+
+So pressing Mic-Mute currently mutes the music rather than the microphone. For a
+privacy control that is the wrong failure direction: someone pressing it would
+reasonably believe the microphone had been cut when it has not.
+
+Three separate mute concepts exist here and this document previously conflated
+the first two:
+
+- The hardware speaker mute, held by `ampMuteMask` and `dacMuteMask` in
+  `controller.go`. This is the safety-critical one, asserted at boot and
+  unreleasable while `AllowPlaybackUnmute` is false.
+- The BlueALSA software mute on the A2DP PCM, which attenuates incoming music.
+  This is what the button currently reaches.
+- The microphone mute in the DSP, which nothing currently drives.
+
+This is a correctness defect rather than a safety one, since the speaker cannot
+produce sound in either case, and it should be fixed before the button is
+presented to anyone as a microphone control. The fix is to route `micmute` to
+`com.harman.dsp.micMute` instead of to the BlueALSA PCM. It is deliberately not
+being made in this iteration, because the DSP path deserves its own attended
+test with the microphone capture running to confirm the mute actually takes
+effect in the captured audio.
+
+### The toggle mechanism itself works
+
+Whatever it ought to be wired to, the input path is sound. The first Mic-Mute
+press was observed only after the fact, and since the starting state had not
+been recorded it proved nothing. It was retested properly: the software mute was
+cleared to `Muted: L: N R: N` first, the operator then pressed the button once,
+and the PCM afterwards read `Muted: L: Y R: Y` with `Volume: L: 95 R: 95`
+unchanged. The keypress publication is in the log at the matching time.
+
+That establishes the full path from the physical button through the MCU and the
+BlueALSA controller to the PCM property, and confirms mute is a separate flag
+that does not disturb the volume setting.
+
+The general point is the same one from Iteration 8: a single observation taken
+after an event proves nothing about a toggle. Establish the starting state, act,
+then observe.
