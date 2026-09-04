@@ -174,11 +174,15 @@ remain.
   `4c9978214873589991b995b482b5503fe16b9607e6a8c8896cef251ad3b1d937`
 
 The packaged runtime still needs a fresh build with the rebuilt MCU digest.
+Iteration 6 confirmed the shipped `bluealsa-aplay` already carries the
+playback-lease patch and matches its gate digest, and archived the pinned
+upstream sources that were previously missing.
 The next required operations are a clean cold boot, five-boot acceptance,
 attended audible output, and microphone correlation.
 
 ## Change log
 
-The current worktree contains all five implementation iterations and RPI
-tracking artifacts. Nothing has been committed because final hardware
-acceptance remains open.
+The current worktree contains all five implementation iterations, the
+iteration 6 host audit, and RPI tracking artifacts. Implementation work
+remains uncommitted because final hardware acceptance is still open. Repository hygiene work (MIT relicensing and
+identifier scrubbing) has been committed and pushed separately.

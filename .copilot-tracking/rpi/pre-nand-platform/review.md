@@ -101,3 +101,58 @@ The same donor-backed monitor captured a physical `micmute` keypress and a
 allowlisted pairing window, with the operator observing the top white pairing
 indicator. The Mic-Mute event was valid, but BlueALSA had no active PCM, so
 the software mute state could not be exercised in that subtest.
+
+## Iteration 6 findings (host audit, 2026-09-04)
+
+### Retracted: the lease patch is present
+
+An initial audit concluded that no archived binary carried the playback-lease
+patch. That conclusion was wrong and is retracted. The scan targeted
+`bin/bluealsa`, but the patch modifies `utils/aplay/aplay.c`, which builds
+`bluealsa-aplay`. Rescanning the correct target confirms:
+
+* `reinvoke-native-runtime-v9-20260904/bin/bluealsa-aplay` and its independent
+  `-repro` counterpart both contain `REINVOKE_PLAYBACK_LEASE` and the lease
+  diagnostic strings, and are byte-identical at SHA-256 `4c997821...`.
+* That digest is exactly `BLUEALSA_APLAY_SHA256` in the packaging gate.
+
+The lease mechanism is therefore intact, reproducible, and correctly pinned.
+The lesson recorded for future audits is to resolve a patch to the binary its
+target file builds before drawing conclusions from a symbol scan.
+
+### Resolved: the generation split is intentional
+
+The packaging gate pins `bluetoothd`, `bluealsa`, and `bluealsa-cli` to the
+v1 artifact set and `bluealsa-aplay` to v9. This is not a defect. Comparing
+v8 to v9 shows `bluealsa-aplay` as the only binary that changed; the three
+daemon-side binaries are unchanged across v8 and v9. The v1 digests and the
+v8/v9 daemon digests differ only because the v1 set is unstripped
+(4,124,528 bytes) while later sets are stripped (3,177,368 bytes).
+
+Reading the gate as a whole, it pins one coherent Bluetooth stack: the stock
+upstream daemon trio plus the single patched consumer that must carry the
+lease. No mixed-generation risk exists.
+
+### Confirmed gap: upstream sources were never archived
+
+`sources/` held only `community` and `harman`; there was no acquisition
+record for BlueZ or bluez-alsa. The binaries originated from an SDK build
+path whose inputs were not retained, so the patched `bluealsa-aplay` was not
+rebuildable from archived material. This was a genuine reproducibility gap
+rather than a correctness defect, and it has now been closed.
+
+### Upstream acquisition
+
+Pinned sources are archived under `sources/upstream/` at Tier 2:
+
+* `bluez-alsa-4.0.0.tar.gz`, SHA-256
+  `ce5e060e61669d61d44f5f9bad34a7b88378376e9d49d31482406a68127a6b29`,
+  matching the `v4.0.0` string in the shipped binaries. MIT licensed.
+* `bluez-5.55.tar.xz`, SHA-256
+  `8863717113c4897e2ad3271fc808ea245319e6fd95eed2e934fae8e0894e9b88`,
+  matching the `5.55` string in the shipped `bluetoothd`. Verified as a good
+  GPG signature from the BlueZ maintainer key `E932 D120 BC2A EC44 4E55
+  8F01 06CA 9F5D 1DCF 2659`.
+
+Neither tarball enters Git. They are build-time inputs held in archive
+storage, consistent with the documented tier policy.

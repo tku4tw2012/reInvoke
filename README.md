@@ -109,12 +109,30 @@ Valve, Kinoma, and community researchers. Provenance for each artifact is record
 | `tools/`, `docs/` research and analysis written for this project | MIT |
 | `metadata/` provenance sidecars authored here | MIT |
 | `patches/invoke-kernel/` | GPL-2.0 — derivative of the Linux kernel |
-| `patches/bluealsa/` | Follows upstream BlueALSA terms |
+| `patches/bluealsa/` | MIT — derivative of BlueALSA, which is MIT |
 | `docs/bundle-contents/` extracted vendor text, scripts, drivers, PDFs | Proprietary, Harman International |
 
 Adding an MIT licence cannot relicense material this project does not own.
 The vendor-derived and GPL-derived paths above are included as research
 evidence under their own terms.
+
+### Build-time dependencies
+
+The runtime image is built against upstream projects that are **not**
+redistributed by this repository. No binaries are committed here; only build
+instructions, patches, and recorded checksums. Anyone reproducing the build
+fetches these sources themselves.
+
+| Dependency | Version | Licence |
+|---|---|---|
+| [BlueALSA](https://github.com/arkq/bluez-alsa) | 4.0.0 | MIT |
+| [BlueZ](https://www.bluez.org/) | 5.55 | GPL-2.0-or-later (daemon), LGPL-2.1-or-later (libraries) |
+
+`patches/bluealsa/` applies to BlueALSA, which is MIT, so the patch is MIT and
+retains upstream copyright. BlueZ is used as an unmodified build-time
+dependency and reached over D-Bus at runtime; because this repository conveys
+no BlueZ binary, its copyleft distribution obligations are not triggered here.
+They would apply to anyone who chooses to distribute a built image.
 
 ### Firmware mirror attribution
 

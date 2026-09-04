@@ -7,7 +7,9 @@ ms.topic: overview
 
 ## Status
 
-Discovery is 0 percent complete. Follow-up items are recorded for execution
+Discovery is 10 percent complete. Item 0 was added after the iteration 6
+host audit. The audit retracted an incorrect blocker and closed a real
+reproducibility gap by archiving pinned upstream sources.
 after the pre-NAND acceptance gate.
 
 ## Excluded decision
@@ -17,6 +19,10 @@ recoverability evidence, and explicit user approval.
 
 ## Ordered follow-up work
 
+0. Reproduce the patched `bluealsa-aplay` from the newly archived pinned
+   upstream source and confirm it matches the gate digest `4c997821...`.
+   This is a reproducibility confirmation, not a blocker; the shipped binary
+   is already correct and byte-reproducible across two builds.
 1. Finish the packaged v9 cold-boot, audible, and acoustic acceptance gate.
 2. Complete five cold boots, service fault injection, and soak validation.
 3. Perform the targeted donor-contract audit and close the final functional
