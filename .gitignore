@@ -31,3 +31,9 @@ __pycache__/
 *.pyc
 .DS_Store
 *.swp
+
+# Editor settings are personal; only share project-wide configuration.
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
