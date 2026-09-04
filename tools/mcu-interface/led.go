@@ -143,6 +143,20 @@ func runLEDAnimation(
 	}
 }
 
+// clearLEDs blanks the ring with a single all-zero frame. The donor assets
+// carry no trailing blank, so a finished animation otherwise stays lit. This
+// is our addition, not recovered donor behavior.
+func clearLEDs(writer ledWriter) error {
+	packet := make([]byte, 2, 2+ledFrameBytes)
+	packet[0] = ledAnimationCode
+	packet[1] = ledFirstChunkFlag
+	packet = append(packet, make([]byte, ledFrameBytes)...)
+	if err := writer.WriteMCUData(packet); err != nil {
+		return fmt.Errorf("clear LED ring: %w", err)
+	}
+	return nil
+}
+
 func validLEDName(name string) bool {
 	if len(name) == 0 || len(name) > 80 {
 		return false
