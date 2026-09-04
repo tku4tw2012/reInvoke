@@ -39,3 +39,27 @@ Inputs used here are the verified facts provided on 2026-08-26:
 - Release assets captured under `originals/harman/invoke/` in the archive root via acquisition sidecars `metadata/P0-004a.json`, `P0-004b.json`, `P0-004c.json`.
 - Discussion page captured as rendered HTML under `web-pages/` in the archive root.
 - Releases API JSON captured under `metadata/` to preserve non-git release metadata.
+
+## Build-time upstream sources
+
+These are toolchain inputs rather than research evidence, so they sit outside
+the fragility ranking above. Both are widely mirrored and at low custody risk;
+they are archived to make the runtime build reproducible rather than to
+preserve endangered material.
+
+| Source | Version | Retention | Fragility | Notes |
+|---|---|---|---|---|
+| bluez-alsa release tarball | 4.0.0 | 5/5 | 1/5 | MIT. Target of `patches/bluealsa/`. Version confirmed against the `v4.0.0` string in shipped binaries. |
+| BlueZ release tarball | 5.55 | 5/5 | 1/5 | GPL-2.0-or-later. Build-time only; version confirmed against the `5.55` string in shipped `bluetoothd`. |
+
+Stored at Tier 2 under `sources/upstream/` in the archive root. Recorded
+checksums:
+
+- `bluez-alsa-4.0.0.tar.gz` —
+  `ce5e060e61669d61d44f5f9bad34a7b88378376e9d49d31482406a68127a6b29`
+- `bluez-5.55.tar.xz` —
+  `8863717113c4897e2ad3271fc808ea245319e6fd95eed2e934fae8e0894e9b88`
+
+The BlueZ tarball carries a good GPG signature from the maintainer key
+`E932 D120 BC2A EC44 4E55 8F01 06CA 9F5D 1DCF 2659`. Neither tarball is
+committed to Git.
