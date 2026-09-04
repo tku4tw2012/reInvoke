@@ -10,6 +10,242 @@ log() {
   echo "reInvoke: $*" > /dev/kmsg
 }
 
+cmdline_has() {
+  case " $(${BB} cat /proc/cmdline) " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+supervise() {
+  service_name="$1"
+  shift
+  (
+    while ! ${BB} test -e /run/reinvoke/shutdown; do
+      logger_pid=""
+      service_log_pipe=""
+      if ${BB} test -S /dev/log; then
+        service_log_pipe="/run/reinvoke/logs/${service_name}.pipe"
+        if ! ${BB} rm -f "${service_log_pipe}" ||
+          ! ${BB} mkfifo -m 0600 "${service_log_pipe}"; then
+          log "${service_name} logger setup failed"
+          ${BB} sleep 5
+          continue
+        fi
+        ${BB} logger -t "reinvoke-${service_name}" \
+          <"${service_log_pipe}" &
+        logger_pid="$!"
+        ${BB} logger -t "reinvoke-${service_name}" \
+          "start uptime=$(${BB} cut -d' ' -f1 /proc/uptime)"
+        "$@" >"${service_log_pipe}" 2>&1 &
+      else
+        log "${service_name} using bounded kernel-log fallback"
+        "$@" >/dev/kmsg 2>&1 &
+      fi
+      service_pid="$!"
+      echo "${service_pid}" >"/run/reinvoke/${service_name}.pid"
+      if ${BB} test -e /run/reinvoke/shutdown; then
+        ${BB} kill "${service_pid}" 2>/dev/null || true
+      fi
+      wait "${service_pid}"
+      service_status="$?"
+      if ${BB} test -n "${logger_pid}"; then
+        wait "${logger_pid}"
+        logger_status="$?"
+        if ${BB} test "${logger_status}" -ne 0; then
+          log "${service_name} logger exited ${logger_status}"
+        fi
+        ${BB} rm -f "${service_log_pipe}"
+      fi
+      ${BB} rm -f "/run/reinvoke/${service_name}.pid"
+      log "${service_name} exited ${service_status}"
+      if ! ${BB} test -e /run/reinvoke/shutdown; then
+        ${BB} sleep 5
+      fi
+    done
+  ) &
+  echo "$!" >"/run/reinvoke/${service_name}-supervisor.pid"
+  log "${service_name} supervisor started"
+}
+
+start_runtime_logger() {
+  (
+    while ! ${BB} test -e /run/reinvoke/shutdown; do
+      ${BB} syslogd -n -S \
+        -O /run/reinvoke/logs/runtime.log -s 256 -b 1 &
+      runtime_logger_pid="$!"
+      echo "${runtime_logger_pid}" >/run/reinvoke/syslogd.pid
+      if ${BB} test -e /run/reinvoke/shutdown; then
+        ${BB} kill "${runtime_logger_pid}" 2>/dev/null || true
+      fi
+      wait "${runtime_logger_pid}"
+      runtime_logger_status="$?"
+      ${BB} rm -f /run/reinvoke/syslogd.pid
+      log "runtime logger exited ${runtime_logger_status}"
+      if ! ${BB} test -e /run/reinvoke/shutdown; then
+        ${BB} sleep 5
+      fi
+    done
+  ) &
+  echo "$!" >/run/reinvoke/syslogd-supervisor.pid
+
+  runtime_logger_attempt=0
+  while ! ${BB} test -S /dev/log &&
+    ${BB} test "${runtime_logger_attempt}" -lt 5; do
+    ${BB} sleep 1
+    runtime_logger_attempt=$((runtime_logger_attempt + 1))
+  done
+  ${BB} test -S /dev/log
+}
+
+stop_service() {
+  stop_name="$1"
+  stop_pid_file="/run/reinvoke/${stop_name}.pid"
+  if ${BB} test -f "${stop_pid_file}"; then
+    ${BB} kill "$(${BB} cat "${stop_pid_file}")" 2>/dev/null || true
+  fi
+}
+
+wait_service_stop() {
+  wait_name="$1"
+  wait_pid_file="/run/reinvoke/${wait_name}.pid"
+  wait_attempt=0
+  while ${BB} test -f "${wait_pid_file}" &&
+    ${BB} kill -0 "$(${BB} cat "${wait_pid_file}")" 2>/dev/null &&
+    ${BB} test "${wait_attempt}" -lt 5; do
+    ${BB} sleep 1
+    wait_attempt=$((wait_attempt + 1))
+  done
+  if ${BB} test -f "${wait_pid_file}" &&
+    ${BB} kill -0 "$(${BB} cat "${wait_pid_file}")" 2>/dev/null; then
+    log "${wait_name} did not stop within the mute-first deadline"
+  fi
+}
+
+stop_runtime() {
+  ${BB} touch /run/reinvoke/shutdown
+  log "stopping autonomous runtime with mute-first service order"
+  if ${BB} test -f /run/reinvoke/bluetooth-bootstrap.pid; then
+    ${BB} kill \
+      "$(${BB} cat /run/reinvoke/bluetooth-bootstrap.pid)" 2>/dev/null || true
+  fi
+  stop_service mcu-interface
+  wait_service_stop mcu-interface
+  for stop_attempt in 1 2; do
+    for service_name in dsp-interface pairing-agent \
+      bluealsa-aplay bluealsa bluetoothd dbus bonefish networkd; do
+      stop_service "${service_name}"
+    done
+    ${BB} sleep 1
+  done
+  stop_service syslogd
+}
+
+start_autonomous_runtime() {
+  runtime_root=/opt/reinvoke
+  runtime_bin="${runtime_root}/bin"
+  runtime_lib="${runtime_root}/lib"
+  runtime_loader="${runtime_lib}/ld-linux-armhf.so.3"
+  runtime_bus=unix:path=/run/reinvoke/dbus/system_bus_socket
+
+  if ! ${BB} test -x "${runtime_bin}/reinvoke-mcu-interface" ||
+     ! ${BB} test -x "${runtime_bin}/reinvoke-dsp-interface" ||
+     ! ${BB} test -x "${runtime_loader}" ||
+     ! ${BB} test -f "${runtime_root}/etc/runtime.conf"; then
+    log "autonomous runtime bundle is incomplete"
+    return
+  fi
+
+  . "${runtime_root}/etc/runtime.conf"
+  if [ -z "${PEER_ADDRESS:-}" ] || [ -z "${PAIR_SECONDS:-}" ]; then
+    log "autonomous runtime configuration is invalid"
+    return
+  fi
+  ${BB} mkdir -p /run/reinvoke/dbus /run/reinvoke/logs \
+    /usr/var/lib/bluetooth
+  ${BB} chmod 0700 /run/reinvoke/dbus /run/reinvoke/logs \
+    /usr/var/lib/bluetooth
+  if ! cmdline_has reinvoke.router=off; then
+    supervise bonefish \
+      "${runtime_loader}" --library-path "${runtime_lib}" \
+      "${runtime_bin}/bonefish" -r default -t 9999 -w 9998 -d
+  fi
+  if ! cmdline_has reinvoke.mcu=off; then
+    supervise mcu-interface \
+      ${BB} env DBUS_SYSTEM_BUS_ADDRESS="${runtime_bus}" \
+      "${runtime_bin}/reinvoke-mcu-interface" \
+      --router-host 127.0.0.1 --router-port 9999 \
+      --bluealsa-cli "${runtime_bin}/bluealsa-cli" \
+      --bluealsa-peer "${PEER_ADDRESS}" \
+      --playback-status /proc/asound/card1/pcm0p/sub0/status \
+      --playback-lease /run/reinvoke/bluealsa-playback-active \
+      --playback-owner-executable "${runtime_bin}/bluealsa-aplay" \
+      --pairing-agent-pid /run/reinvoke/pairing-agent.pid \
+      --pairing-agent-executable "${runtime_bin}/bluez-pairing-agent" \
+      --lights-dir "${runtime_root}/share/lights"
+  fi
+  if ! cmdline_has reinvoke.dsp=off; then
+    supervise dsp-interface \
+      "${runtime_bin}/reinvoke-dsp-interface" \
+      -image "${runtime_root}/share/dsp-img.ldr" \
+      -boot-state /run/reinvoke/dsp-booted \
+      -router-host 127.0.0.1 -router-port 9999
+  fi
+  if ! cmdline_has reinvoke.bluetooth=off; then
+    supervise dbus \
+      "${runtime_loader}" --library-path "${runtime_lib}" \
+      "${runtime_bin}/dbus-daemon" \
+      --config-file="${runtime_root}/etc/dbus-session.conf" \
+      --nofork --nopidfile
+    ${BB} rm -f /run/reinvoke/bluetooth-bootstrap.pid
+    (
+      trap '${BB} rm -f /run/reinvoke/bluetooth-bootstrap.pid' EXIT
+      trap 'exit 0' TERM INT
+      while ! ${BB} test -f /run/reinvoke/bluetooth-bootstrap.pid; do
+       ${BB} sleep 1
+      done
+      while ! ${BB} test -e /run/reinvoke/shutdown &&
+        { ! ${BB} test -L /sys/class/bluetooth/hci0 ||
+          ! ${BB} test -S /run/reinvoke/dbus/system_bus_socket; }; do
+        ${BB} sleep 1
+      done
+      ${BB} test -e /run/reinvoke/shutdown && exit 0
+      until ${BB} test -e /run/reinvoke/shutdown ||
+        "${runtime_bin}/hci-init" --reset; do
+        log "HCI initialization failed; retrying"
+        ${BB} sleep 5
+      done
+      ${BB} test -e /run/reinvoke/shutdown && exit 0
+      supervise bluetoothd \
+        ${BB} env DBUS_SYSTEM_BUS_ADDRESS="${runtime_bus}" \
+        "${runtime_bin}/bluetoothd" -n -p a2dp,avrcp \
+        -f "${runtime_root}/etc/bluez-main.conf"
+      supervise bluealsa \
+        ${BB} env DBUS_SYSTEM_BUS_ADDRESS="${runtime_bus}" \
+        "${runtime_bin}/bluealsa" -p a2dp-sink -i hci0 \
+        --initial-volume=0
+      until ${BB} test -e /run/reinvoke/shutdown ||
+        ${BB} env DBUS_SYSTEM_BUS_ADDRESS="${runtime_bus}" \
+          "${runtime_bin}/bluealsa-cli" list-services 2>/dev/null |
+          ${BB} grep -q '^org\.bluealsa$'; do
+        ${BB} sleep 1
+      done
+      ${BB} test -e /run/reinvoke/shutdown && exit 0
+      supervise bluealsa-aplay \
+        ${BB} env DBUS_SYSTEM_BUS_ADDRESS="${runtime_bus}" \
+        REINVOKE_PLAYBACK_LEASE=/run/reinvoke/bluealsa-playback-active \
+        "${runtime_bin}/bluealsa-aplay" -D plughw:1,0 \
+        "${PEER_ADDRESS}"
+      supervise pairing-agent \
+        ${BB} env DBUS_SYSTEM_BUS_ADDRESS="${runtime_bus}" \
+        "${runtime_bin}/bluez-pairing-agent" \
+        "${PEER_ADDRESS}" "${PAIR_SECONDS}" "${PAIR_SECONDS}"
+    ) &
+    echo "$!" >/run/reinvoke/bluetooth-bootstrap.pid
+    log "Bluetooth runtime bootstrap started"
+  fi
+}
+
 ${BB} mount -t proc proc /proc
 ${BB} mount -t sysfs sysfs /sys
 ${BB} mount -t tmpfs devtmpfs /dev
@@ -43,6 +279,11 @@ for mtd_path in /sys/class/mtd/mtd[0-9]*; do
     log "read-only NAND node uses major $1 minor $(($2 + 1))"
     break
   fi
+done
+
+for unsafe_mtd_node in /dev/mtd[0-9]* /dev/mtdblock[0-9]* \
+  /dev/mtd/mtd[0-9]* /dev/mtd/mtdblock[0-9]*; do
+  ${BB} rm -f "${unsafe_mtd_node}"
 done
 
 if ${BB} test -d /sys/class/android_usb/android0; then
@@ -152,25 +393,29 @@ else
     log "failed to load native SD8887 Bluetooth"
 fi
 
+${BB} mkdir -p /run/reinvoke/logs
+${BB} chmod 0700 /run/reinvoke/logs
+if ! start_runtime_logger; then
+  log "bounded runtime logger is using the kernel-log fallback"
+fi
+
 case " $(${BB} cat /proc/cmdline) " in
   *" reinvoke.networkd=off "*)
     log "owned network lifecycle service disabled by kernel command line"
     ;;
   *)
     if ${BB} test -x /usr/sbin/reinvoke-networkd; then
-      (
-        while true; do
-          /usr/sbin/reinvoke-networkd > /dev/kmsg 2>&1
-          networkd_status="$?"
-          log "network lifecycle service exited ${networkd_status}"
-          ${BB} sleep 5
-        done
-      ) &
-      echo "$!" > /run/reinvoke/networkd-supervisor.pid
-      log "owned network lifecycle service supervisor started"
+      ${BB} mkdir -p /run/reinvoke/logs
+      supervise networkd /usr/sbin/reinvoke-networkd
     fi
     ;;
 esac
+
+if cmdline_has reinvoke.runtime=off; then
+  log "autonomous runtime disabled by kernel command line"
+elif ${BB} test -d /opt/reinvoke; then
+  start_autonomous_runtime
+fi
 
 (
   while true; do
@@ -184,6 +429,7 @@ esac
 
 log "native RAM environment is running"
 
+trap stop_runtime TERM INT
 while true; do
-  ${BB} sleep 3600
+  ${BB} sleep 1
 done

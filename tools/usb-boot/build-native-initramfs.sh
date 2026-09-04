@@ -11,6 +11,7 @@ readonly EXPECTED_PROVISIOND_SHA256="5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1
 readonly EXPECTED_WIFI_APPLYD_SHA256="6697df000d130a6461d1e3f57b6ebe8b1ad1742984a94250bc1e243dca097610"
 readonly EXPECTED_NETWORKD_SHA256="cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66"
 readonly EXPECTED_MODULE_TREE_MANIFEST_SHA256="06d7a5f5bc43c3b3d869b9b962e1ef70d7f3c3fc15d934c8dc020332b57b940a"
+readonly MAX_NATIVE_INITRAMFS_BYTES=$((60 * 1024 * 1024))
 
 usage() {
   local exit_code="${1:-0}"
@@ -23,6 +24,7 @@ Usage: build-native-initramfs.sh \
   [--provisiond PATH] \
   [--wifi-applyd PATH] \
   [--networkd PATH] \
+  [--runtime-bundle PATH --runtime-manifest-sha256 SHA256] \
   --output PATH
 
 Builds a RAM-only 82_IMAGE derivative. The donor rootfs supplies the Invoke's
@@ -49,6 +51,8 @@ main() {
   local provisiond=""
   local wifi_applyd=""
   local networkd=""
+  local runtime_bundle=""
+  local runtime_manifest_sha256=""
   local output_path=""
   local output_partial
   local script_dir
@@ -64,6 +68,7 @@ main() {
   local module_flavor=""
   local bluetooth_module=""
   local module_tree_manifest_sha256
+  local output_size
   local -a module_trees=()
   local -a module_symlinks=()
 
@@ -99,6 +104,17 @@ main() {
         networkd="$2"
         shift 2
         ;;
+      --runtime-bundle)
+        [[ -n "${2:-}" ]] || err "--runtime-bundle requires a path"
+        runtime_bundle="$2"
+        shift 2
+        ;;
+      --runtime-manifest-sha256)
+        [[ "${2:-}" =~ ^[0-9a-fA-F]{64}$ ]] ||
+          err "--runtime-manifest-sha256 requires 64 hexadecimal characters"
+        runtime_manifest_sha256="${2,,}"
+        shift 2
+        ;;
       --output)
         [[ -n "${2:-}" ]] || err "--output requires a path"
         output_path="$2"
@@ -119,7 +135,7 @@ main() {
     err "donor rootfs not found: ${donor_rootfs}"
   [[ -n "${output_path}" ]] || err "--output is required"
 
-  for command_name in awk cp cpio find gzip install realpath sha256sum sort touch xargs; do
+  for command_name in awk cp cpio find gzip install realpath sha256sum sort stat touch xargs; do
     require_command "${command_name}"
   done
   source_initramfs="$(realpath "${source_initramfs}")"
@@ -141,6 +157,9 @@ main() {
   fi
   if [[ -n "${networkd}" ]]; then
     networkd="$(realpath "${networkd}")"
+  fi
+  if [[ -n "${runtime_bundle}" ]]; then
+    runtime_bundle="$(realpath "${runtime_bundle}")"
   fi
 
   printf "%s  %s\n" \
@@ -232,6 +251,25 @@ main() {
       sha256sum --check --status ||
       err "network lifecycle service checksum mismatch"
   fi
+  if [[ -n "${runtime_bundle}" || -n "${runtime_manifest_sha256}" ]]; then
+    [[ -n "${runtime_bundle}" && -n "${runtime_manifest_sha256}" ]] ||
+      err "runtime bundle and manifest checksum must be supplied together"
+    [[ -d "${runtime_bundle}" ]] ||
+      err "runtime bundle not found: ${runtime_bundle}"
+    [[ -f "${runtime_bundle}/SHA256SUMS" ]] ||
+      err "runtime bundle has no SHA256SUMS"
+    printf "%s  %s\n" \
+      "${runtime_manifest_sha256}" "${runtime_bundle}/SHA256SUMS" |
+      sha256sum --check --status ||
+      err "runtime bundle manifest checksum mismatch"
+    if find "${runtime_bundle}" -type l -print -quit | grep -q .; then
+      err "runtime bundle contains a symbolic link"
+    fi
+    (
+      cd "${runtime_bundle}"
+      sha256sum --check --strict SHA256SUMS
+    ) >/dev/null || err "runtime bundle file checksum mismatch"
+  fi
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/reinvoke-initramfs.XXXXXX")"
@@ -256,6 +294,8 @@ main() {
   )
 
   install -m 0755 "${script_dir}/native-ram-init" "${rootfs_dir}/init"
+  install -m 0755 "${script_dir}/native-acceptance.sh" \
+    "${rootfs_dir}/usr/sbin/reinvoke-acceptance"
   install -m 0644 \
     "${firmware_dir}/sd8887_wlan_a2_p78.bin" \
     "${firmware_dir}/sd8887_bt_a2_new.bin" \
@@ -287,6 +327,11 @@ main() {
     install -m 0755 "${networkd}" \
       "${rootfs_dir}/usr/sbin/reinvoke-networkd"
   fi
+  if [[ -n "${runtime_bundle}" ]]; then
+    mkdir -p "${rootfs_dir}/opt/reinvoke"
+    cp -a "${runtime_bundle}/." "${rootfs_dir}/opt/reinvoke/"
+    rm -rf "${rootfs_dir}/home/galois"
+  fi
 
   rm -f \
     "${rootfs_dir}/bin/flash_custk" \
@@ -311,6 +356,11 @@ main() {
     if [[ -n "${networkd}" ]]; then
       printf "network lifecycle service: included, auto-started\n"
     fi
+    if [[ -n "${runtime_bundle}" ]]; then
+      printf "autonomous runtime: included, auto-started\n"
+      printf "autonomous runtime manifest: %s\n" \
+        "${runtime_manifest_sha256}"
+    fi
     printf "storage policy: no NAND partitions mounted\n"
   } > "${rootfs_dir}/etc/reinvoke-release"
 
@@ -325,6 +375,9 @@ main() {
   ) > "${output_partial}"
 
   gzip --test "${output_partial}"
+  output_size="$(stat --format="%s" "${output_partial}")"
+  ((output_size <= MAX_NATIVE_INITRAMFS_BYTES)) ||
+    err "initramfs exceeds the 60 MiB autonomous-runtime budget"
   mv "${output_partial}" "${output_path}"
   stat --format="%n %s bytes" "${output_path}"
   sha256sum "${output_path}"

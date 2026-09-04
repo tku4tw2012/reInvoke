@@ -9,6 +9,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +25,12 @@
 #define AGENT_BUS "org.reinvoke.PairingAgent"
 
 static char allowed_device[64];
+static volatile sig_atomic_t reopen_window;
+
+static void request_pairing_window(int signal_number) {
+  (void)signal_number;
+  reopen_window = 1;
+}
 
 static bool is_allowed_device(const char *device) {
   return device != NULL && strcmp(device, allowed_device) == 0;
@@ -298,16 +305,23 @@ int main(int argc, char **argv) {
   DBusError error;
   char *end = NULL;
   unsigned long parsed_seconds = 0;
+  unsigned long parsed_reopen_seconds = 0;
   unsigned int pairing_seconds;
+  unsigned int reopen_seconds;
   DBusObjectPathVTable vtable = {
       .message_function = handle_agent,
   };
+  struct sigaction reopen_action = {
+      .sa_handler = request_pairing_window,
+  };
 
-  if (argc < 2 || argc > 3 || !set_allowed_device(argv[1])) {
-    fprintf(stderr, "usage: %s AA:BB:CC:DD:EE:FF [pair-seconds]\n", argv[0]);
+  if (argc < 2 || argc > 4 || !set_allowed_device(argv[1])) {
+    fprintf(stderr,
+            "usage: %s AA:BB:CC:DD:EE:FF [initial-seconds] [reopen-seconds]\n",
+            argv[0]);
     return EXIT_FAILURE;
   }
-  if (argc == 3) {
+  if (argc >= 3) {
     errno = 0;
     parsed_seconds = strtoul(argv[2], &end, 10);
     if (errno != 0 || end == argv[2] || *end != '\0' ||
@@ -317,6 +331,23 @@ int main(int argc, char **argv) {
     }
   }
   pairing_seconds = (unsigned int)parsed_seconds;
+  parsed_reopen_seconds = parsed_seconds;
+  if (argc == 4) {
+    errno = 0;
+    end = NULL;
+    parsed_reopen_seconds = strtoul(argv[3], &end, 10);
+    if (errno != 0 || end == argv[3] || *end != '\0' ||
+        parsed_reopen_seconds > 300) {
+      fprintf(stderr, "reopen-seconds must be from 0 through 300\n");
+      return EXIT_FAILURE;
+    }
+  }
+  reopen_seconds = (unsigned int)parsed_reopen_seconds;
+  sigemptyset(&reopen_action.sa_mask);
+  if (sigaction(SIGUSR1, &reopen_action, NULL) != 0) {
+    perror("register pairing-window signal");
+    return EXIT_FAILURE;
+  }
 
   dbus_error_init(&error);
   connection = dbus_bus_get(DBUS_BUS_SYSTEM, &error);
@@ -349,7 +380,15 @@ int main(int argc, char **argv) {
   if (!run_pairing_window(connection, pairing_seconds)) {
     return EXIT_FAILURE;
   }
-  while (dbus_connection_read_write_dispatch(connection, -1)) {
+  while (dbus_connection_read_write_dispatch(connection, 250)) {
+    if (reopen_window != 0) {
+      reopen_window = 0;
+      printf("pairing window requested by physical control\n");
+      fflush(stdout);
+      if (!run_pairing_window(connection, reopen_seconds)) {
+        return EXIT_FAILURE;
+      }
+    }
   }
   return EXIT_FAILURE;
 }

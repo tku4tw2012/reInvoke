@@ -1,7 +1,7 @@
 ---
 title: reInvoke control tools
 description: Host-side tools for calling the Invoke native control plane
-ms.date: 2026-09-03
+ms.date: 2026-09-04
 ms.topic: how-to
 ---
 
@@ -131,6 +131,21 @@ The pairing agent limits BlueZ authorization to one supplied peer address and
 the A2DP/AVRCP UUID set. The HCI initializer resets the controller and removes
 volatile keys before a clean reconstruction. Artifact hashes for the validated
 build are recorded in [P1-045](../../metadata/P1-045.json).
+
+`build-bluealsa-aplay.sh` applies the reviewed active-PCM lease patch to the
+pinned BlueALSA 4.0.0 source. It checksum-gates the source, patch, compiler,
+strip tool, and final static ARM binary:
+
+```bash
+tools/control/build-bluealsa-aplay.sh \
+  --source-archive path/to/bluez-alsa-4.0.0.tar.gz \
+  --sysroot path/to/armhf-sysroot \
+  --output ../reinvoke-archive/build/artifacts/bluealsa-aplay
+```
+
+The patched player writes its worker thread ID to the configured RAM lease only
+after receiving positive PCM data. It removes the lease after 500 ms of
+inactivity and during worker cleanup.
 
 Forward the RAM-native device's private WAMP port over USB:
 

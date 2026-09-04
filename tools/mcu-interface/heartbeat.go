@@ -40,6 +40,9 @@ func runMCUHeartbeat(
 			if err := send(); err != nil {
 				return err
 			}
+			if ctx.Err() != nil {
+				return nil
+			}
 		}
 	}
 }
