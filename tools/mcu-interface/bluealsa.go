@@ -26,6 +26,11 @@ type blueALSAController struct {
 	peer    string
 	run     commandRunner
 	mu      sync.Mutex
+
+	cachedPath   string
+	cachedVolume int
+	cachedMuted  bool
+	cachedValid  bool
 }
 
 type blueALSASnapshot struct {
@@ -81,10 +86,6 @@ func (controller *blueALSAController) Apply(
 	ctx context.Context,
 	event inputEvent,
 ) error {
-	if event.Name == "micmute" {
-		_, err := controller.ToggleMuted(ctx)
-		return err
-	}
 	if event.Name != "volumeup" && event.Name != "volumedown" {
 		return nil
 	}
@@ -104,6 +105,31 @@ func (controller *blueALSAController) ToggleMuted(
 ) (blueALSASnapshot, error) {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
+	if controller.cachedValid {
+		newMuted := !controller.cachedMuted
+		value := "n"
+		if newMuted {
+			value = "y"
+		}
+		if _, err := controller.run(
+			ctx,
+			"mute",
+			controller.cachedPath,
+			value,
+			value,
+		); err != nil {
+			controller.cachedValid = false
+			return controller.toggleMutedSlowLocked(ctx)
+		}
+		controller.cachedMuted = newMuted
+		return blueALSASnapshot{Volume: controller.cachedVolume, Muted: newMuted}, nil
+	}
+	return controller.toggleMutedSlowLocked(ctx)
+}
+
+func (controller *blueALSAController) toggleMutedSlowLocked(
+	ctx context.Context,
+) (blueALSASnapshot, error) {
 	pcmPath, snapshot, err := controller.pcmSnapshotLocked(ctx)
 	if err != nil {
 		return blueALSASnapshot{}, err
@@ -122,6 +148,10 @@ func (controller *blueALSAController) ToggleMuted(
 	); err != nil {
 		return blueALSASnapshot{}, err
 	}
+	controller.cachedPath = pcmPath
+	controller.cachedVolume = snapshot.Volume
+	controller.cachedMuted = snapshot.Muted
+	controller.cachedValid = true
 	return snapshot, nil
 }
 
@@ -142,6 +172,29 @@ func (controller *blueALSAController) SetVolume(
 	if percent < 0 || percent > 100 {
 		return blueALSASnapshot{}, errors.New("volume must be from 0 through 100")
 	}
+	if controller.cachedValid {
+		rawVolume := (percent*127 + 50) / 100
+		value := strconv.Itoa(rawVolume)
+		if _, err := controller.run(
+			ctx,
+			"volume",
+			controller.cachedPath,
+			value,
+			value,
+		); err != nil {
+			controller.cachedValid = false
+			return controller.setVolumeSlowLocked(ctx, percent)
+		}
+		controller.cachedVolume = percent
+		return blueALSASnapshot{Volume: percent, Muted: controller.cachedMuted}, nil
+	}
+	return controller.setVolumeSlowLocked(ctx, percent)
+}
+
+func (controller *blueALSAController) setVolumeSlowLocked(
+	ctx context.Context,
+	percent int,
+) (blueALSASnapshot, error) {
 	pcmPath, snapshot, err := controller.pcmSnapshotLocked(ctx)
 	if err != nil {
 		return blueALSASnapshot{}, err
@@ -157,6 +210,10 @@ func (controller *blueALSAController) SetVolume(
 	); err != nil {
 		return blueALSASnapshot{}, err
 	}
+	controller.cachedPath = pcmPath
+	controller.cachedVolume = percent
+	controller.cachedMuted = snapshot.Muted
+	controller.cachedValid = true
 	snapshot.Volume = percent
 	return snapshot, nil
 }
@@ -167,6 +224,39 @@ func (controller *blueALSAController) AdjustVolume(
 ) (blueALSASnapshot, error) {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
+	if controller.cachedValid {
+		percent := controller.cachedVolume + delta
+		if percent < 0 {
+			percent = 0
+		}
+		if percent > 100 {
+			percent = 100
+		}
+		if percent == controller.cachedVolume {
+			return blueALSASnapshot{Volume: percent, Muted: controller.cachedMuted}, nil
+		}
+		rawVolume := (percent*127 + 50) / 100
+		value := strconv.Itoa(rawVolume)
+		if _, err := controller.run(
+			ctx,
+			"volume",
+			controller.cachedPath,
+			value,
+			value,
+		); err != nil {
+			controller.cachedValid = false
+			return controller.adjustVolumeSlowLocked(ctx, delta)
+		}
+		controller.cachedVolume = percent
+		return blueALSASnapshot{Volume: percent, Muted: controller.cachedMuted}, nil
+	}
+	return controller.adjustVolumeSlowLocked(ctx, delta)
+}
+
+func (controller *blueALSAController) adjustVolumeSlowLocked(
+	ctx context.Context,
+	delta int,
+) (blueALSASnapshot, error) {
 	pcmPath, snapshot, err := controller.pcmSnapshotLocked(ctx)
 	if err != nil {
 		return blueALSASnapshot{}, err
@@ -189,6 +279,10 @@ func (controller *blueALSAController) AdjustVolume(
 	); err != nil {
 		return blueALSASnapshot{}, err
 	}
+	controller.cachedPath = pcmPath
+	controller.cachedVolume = percent
+	controller.cachedMuted = snapshot.Muted
+	controller.cachedValid = true
 	snapshot.Volume = percent
 	return snapshot, nil
 }
@@ -199,6 +293,31 @@ func (controller *blueALSAController) SetMuted(
 ) (blueALSASnapshot, error) {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
+	if controller.cachedValid {
+		value := "n"
+		if muted {
+			value = "y"
+		}
+		if _, err := controller.run(
+			ctx,
+			"mute",
+			controller.cachedPath,
+			value,
+			value,
+		); err != nil {
+			controller.cachedValid = false
+			return controller.setMutedSlowLocked(ctx, muted)
+		}
+		controller.cachedMuted = muted
+		return blueALSASnapshot{Volume: controller.cachedVolume, Muted: muted}, nil
+	}
+	return controller.setMutedSlowLocked(ctx, muted)
+}
+
+func (controller *blueALSAController) setMutedSlowLocked(
+	ctx context.Context,
+	muted bool,
+) (blueALSASnapshot, error) {
 	pcmPath, snapshot, err := controller.pcmSnapshotLocked(ctx)
 	if err != nil {
 		return blueALSASnapshot{}, err
@@ -216,6 +335,10 @@ func (controller *blueALSAController) SetMuted(
 	); err != nil {
 		return blueALSASnapshot{}, err
 	}
+	controller.cachedPath = pcmPath
+	controller.cachedVolume = snapshot.Volume
+	controller.cachedMuted = muted
+	controller.cachedValid = true
 	snapshot.Muted = muted
 	return snapshot, nil
 }
@@ -251,6 +374,10 @@ func (controller *blueALSAController) pcmSnapshotLocked(
 	if err != nil {
 		return "", blueALSASnapshot{}, err
 	}
+	controller.cachedPath = pcmPath
+	controller.cachedVolume = percent
+	controller.cachedMuted = muted
+	controller.cachedValid = true
 	return pcmPath, blueALSASnapshot{Volume: percent, Muted: muted}, nil
 }
 
