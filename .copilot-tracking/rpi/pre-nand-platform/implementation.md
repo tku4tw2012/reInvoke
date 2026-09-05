@@ -10,8 +10,9 @@ ms.topic: overview
 Implementation is 99 percent complete for this RPI cycle. LED clearing,
 playback continuity, fail-closed microphone routing, service fault injection,
 and reproducible ARM artifacts are implemented and machine-tested in RAM.
-Three cold boots are complete. Cold boots 4 and 5, final fault confirmation on
-v15, and attended playback remain.
+Four boot cycles are complete. The final cycle must start after complete power
+removal rather than another warm reset. Final DSP/Bluetooth fault confirmation,
+physical indicator observation, and attended playback remain.
 
 ## Completed in iteration 1
 
@@ -351,6 +352,25 @@ attended audible output, and microphone correlation.
   v16 keeps the v15 lifecycle fixes and adds the indicator contract.
 * Physical front and rear indicator validation remains outstanding; this
   iteration records static donor evidence and host validation only.
+
+## Completed in iteration 19
+
+* Booted v16 and passed all 23 native acceptance checks.
+* Proved the preserved accepted-v12 DSP binary also fails response validation
+  on the current heavily warm-reset part. A true power removal is required to
+  distinguish hardware state; another reset is not useful.
+* Decoupled MCU WAMP lifetime from failed DSP mute reconciliation. Failure is
+  logged and scheduled on the existing background retry without withdrawing
+  unrelated MCU procedures.
+* Live-tested the fix in RAM while the DSP was degraded: MCU status and every
+  recovered indicator channel/mode remained callable, and all channels were
+  cleared afterward.
+* Built the MCU binary twice at SHA-256
+  `9b38f0f3fdc2e7dba47d279909e8f2f2d185fb965417229ffa59df11fbfd83e7`.
+* Built two byte-identical v17 runtime manifests at SHA-256
+  `b3d0a36234693ed289af82dca00e926756ddaf1e57ef9c7b595a0ad9a0fae1f4`.
+* Built two byte-identical 32,390,080-byte v17 initramfs images at SHA-256
+  `2d0f17105343b9f8d5cd3d0cb8a530608c8c62ad73b5b3380c365eda7fc21cd4`.
 
 ## Change log
 

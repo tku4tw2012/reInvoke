@@ -373,3 +373,52 @@ and the 32,389,027-byte initramfs is
 `fef5f412fd0d5589f5a1cf739c9b131127f9e788147574c4388ef7122eea4453`.
 Each was reproduced in a second independent build. v16 is staged and armed for
 cold boot 4.
+
+## Iteration 19: v16 boot and degraded-DSP control isolation
+
+The first yellow entry returned to U-Boot before Linux enumerated. The device
+was still at a live prompt, so the loader immediately retried the same
+checksum-verified pair; v16 then returned ADB in six seconds.
+
+Native acceptance passed all 23 checks. The v16 runtime manifest matched
+`1bf8622eb08517739628fd6a17737945435a000b18c7f78f7be0166266401980`,
+the DSP downloaded all 40,121 transfers, and `EVENT_DSP_BOOTUP` arrived.
+
+The first microphone-mute control request changed the authoritative RAM state
+to `muted`, then received an all-zero DSP response header. The DSP subsequently
+booted but failed every attempt to restore muted state. Replacing it in RAM with
+the preserved accepted-v12 DSP binary produced the same result. This rules out
+the v15 response-retry change as the cause. Earlier acceptance records already
+show the original donor client failing checksums after repeated warm resets, so
+the remaining discriminator is a genuine power removal, not another reset into
+yellow mode.
+
+That degraded state exposed a separate MCU coupling. Every failed DSP-session
+mute reconciliation returned an error from `handleDSPSessionEvent`, which tore
+down the MCU WAMP session. All unrelated MCU procedures—including the new
+indicator transport—therefore disappeared and reappeared with DSP health.
+
+The handler now requests the existing background reconciliation retry, logs the
+failure, and keeps the WAMP session registered. The privacy state remains
+`muted`; only unrelated control-plane availability changes. A regression test
+verifies logging, retry scheduling, and a non-fatal return. Focused review found
+no significant issue.
+
+A RAM-only replacement proved the behavior on the degraded device:
+
+* rear `fast-blink` and `off` calls both returned successful WAMP results;
+* front amber/white calls covered `on`, `dim`, `slow-blink`, and `fast-blink`;
+* every channel was explicitly cleared;
+* MCU status still returned `000116`; and
+* the MCU process remained alive while the background DSP retry continued.
+
+This validates WAMP dispatch and successful I2C submission, not visible LED
+appearance; no observer was present.
+
+The v17 MCU binary is
+`9b38f0f3fdc2e7dba47d279909e8f2f2d185fb965417229ffa59df11fbfd83e7`,
+the runtime manifest is
+`b3d0a36234693ed289af82dca00e926756ddaf1e57ef9c7b595a0ad9a0fae1f4`,
+and the 32,390,080-byte initramfs is
+`2d0f17105343b9f8d5cd3d0cb8a530608c8c62ad73b5b3380c365eda7fc21cd4`.
+Both runtime and initramfs were built twice byte-identically.
