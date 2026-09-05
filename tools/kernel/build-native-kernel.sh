@@ -10,8 +10,14 @@ readonly SOURCE_ARCHIVE_SHA256="bd19dff0f8ef8879b82d4cdeec9f127a105905ea0aa47e76
 readonly NDK_ARCHIVE_SHA256="ee5f405f3b57c4f5c3b3b8b5d495ae12b660e03d2112e4ed5c728d349f1e520c"
 readonly COMPILER_SHA256="a838490fd49184f1f104027239f0a46671c743c29c17a33f6d5daad3c2a379a6"
 readonly SPI_SOURCE_SHA256="684795ce44de9d10133260c3195dfb42b454478bba7e5406decabda3f4edbe9f"
-readonly SPI_PATCHED_SOURCE_SHA256="e02935b6f6d5c715a856d735f7274b3aab1214749686668db75059e659e108e7"
-readonly SPI_PATCH_SHA256="a92b98acb2272575c0497770172d79b104a1377d0083d67943b62681eecb738d"
+readonly SPI_PATCHED_SOURCE_SHA256="51a8b5b88df83a7396b7d4d9de891be30efd1c6690fca1d638d5496dd44a7e31"
+readonly SPI_PATCH_SHA256="285ef9751879254eab8d36e28fd9fbfadd9c203cee9717b01cfddd169de61fef"
+readonly YAFFS_SOURCE_SHA256="a8862b2bae267204045d30464b8e98b9cb9d5707ee6cb777cc6dc69401c96914"
+readonly YAFFS_PATCHED_SOURCE_SHA256="c40dcedece786648b2f3c3573ef506fda8b286e6b83f01ac627532b4690c0d35"
+readonly YAFFS_PATCH_SHA256="e520068b84dd8ca3e6592444e1a78f284fcabf5474bae9a4aa718a4ba38d2dd5"
+readonly LZO_SOURCE_SHA256="ab1933ac33d984fe0565b7053502c2b6499260b1fe7f6b37f6883a134c87dffa"
+readonly LZO_PATCHED_SOURCE_SHA256="019a6f1d47998bdea0b4e491d45dfd1acb55a3570bff1eb4bb4322ea59de742e"
+readonly LZO_PATCH_SHA256="0afed3faad76ff2103268e71b67b55d394c9dc8559566db35a035e71fc7f9901"
 readonly LOAD_ADDRESS="0x02008000"
 
 usage() {
@@ -74,6 +80,12 @@ main() {
   local spi_patch
   local spi_source
   local spi_source_sha256
+  local yaffs_patch
+  local lzo_patch
+  local lzo_source
+  local lzo_source_sha256
+  local yaffs_source
+  local yaffs_source_sha256
   local module_count
   local mkimage_version
   local bt_module_dir="arch/arm/mach-berlin/modules/bt_sd8887"
@@ -195,6 +207,10 @@ main() {
   linker="${cross_prefix}ld.bfd"
   [[ -x "${compiler}" ]] || err "NDK compiler not found: ${compiler}"
   [[ -x "${linker}" ]] || err "NDK BFD linker not found: ${linker}"
+  export KBUILD_BUILD_TIMESTAMP="Thu Jan  1 00:00:00 UTC 1970"
+  export KBUILD_BUILD_USER="reinvoke"
+  export KBUILD_BUILD_HOST="reinvoke"
+  export SOURCE_DATE_EPOCH=0
 
   printf "%s  %s\n" "${SOURCE_ARCHIVE_SHA256}" "${source_archive}" |
     sha256sum --check --status ||
@@ -227,7 +243,55 @@ main() {
   esac
   printf "%s  %s\n" "${SPI_PATCHED_SOURCE_SHA256}" "${spi_source}" |
     sha256sum --check --status ||
-    err "failed to apply the bounded SPI GPIO wait"
+    err "failed to apply the fail-fast SPI GPIO check"
+
+  yaffs_patch="${repo_root}/patches/invoke-kernel/0003-reproducible-yaffs-build-id.patch"
+  yaffs_source="${source_dir}/fs/yaffs2/yaffs_vfs.c"
+  [[ -f "${yaffs_patch}" ]] ||
+    err "YAFFS reproducibility patch not found: ${yaffs_patch}"
+  [[ -f "${yaffs_source}" ]] || err "YAFFS source not found"
+  printf "%s  %s\n" "${YAFFS_PATCH_SHA256}" "${yaffs_patch}" |
+    sha256sum --check --status ||
+    err "YAFFS reproducibility patch checksum mismatch"
+  yaffs_source_sha256="$(sha256sum "${yaffs_source}" | cut -d " " -f 1)"
+  case "${yaffs_source_sha256}" in
+    "${YAFFS_SOURCE_SHA256}")
+      patch --batch --forward --directory="${source_dir}" --strip=1 \
+        < "${yaffs_patch}"
+      ;;
+    "${YAFFS_PATCHED_SOURCE_SHA256}")
+      ;;
+    *)
+      err "YAFFS source has unexpected modifications"
+      ;;
+  esac
+  printf "%s  %s\n" "${YAFFS_PATCHED_SOURCE_SHA256}" "${yaffs_source}" |
+    sha256sum --check --status ||
+    err "failed to apply the YAFFS reproducibility patch"
+
+  lzo_patch="${repo_root}/patches/invoke-kernel/0004-reproducible-lzo-piggy.patch"
+  lzo_source="${source_dir}/scripts/Makefile.lib"
+  [[ -f "${lzo_patch}" ]] ||
+    err "LZO reproducibility patch not found: ${lzo_patch}"
+  [[ -f "${lzo_source}" ]] || err "LZO build rule source not found"
+  printf "%s  %s\n" "${LZO_PATCH_SHA256}" "${lzo_patch}" |
+    sha256sum --check --status ||
+    err "LZO reproducibility patch checksum mismatch"
+  lzo_source_sha256="$(sha256sum "${lzo_source}" | cut -d " " -f 1)"
+  case "${lzo_source_sha256}" in
+    "${LZO_SOURCE_SHA256}")
+      patch --batch --forward --directory="${source_dir}" --strip=1 \
+        < "${lzo_patch}"
+      ;;
+    "${LZO_PATCHED_SOURCE_SHA256}")
+      ;;
+    *)
+      err "LZO build rule has unexpected modifications"
+      ;;
+  esac
+  printf "%s  %s\n" "${LZO_PATCHED_SOURCE_SHA256}" "${lzo_source}" |
+    sha256sum --check --status ||
+    err "failed to apply the LZO reproducibility patch"
 
   actual_dtb_sha256="$(sha256sum "${dtb_path}" | cut -d " " -f 1)"
   [[ "${actual_dtb_sha256}" == "${dtb_sha256}" ]] ||
@@ -313,6 +377,9 @@ main() {
     LD="${linker}" \
     HOSTCFLAGS=-fcommon \
     olddefconfig
+
+  rm -f "${build_dir}/.version" \
+    "${build_dir}/include/generated/compile.h"
 
   make -C "${source_dir}" \
     O="${build_dir}" \
@@ -418,6 +485,8 @@ main() {
     printf "compiler=%s\n" "$("${compiler}" --version | sed -n '1p')"
     printf "compiler_sha256=%s\n" "${COMPILER_SHA256}"
     printf "spi_timeout_patch_sha256=%s\n" "${SPI_PATCH_SHA256}"
+    printf "yaffs_reproducibility_patch_sha256=%s\n" "${YAFFS_PATCH_SHA256}"
+    printf "lzo_reproducibility_patch_sha256=%s\n" "${LZO_PATCH_SHA256}"
     printf "linker=%s\n" "$("${linker}" --version | sed -n '1p')"
     printf "mkimage=%s\n" "${mkimage_version}"
     printf "module_count=%s\n" "${module_count}"

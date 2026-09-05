@@ -5,8 +5,8 @@
 //
 // It loads a DSP boot image from a supplied path, reverses the bit order of
 // every byte, streams the result to the DSP in four byte SPI transfers, and
-// then serves the recovered WAMP surface: eight registered procedures, one
-// subscription, and the com.harman.dsp.version publication.
+// then serves seven recovered WAMP procedures, a root-only microphone-control
+// socket, one subscription, and the com.harman.dsp.version publication.
 //
 // Two donor behaviours are deliberately absent. It writes no persistent
 // storage, so there is no memory dump file and no crash dump directory, and it
@@ -62,6 +62,16 @@ func main() {
 		false,
 		"allow unverified DSP command procedures; default transmits no command",
 	)
+	microphoneState := flag.String(
+		"microphone-state",
+		"/run/reinvoke/microphone-state",
+		"RAM state used to restore microphone privacy during DSP boot",
+	)
+	microphoneControlSocket := flag.String(
+		"mic-control-socket",
+		"/run/reinvoke/dsp-mic-control.sock",
+		"root-only socket used by the MCU privacy owner",
+	)
 	dryRun := flag.Bool(
 		"dry-run",
 		false,
@@ -92,7 +102,6 @@ func main() {
 	if err := clearDSPBootState(*bootStatePath); err != nil {
 		log.Fatal(err)
 	}
-
 	image, err := loadBootImage(*imagePath)
 	if err != nil {
 		log.Fatal(err)
@@ -166,15 +175,159 @@ func main() {
 		safeOnly: !*allowStateChanging,
 		logf:     log.Printf,
 	}
-	runErr := runWithReconnect(
-		ctx,
-		wampReconnectDelay,
-		service.run,
-		func(err error) bool {
-			return !errors.Is(err, errDSPLinkFailure)
-		},
-		log.Printf,
-	)
+	runtimeContext, stopRuntime := context.WithCancel(ctx)
+	device := make(chan frame, 8)
+	pumpDone := make(chan error, 1)
+	serviceReady := make(chan struct{})
+	bootEvents := make(chan struct{}, 1)
+	service.device = device
+	service.ready = serviceReady
+	service.bootEvents = bootEvents
+	go func() {
+		defer close(device)
+		pumpDone <- service.pump(runtimeContext, device)
+	}()
+	wampDone := make(chan error, 1)
+	go func() {
+		wampDone <- runWithReconnect(
+			runtimeContext,
+			wampReconnectDelay,
+			service.run,
+			func(err error) bool {
+				return !errors.Is(err, errDSPLinkFailure)
+			},
+			log.Printf,
+		)
+	}()
+	bootTimer := time.NewTimer(5 * time.Second)
+	select {
+	case <-bootEvents:
+	case pumpErr := <-pumpDone:
+		stopRuntime()
+		<-wampDone
+		_ = dsp.Close()
+		log.Fatalf("wait for DSP boot event: %v", pumpErr)
+	case wampErr := <-wampDone:
+		stopRuntime()
+		<-pumpDone
+		_ = dsp.Close()
+		log.Fatalf("WAMP stopped before DSP boot event: %v", wampErr)
+	case <-bootTimer.C:
+		stopRuntime()
+		<-wampDone
+		<-pumpDone
+		_ = dsp.Close()
+		log.Fatal("timed out waiting for DSP boot event")
+	case <-ctx.Done():
+		bootTimer.Stop()
+		stopRuntime()
+		<-wampDone
+		<-pumpDone
+		_ = dsp.Close()
+		return
+	}
+	bootTimer.Stop()
+	micControlDone := make(chan error, 1)
+	micControlReady := make(chan struct{})
+	service.micControlMu.Lock()
+	go func() {
+		micControlDone <- runMicControlServer(
+			runtimeContext,
+			*microphoneControlSocket,
+			service,
+			micControlReady,
+		)
+	}()
+	select {
+	case <-micControlReady:
+	case micControlErr := <-micControlDone:
+		service.micControlMu.Unlock()
+		stopRuntime()
+		<-wampDone
+		<-pumpDone
+		_ = dsp.Close()
+		log.Fatalf("start DSP microphone control: %v", micControlErr)
+	case pumpErr := <-pumpDone:
+		service.micControlMu.Unlock()
+		stopRuntime()
+		<-wampDone
+		<-micControlDone
+		_ = dsp.Close()
+		log.Fatalf("start DSP microphone control: %v", pumpErr)
+	case wampErr := <-wampDone:
+		service.micControlMu.Unlock()
+		stopRuntime()
+		<-pumpDone
+		<-micControlDone
+		_ = dsp.Close()
+		log.Fatalf("WAMP stopped before DSP readiness: %v", wampErr)
+	case <-ctx.Done():
+		service.micControlMu.Unlock()
+		stopRuntime()
+		<-wampDone
+		<-micControlDone
+		<-pumpDone
+		_ = dsp.Close()
+		return
+	}
+	microphoneMuted, err := microphoneMuteRequired(*microphoneState)
+	if err == nil && microphoneMuted {
+		err = service.dispatch(
+			runtimeContext,
+			micMuteSpec,
+			[]interface{}{uint64(1)},
+		)
+	}
+	if err == nil {
+		close(serviceReady)
+	}
+	service.micControlMu.Unlock()
+	if err != nil {
+		stopRuntime()
+		<-wampDone
+		<-micControlDone
+		<-pumpDone
+		_ = dsp.Close()
+		log.Fatalf("restore microphone state after DSP boot: %v", err)
+	}
+	if microphoneMuted {
+		log.Printf("restored microphone mute before DSP service readiness")
+	}
+
+	var runErr error
+	wampFinished := false
+	micControlFinished := false
+	pumpFinished := false
+	select {
+	case runErr = <-wampDone:
+		wampFinished = true
+	case runErr = <-micControlDone:
+		micControlFinished = true
+	case pumpErr := <-pumpDone:
+		pumpFinished = true
+		if pumpErr != nil {
+			runErr = fmt.Errorf("%w: %v", errDSPLinkFailure, pumpErr)
+		} else if ctx.Err() == nil {
+			runErr = fmt.Errorf("%w: message pump stopped", errDSPLinkFailure)
+		}
+	case <-ctx.Done():
+	}
+	stopRuntime()
+	if !wampFinished {
+		if err := <-wampDone; runErr == nil {
+			runErr = err
+		}
+	}
+	if !micControlFinished {
+		if err := <-micControlDone; runErr == nil {
+			runErr = err
+		}
+	}
+	if !pumpFinished {
+		if err := <-pumpDone; runErr == nil {
+			runErr = err
+		}
+	}
 	closeErr := dsp.Close()
 	if runErr != nil || closeErr != nil {
 		if runErr != nil {

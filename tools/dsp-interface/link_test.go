@@ -5,6 +5,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -68,6 +70,26 @@ func TestBootPreparesGPIOBeforeReleasingDSPReset(t *testing.T) {
 	}
 	if firstI2C < 3 || gpioReads < 3 {
 		t.Fatalf("GPIO was not sampled before reset: %v", operations)
+	}
+}
+
+func TestBootConfiguresDSPResetAsOutput(t *testing.T) {
+	i2c := newMemoryI2C()
+	i2c.registers[[2]byte{expanderAddress, expanderConfig}] = 0xff
+	link := newLink(newMemorySPI(), newMemoryGPIO(), i2c, linkOptions{
+		Pins:  defaultPinout(),
+		Sleep: func(time.Duration) {},
+	})
+
+	if err := link.Boot(bootImage{Stream: []byte{0, 0, 0, 0}}); err != nil {
+		t.Fatal(err)
+	}
+	value, err := i2c.ReadRegister(expanderAddress, expanderConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != 0xfe {
+		t.Fatalf("expander configuration = 0x%02x, want 0xfe", value)
 	}
 }
 
@@ -165,8 +187,8 @@ func TestPollDecodesCapturedBootEvent(t *testing.T) {
 		t.Fatalf("unexpected poll result: worked=%t event=%#v", worked, event)
 	}
 	for _, transfer := range spi.Recorded {
-		if len(transfer.TX) != 1 || transfer.TX[0] != 0 {
-			t.Fatalf("receive transfer did not transmit zero: %x", transfer.TX)
+		if len(transfer.TX) != 0 {
+			t.Fatalf("receive transfer had a transmit buffer: %x", transfer.TX)
 		}
 	}
 }
@@ -204,10 +226,10 @@ func TestPollResynchronizesObservedLeadingZero(t *testing.T) {
 	}
 }
 
-func TestTransmitUsesRecoveredMicrosecondHandshake(t *testing.T) {
+func TestTransmitUsesObservedHardwareHandshakeTiming(t *testing.T) {
 	spi := newMemorySPI()
 	spi.KeepTransfers = true
-	spi.Queue([]byte{0x00, 0x01, 0x00, 0x01, 0x06, 0x04, 0x00, 0x00})
+	spi.Queue([]byte{0x00, 0x00, 0x00, 0x01, 0x09, 0x08, 0x00, 0x00})
 	gpio := newMemoryGPIO()
 	gpio.OnRead = func(pin int, current bool) bool {
 		return false
@@ -229,15 +251,15 @@ func TestTransmitUsesRecoveredMicrosecondHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !worked || event == nil || event.ID != messageIDBoot {
+	if !worked || event == nil || event.ID != messageIDControl {
 		t.Fatalf("unexpected transmit result: worked=%t event=%#v", worked, event)
 	}
 	want := []time.Duration{
-		time.Microsecond,
-		time.Microsecond,
-		time.Microsecond,
-		time.Microsecond,
-		2 * time.Microsecond,
+		10 * time.Millisecond,
+		10 * time.Millisecond,
+		10 * time.Millisecond,
+		10 * time.Millisecond,
+		10 * time.Millisecond,
 	}
 	if len(sleeps) != len(want) {
 		t.Fatalf("sleep sequence = %v, want %v", sleeps, want)
@@ -259,17 +281,18 @@ func TestTransmitUsesRecoveredMicrosecondHandshake(t *testing.T) {
 			t.Fatalf("command transfer %d was receive-only", index)
 		}
 		if index >= commandLength &&
-			(!hasTransmit || len(transfer.TX) != 1 || transfer.TX[0] != 0) {
-			t.Fatalf("response transfer %d transmitted %x", index, transfer.TX)
+			hasTransmit {
+			t.Fatalf("response transfer %d had TX buffer %x", index, transfer.TX)
 		}
 	}
 }
 
 func TestTransmitRetriesRejectedResponse(t *testing.T) {
 	spi := newMemorySPI()
+	spi.KeepTransfers = true
 	spi.Queue([]byte{
 		0xff, 0, 0, 0, 0, 0, 0, 0, 0,
-		0x00, 0x01, 0x00, 0x01, 0x06, 0x04, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x01, 0x09, 0x08, 0x00, 0x00,
 	})
 	gpio := newMemoryGPIO()
 	gpio.OnRead = func(pin int, current bool) bool { return false }
@@ -283,30 +306,117 @@ func TestTransmitRetriesRejectedResponse(t *testing.T) {
 		},
 	})
 	link.booted = true
-	if err := link.Enqueue(messageIDControl, []byte{0x08}); err != nil {
+	completion, err := link.EnqueueTracked(
+		context.Background(),
+		messageIDControl,
+		[]byte{0x08},
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
 	event, worked, err := link.Poll()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !worked || event == nil || event.ID != messageIDBoot {
+	if !worked || event == nil || event.ID != messageIDControl {
 		t.Fatalf("unexpected retry result: worked=%t event=%#v", worked, event)
 	}
 	if retryDelayCount != 1 {
 		t.Fatalf("retry delays = %d, want 1", retryDelayCount)
 	}
+	if got := link.Stats().FramesSent; got != 2 {
+		t.Fatalf("frames sent = %d, want command retransmission", got)
+	}
+	if err := <-completion; err != nil {
+		t.Fatalf("tracked command completion = %v, want nil", err)
+	}
+	commandLength := frameLength(1)
+	responseLength := frameLength(1)
+	wantTransfers := 2*commandLength + 9 + responseLength
+	if len(spi.Recorded) != wantTransfers {
+		t.Fatalf(
+			"transfer count = %d, want %d after command retransmission",
+			len(spi.Recorded),
+			wantTransfers,
+		)
+	}
 }
 
-// TestTransmitWaitsForReadyBetweenRetries proves the link re-checks the Ready
-// line before each retry. A DSP that deasserts Ready while it computes a
-// response returns an all-zero header; without waiting, every retry clocks a
-// silent bus and the link dies on the first command it is ever sent.
-func TestTransmitWaitsForReadyBetweenRetries(t *testing.T) {
+func TestTrackedCommandReportsResponseFailure(t *testing.T) {
+	spi := newMemorySPI()
+	gpio := newMemoryGPIO()
+	gpio.OnRead = func(pin int, current bool) bool { return false }
+	link := newLink(spi, gpio, newMemoryI2C(), linkOptions{
+		Pins:  defaultPinout(),
+		Sleep: func(time.Duration) {},
+	})
+	link.booted = true
+	completion, err := link.EnqueueTracked(
+		context.Background(),
+		messageIDControl,
+		[]byte{0x08},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, worked, pollErr := link.Poll()
+	if !worked || !errors.Is(pollErr, errCommandResponse) {
+		t.Fatalf("worked=%t error=%v, want command response failure", worked, pollErr)
+	}
+	if completionErr := <-completion; !errors.Is(
+		completionErr,
+		errCommandResponse,
+	) {
+		t.Fatalf("completion error = %v, want command response failure", completionErr)
+	}
+}
+
+func TestTransmitPreservesUnrelatedValidFrame(t *testing.T) {
+	spi := newMemorySPI()
+	bootEvent := []byte{0x00, 0x01, 0x00, 0x01, 0x06, 0x04, 0x00, 0x00}
+	versionResponse := []byte{0x00, 0x00, 0x00, 0x01, 0x09, 0x08, 0x00, 0x00}
+	spi.Queue(append(bootEvent, versionResponse...))
+	gpio := newMemoryGPIO()
+	gpio.OnRead = func(pin int, current bool) bool { return false }
+	link := newLink(spi, gpio, newMemoryI2C(), linkOptions{
+		Pins:  defaultPinout(),
+		Sleep: func(time.Duration) {},
+	})
+	link.booted = true
+	completion, err := link.EnqueueTracked(
+		context.Background(),
+		messageIDControl,
+		[]byte{0x08},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, worked, err := link.Poll()
+	if err != nil || !worked || response == nil || response.ID != messageIDControl {
+		t.Fatalf("worked=%t response=%#v error=%v", worked, response, err)
+	}
+	if err := <-completion; err != nil {
+		t.Fatal(err)
+	}
+	preserved, worked, err := link.Poll()
+	if err != nil || !worked || preserved == nil || preserved.ID != messageIDBoot {
+		t.Fatalf(
+			"preserved frame: worked=%t response=%#v error=%v",
+			worked,
+			preserved,
+			err,
+		)
+	}
+}
+
+// TestTransmitResendsCommandAfterRejectedResponse proves the link follows the
+// donor loop by retransmitting the request instead of repeatedly reading a
+// response that the DSP never produced.
+func TestTransmitResendsCommandAfterRejectedResponse(t *testing.T) {
 	spi := newMemorySPI()
 	spi.Queue([]byte{
 		0x00, 0x00, 0x00, 0x00, 0x00, 0, 0, 0, 0,
-		0x00, 0x01, 0x00, 0x01, 0x06, 0x04, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x01, 0x05, 0x04, 0x00, 0x00,
 	})
 	gpio := newMemoryGPIO()
 	var readyReads int
@@ -331,6 +441,9 @@ func TestTransmitWaitsForReadyBetweenRetries(t *testing.T) {
 		t.Fatalf("transmit failed despite DSP becoming ready again: %v", err)
 	}
 	if readyReads < 2 {
-		t.Fatalf("ready line read %d times, want the retry to re-check it", readyReads)
+		t.Fatalf("ready line read %d times, want one check per transmission", readyReads)
+	}
+	if got := link.Stats().FramesSent; got != 2 {
+		t.Fatalf("frames sent = %d, want command retransmission", got)
 	}
 }

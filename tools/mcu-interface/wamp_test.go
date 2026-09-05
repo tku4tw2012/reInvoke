@@ -6,8 +6,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
@@ -16,6 +19,12 @@ import (
 
 type channelEventSource struct {
 	events <-chan inputEvent
+}
+
+type failingLEDWriter struct{}
+
+func (failingLEDWriter) WriteMCUData([]byte) error {
+	return errors.New("injected LED failure")
 }
 
 func (source channelEventSource) Events(context.Context) <-chan inputEvent {
@@ -50,6 +59,7 @@ func TestMinimumWAMPSurface(t *testing.T) {
 		"com.harman.musicMuteToggle",
 		"com.harman.ledAnimate",
 		"com.harman.ledOff",
+		"com.harman.dsp.micMute",
 	}
 	if !reflect.DeepEqual(procedures, expected) {
 		t.Fatalf("procedures = %#v, want %#v", procedures, expected)
@@ -247,6 +257,27 @@ func TestServiceRegistersAndPublishesVerifiedEvent(t *testing.T) {
 			routerDone <- &unexpectedMessage{message: hello}
 			return
 		}
+		details, ok := hello[2].(map[string]interface{})
+		if !ok {
+			routerDone <- &unexpectedMessage{message: hello}
+			return
+		}
+		roles, ok := details["roles"].(map[string]interface{})
+		if !ok {
+			routerDone <- &unexpectedMessage{message: hello}
+			return
+		}
+		for _, role := range []string{
+			"callee",
+			"caller",
+			"publisher",
+			"subscriber",
+		} {
+			if _, ok := roles[role]; !ok {
+				routerDone <- &unexpectedMessage{message: hello}
+				return
+			}
+		}
 		if err := router.writeFrame([]interface{}{
 			wampWelcome,
 			uint64(100),
@@ -270,6 +301,26 @@ func TestServiceRegistersAndPublishesVerifiedEvent(t *testing.T) {
 				wampRegistered,
 				register[1],
 				uint64(200 + index),
+			}); err != nil {
+				routerDone <- err
+				return
+			}
+		}
+		for index, expected := range []string{dspSessionTopic, dspBootTopic} {
+			subscribe, err := router.readFrame()
+			if err != nil {
+				routerDone <- err
+				return
+			}
+			if messageType(subscribe) != wampSubscribe ||
+				subscribe[3] != expected {
+				routerDone <- &unexpectedMessage{message: subscribe}
+				return
+			}
+			if err := router.writeFrame([]interface{}{
+				wampSubscribed,
+				subscribe[1],
+				uint64(300 + index),
 			}); err != nil {
 				routerDone <- err
 				return
@@ -310,8 +361,13 @@ func TestServiceRegistersAndPublishesVerifiedEvent(t *testing.T) {
 			) {
 			t.Fatalf("published event = %#v", event)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("service did not publish rotary event")
+	case <-time.After(2 * time.Second):
+		select {
+		case err := <-routerDone:
+			t.Fatalf("router failed before publication: %v", err)
+		default:
+			t.Fatal("service did not publish rotary event")
+		}
 	}
 	if err := <-routerDone; err != nil {
 		t.Fatal(err)
@@ -328,12 +384,233 @@ func TestServiceRegistersAndPublishesVerifiedEvent(t *testing.T) {
 	close(routerRelease)
 }
 
+func startMicControlResponder(
+	t *testing.T,
+	responses ...string,
+) (string, <-chan string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "dsp-mic.sock")
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	requests := make(chan string, len(responses))
+	go func() {
+		defer close(requests)
+		for _, response := range responses {
+			connection, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			request := make([]byte, 2)
+			if _, err := io.ReadFull(connection, request); err == nil {
+				requests <- string(request)
+				_, _ = connection.Write([]byte(response))
+			}
+			_ = connection.Close()
+		}
+	}()
+	return path, requests
+}
+
+func TestMicrophoneMuteUsesPrivateControlSocket(t *testing.T) {
+	socketPath, requests := startMicControlResponder(t, "OK\n")
+	statePath := filepath.Join(t.TempDir(), "microphone-state")
+	privacy := newMicrophonePrivacyController(
+		false,
+		statePath,
+		socketPath,
+		nil,
+		nil,
+	)
+	if err := privacy.Set(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if request := <-requests; request != "1\n" {
+		t.Fatalf("request = %q, want mute", request)
+	}
+	content, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != microphoneMutedState ||
+		!privacy.muted || !privacy.desired || privacy.unknown {
+		t.Fatalf(
+			"state=%q muted=%t desired=%t unknown=%t",
+			content,
+			privacy.muted,
+			privacy.desired,
+			privacy.unknown,
+		)
+	}
+}
+
+func TestMicrophoneMutePrecedesIndicatorFailure(t *testing.T) {
+	socketPath, requests := startMicControlResponder(t, "OK\n")
+	stateDirectory := t.TempDir()
+	lightsDirectory := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(lightsDirectory, micPrivacyLEDName+".bin"),
+		make([]byte, ledFrameBytes),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	privacy := newMicrophonePrivacyController(
+		false,
+		filepath.Join(stateDirectory, "microphone-state"),
+		socketPath,
+		&ledPlayer{directory: lightsDirectory, writer: failingLEDWriter{}},
+		nil,
+	)
+	if err := privacy.Set(context.Background(), true); err == nil {
+		t.Fatal("indicator failure was not reported")
+	}
+	if request := <-requests; request != "1\n" {
+		t.Fatalf("request = %q, want mute", request)
+	}
+	if !privacy.muted {
+		t.Fatal("microphone was not muted after indicator failure")
+	}
+}
+
+func TestFailedUnmuteIsImmediatelyRemuted(t *testing.T) {
+	socketPath, requests := startMicControlResponder(t, "ERR\n", "OK\n")
+	statePath := filepath.Join(t.TempDir(), "microphone-state")
+	if err := persistMicrophoneState(statePath, true); err != nil {
+		t.Fatal(err)
+	}
+	privacy := newMicrophonePrivacyController(
+		true,
+		statePath,
+		socketPath,
+		nil,
+		nil,
+	)
+	if err := privacy.Set(context.Background(), false); err == nil {
+		t.Fatal("failed unmute was reported as successful")
+	}
+	if first, second := <-requests, <-requests; first != "0\n" || second != "1\n" {
+		t.Fatalf("requests = %q, %q, want unmute then mute", first, second)
+	}
+	if !privacy.muted || !privacy.desired || privacy.unknown {
+		t.Fatalf(
+			"muted=%t desired=%t unknown=%t, want restored mute",
+			privacy.muted,
+			privacy.desired,
+			privacy.unknown,
+		)
+	}
+}
+
+func TestFailedUnmuteRecoveryRetriesUntilMuted(t *testing.T) {
+	socketPath, requests := startMicControlResponder(
+		t,
+		"ERR\n",
+		"ERR\n",
+		"OK\n",
+	)
+	statePath := filepath.Join(t.TempDir(), "microphone-state")
+	if err := persistMicrophoneState(statePath, true); err != nil {
+		t.Fatal(err)
+	}
+	privacy := newMicrophonePrivacyController(
+		true,
+		statePath,
+		socketPath,
+		nil,
+		nil,
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go privacy.Run(ctx)
+	if err := privacy.Set(ctx, false); err == nil {
+		t.Fatal("failed unmute was reported as successful")
+	}
+	for index, want := range []string{"0\n", "1\n", "1\n"} {
+		select {
+		case request := <-requests:
+			if request != want {
+				t.Fatalf("request %d = %q, want %q", index, request, want)
+			}
+		case <-time.After(2 * microphoneReconcileInterval):
+			t.Fatalf("request %d was not received", index)
+		}
+	}
+	privacy.mu.Lock()
+	defer privacy.mu.Unlock()
+	if !privacy.muted || !privacy.desired || privacy.unknown {
+		t.Fatalf(
+			"muted=%t desired=%t unknown=%t, want reconciled mute",
+			privacy.muted,
+			privacy.desired,
+			privacy.unknown,
+		)
+	}
+}
+
+func TestDSPBootReconcilesConfirmedMicrophoneMute(t *testing.T) {
+	socketPath, requests := startMicControlResponder(t, "OK\n")
+	statePath := filepath.Join(t.TempDir(), "microphone-state")
+	privacy := newMicrophonePrivacyController(
+		true,
+		statePath,
+		socketPath,
+		nil,
+		nil,
+	)
+	service := wampService{privacy: privacy}
+	handled, err := service.handleDSPSessionEvent(
+		context.Background(),
+		nil,
+		44,
+		[]interface{}{
+			wampEvent,
+			uint64(44),
+			uint64(1),
+			map[string]interface{}{},
+			[]interface{}{"dsp"},
+		},
+	)
+	if err != nil || !handled {
+		t.Fatalf("handled=%t error=%v", handled, err)
+	}
+	if request := <-requests; request != "1\n" {
+		t.Fatalf("request = %q, want mute reconciliation", request)
+	}
+}
+
+func TestWAMPMicrophoneMuteUsesPrivacyOwner(t *testing.T) {
+	socketPath, requests := startMicControlResponder(t, "OK\n")
+	privacy := newMicrophonePrivacyController(
+		false,
+		filepath.Join(t.TempDir(), "microphone-state"),
+		socketPath,
+		nil,
+		nil,
+	)
+	service := wampService{privacy: privacy}
+	response := invokeForTest(
+		t,
+		&service,
+		"com.harman.dsp.micMute",
+		[]interface{}{uint64(1)},
+	)
+	if messageType(response) != wampYield {
+		t.Fatalf("response = %#v", response)
+	}
+	if request := <-requests; request != "1\n" {
+		t.Fatalf("request = %q, want mute", request)
+	}
+}
+
 type unexpectedMessage struct {
 	message interface{}
 }
 
 func (err *unexpectedMessage) Error() string {
-	return "unexpected WAMP message"
+	return fmt.Sprintf("unexpected WAMP message: %#v", err.message)
 }
 
 func invokeForTest(

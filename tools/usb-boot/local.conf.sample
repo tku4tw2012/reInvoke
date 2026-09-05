@@ -29,6 +29,20 @@
 # single window.
 #REINVOKE_PAIR_SECONDS='120'
 
+# IPv4 addresses or CIDR ranges allowed to connect directly to the legacy WAMP
+# ports. Separate multiple entries with spaces. Loopback is always allowed.
+# When unset, every non-loopback source is blocked.
+#
+# Use documentation ranges in shared examples. Put actual local addresses only
+# in the ignored local.conf file.
+#REINVOKE_WAMP_ALLOW_CIDRS='192.0.2.10/32 198.51.100.0/24'
+
+# Root-only files containing the per-install provisioning access-point SSID and
+# WPA2 passphrase. Keep their actual values outside Git. When both are set, a
+# five-second Mic-Mute hold can open the bounded setup network.
+#REINVOKE_PROVISION_AP_SSID_FILE='<private-config>/provision-ap-ssid'
+#REINVOKE_PROVISION_AP_PSK_FILE='<private-config>/provision-ap-psk'
+
 # Directory holding the `usb_boot` tool and the signed bootloader images used to
 # place the device in download mode. This lives outside the repository because
 # it contains vendor binaries that are not ours to redistribute.

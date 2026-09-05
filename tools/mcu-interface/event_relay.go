@@ -6,7 +6,10 @@ package main
 import (
 	"context"
 	"strconv"
+	"time"
 )
+
+const micMuteDebounce = 300 * time.Millisecond
 
 type inputController interface {
 	Apply(context.Context, inputEvent) error
@@ -48,6 +51,7 @@ func runEventRelay(
 	var workerDone chan struct{}
 	var buttonEvents chan inputEvent
 	var volumeDeltas chan int
+	var lastMicMute time.Time
 	if controller != nil {
 		workerDone = make(chan struct{})
 		buttonEvents = make(chan inputEvent, 4)
@@ -75,10 +79,31 @@ func runEventRelay(
 			if !ok {
 				return
 			}
+			if event.Name == "micmute" {
+				occurredAt := event.OccurredAt
+				if occurredAt.IsZero() {
+					occurredAt = time.Now()
+				}
+				if !lastMicMute.IsZero() &&
+					occurredAt.Sub(lastMicMute) < micMuteDebounce {
+					if logf != nil {
+						logf("ignored duplicate Mic-Mute press")
+					}
+					continue
+				}
+				lastMicMute = occurredAt
+			}
 			if buttonEvents != nil {
 				queued := false
 				if delta, isVolume := volumeDelta(event); isVolume {
 					queued = queueVolumeDelta(volumeDeltas, delta)
+				} else if event.Name == "micmute" {
+					select {
+					case buttonEvents <- event:
+						queued = true
+					case <-ctx.Done():
+						return
+					}
 				} else {
 					select {
 					case buttonEvents <- event:

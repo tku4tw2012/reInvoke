@@ -50,3 +50,56 @@ func TestLEDNameRejectsPathTraversal(t *testing.T) {
 		}
 	}
 }
+
+func TestClearLEDsUsesRecoveredOffContract(t *testing.T) {
+	writer := &recordingLEDWriter{}
+	if err := clearLEDs(writer); err != nil {
+		t.Fatal(err)
+	}
+	if len(writer.packets) != 1 {
+		t.Fatalf("packet count = %d, want 1", len(writer.packets))
+	}
+	packet := writer.packets[0]
+	if len(packet) != 2+3*ledFrameBytes {
+		t.Fatalf("packet length = %d, want 41", len(packet))
+	}
+	if packet[0] != ledAnimationCode || packet[1] != ledFirstChunkFlag {
+		t.Fatalf("packet header = %x, want 0e01", packet[:2])
+	}
+	for index, value := range packet[2:] {
+		if value != 0 {
+			t.Fatalf("packet byte %d = %02x, want 00", index+2, value)
+		}
+	}
+
+}
+
+func TestPrivacyIndicatorBlocksTransientAnimationsAndLEDOff(t *testing.T) {
+	writer := &recordingLEDWriter{}
+	player := &ledPlayer{
+		writer:       writer,
+		privacyMuted: true,
+	}
+	if err := player.Apply(
+		context.Background(),
+		inputEvent{Name: "action"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := player.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if len(writer.packets) != 0 {
+		t.Fatalf("privacy indicator was replaced: %d packets", len(writer.packets))
+	}
+
+	if err := player.SetPrivacyMuted(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if player.privacyMuted {
+		t.Fatal("privacy indicator remained locked after unmute")
+	}
+	if len(writer.packets) != 1 || len(writer.packets[0]) != 41 {
+		t.Fatalf("privacy clear packets = %#v", writer.packets)
+	}
+}

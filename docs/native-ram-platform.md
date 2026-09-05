@@ -1,28 +1,55 @@
 ---
 title: Native RAM platform and component audit
-description: Verified native Linux bring-up, installed-version evidence, and board-support boundaries for a replacement Invoke stack
-ms.date: 2026-09-03
+description: Verified native Linux bring-up, installed-version evidence, and board-support boundaries for the reInvoke RAM stack
+ms.date: 2026-09-05
 ms.topic: concept
 ---
 
 The Harman Kardon Invoke can run a custom-owned Linux lifecycle from DRAM. The
-verified prototype uses the preserved recovery kernel, a sanitized initramfs,
-and selected hardware firmware from the unit's installed rootfs. It does not
-start Harman's supervisor, Cortana, OTA updater, or normal application stack.
+accepted platform uses the reviewed reInvoke kernel, an owned initramfs, and
+selected immutable board firmware and calibration from donor artifacts. It does
+not start Harman's supervisor, Cortana, OTA updater, or normal application
+stack.
 
-The result is a development platform for a replacement stack, not a modified
-Cortana image.
+This document combines current architecture with dated bring-up evidence. The
+[current product and architecture contract](current-product-contract.md) is
+normative; hashes and limitations in dated milestones apply to those iterations
+only.
 
-## Verified outcome
+## Current accepted outcome
 
-The physical unit completed this sequence:
+The current RAM image has:
+
+* owned PID 1 supervising volatile filesystems, USB, radio initialization,
+  logging, networking, Bonefish compatibility, and the product services;
+* owned MCU and DSP services with mute-first speaker safety and shared reset-bit
+  preservation;
+* process-lifetime microphone privacy owned by the MCU service, with atomic RAM
+  state, retry, a protected red indication, and a root-only mode-`0600` DSP
+  microphone socket;
+* seven public DSP WAMP registrations, rather than the donor's historical eight;
+* BlueZ 5.55 and patched BlueALSA 4.0.0 for a bounded, allowlisted A2DP Sink
+  path;
+* supervised Wi-Fi DHCP/resolver lifecycle and separated provisioning/apply
+  daemons; and
+* no NAND mount or persistent bond, credential, or application state.
+
+RAM boot, playback, rotary volume, capture, mute/unmute signal correlation,
+all-zero muted capture, pairing-window control, networking, and the LED clear
+packet are proven. The latest accepted image still needs the final cold-boot
+campaign and one attended playback-continuity run.
+
+## Historical initial verified outcome
+
+The initial donor-assisted RAM prototype completed this sequence. It is
+chronological evidence, not the current service graph:
 
 1. Yellow service mode loaded U-Boot into DRAM.
 2. U-Boot loaded the reviewed `81_IMAGE` kernel at `0x0c400000`.
 3. U-Boot loaded a sanitized initramfs at `0x08000000`.
 4. The kernel executed the replacement `/init` as PID 1.
 5. The USB gadget enumerated as `18d1:0d02`.
-6. Root ADB connected as `0123456789ABCDEF`.
+6. Root ADB connected as `<adb-serial>`.
 7. No NAND filesystem was mounted.
 8. A complete 256 MiB logical NAND data image streamed through a fresh
    read-only MTD node.
@@ -59,7 +86,7 @@ U-Boot maps it at `0xF0000000`, reports an invalid stored environment, and
 returned zeroes at the sampled offsets. Those observations do not prove that
 the full chip is unused.
 
-## Installed version audit
+## Installed vendor-version audit
 
 The complete logical NAND data image is:
 
@@ -127,7 +154,7 @@ to accept a replacement persistent kernel. A persistent custom userspace may
 remain possible with a signed donor kernel, but its rootfs verification and
 slot-selection behavior are not yet established.
 
-### Replacement kernel build
+### Historical first replacement-kernel build
 
 The acquired Invoke GPL archive contains Linux 3.8.13 source, the
 `berlin2cdp-a0-acast` device tree, and
@@ -151,7 +178,7 @@ USB diagnostics is not an accepted default. See
 [Invoke kernel build](../tools/kernel/README.md) for provenance and the build
 procedure.
 
-### Rebuilt-kernel boot experiments
+### Historical rebuilt-kernel boot experiments
 
 The known-good recovery kernel returned its `18d1:0d02` USB gadget 2.58 seconds
 after the Marvell endpoint disconnected. Replacement attempts use that measured
@@ -263,11 +290,11 @@ exact `3.8.13-reinvoke-audio` vermagic. The module SHA-256 is
 It downloaded `sd8887_bt_a2_new.bin`, reported `BT FW is active(2)`, created
 `hci0`, and registered an unblocked Bluetooth rfkill device.
 
-Bluedroid then:
+In that donor-assisted milestone, Bluedroid then:
 
 * Enabled the adapter with its controller-provided local address
 * Initialized A2DP Sink, AVRCP Controller, and AVRCP Target with result `0`
-* Set the compatibility name `HK Invoke_4E5601`
+* Set a compatibility name matching `HK Invoke_<address-suffix>`
 * Entered connectable mode
 * Entered connectable and discoverable pairing mode on a WAMP request
 
@@ -276,7 +303,7 @@ completed pairing and negotiated A2DP at 44.1 kHz stereo. The physical rotary
 ring changed the real ALSA `music` control and Bluedroid forwarded those values
 to the phone's absolute-volume scale.
 
-Ubuntu 22.04 on the development Mac mini provided a controlled second source.
+Ubuntu 22.04 on the source workstation provided a controlled second source.
 BlueZ discovered, paired, and connected the Invoke's classic Audio Sink profile.
 PulseAudio loaded its Bluetooth policy and discovery modules, selected
 `a2dp_sink`, exposed an SBC 44.1 kHz stereo sink, and showed an active sink
@@ -290,10 +317,10 @@ A read-only client connected to its abstract `.a2dp_data` socket but received
 zero decoded bytes. The standard `.a2dp_ctrl` `CHECK_READY` command returned
 failure acknowledgement `1`.
 
-This verifies pairing, A2DP negotiation, and compressed media ingress. Decoding
-and PCM handoff in the donor Bluedroid stack remain unresolved. The replacement
-architecture should not depend on fixing that opaque userspace stack; a
-maintained Bluetooth stack or a small owned SBC-to-ALSA bridge is preferred.
+This historically verified pairing, A2DP negotiation, and compressed media
+ingress. Decoding and PCM handoff in donor Bluedroid were not recovered.
+Current reInvoke does not depend on that opaque userspace stack; BlueZ and
+patched BlueALSA replace it.
 
 The recovery kernel exposes neither an SPI master nor a usable low-numbered GPIO
 bank. The SPI-plus-GPIO replacement kernel closes both gaps. The real MCU
@@ -349,16 +376,16 @@ not request all 16 periods. With amplifier and DAC mute asserted, this command
 opened card 1 PCM 0:
 
 ```text
-tinycap /tmp/mic-evidence.wav -D 1 -d 0 -c 2 -r 48000 -b 32 -p 256 -n 16
+tinycap <ram-output.wav> -D 1 -d 0 -c 2 -r 48000 -b 32 -p 256 -n 16
 ```
 
 The active stream reported stereo 48 kHz `S32_LE`, a 256-frame period, a
 4,096-frame buffer, and matching advancing hardware/application pointers. The
 five-second capture contained 121,344 frames; 99.98 percent were nonzero, and
-left/right correlation was 0.975. Evidence is retained under
-`hardware/usb-attempts/20260903T225737Z-microphone-capture-original-absent/`
-in the external archive. An attended speech or tapping correlation remains
-before claiming acoustic microphone acceptance.
+left/right correlation was 0.975. The dated evidence is retained in the
+external archive's hardware-attempt records. A later attended run correlated
+speech and tapping while unmuted. An accepted privacy/restart run produced only
+zero samples while muted, resolving the software capture and privacy path.
 
 The physical rotary ring also produced 63 volume-up and 57 volume-down MCU
 events. Bonefish recorded exactly 120 matching
@@ -375,17 +402,17 @@ hashes identify stripped binaries when no semantic version is available.
 
 | Component | Installed evidence | Status in the replacement architecture |
 |-----------|--------------------|-----------------------------------------|
-| Bonefish | Build ID `11d0eab176300d7c3c585b87dd7b82b0dd250d9d`; SHA-256 `f8ca28a9536b2795adee89d17c38a616fca859b89bdf11529228790e36584b24` | Runs under custom PID 1; replaceable WAMP router |
-| Autobahn-C++ | Symbols embedded in Bonefish and clients; semantic version unresolved | Protocol dependency, not a required long-term binary |
-| `mcu-interface` | Build ID `140341f267dc32d01b82175787e8d86fc75162bc`; SHA-256 `25e09fa524d0df037d53ceafc93fa938fb73dd008bc5b8d366b3ff968d9c20b7` | Temporary board-support adapter; protocol can be reimplemented |
-| `dsp-client` | Build ID `bee96ed4a94512944506d92660f1043df0a99385`; SHA-256 `a6ce3ff85ff04d9978e3f60acfe1339c561148254e610c7f392f2eb8fe5c72b8` | Temporary DSP adapter; live SPI/GPIO and direct PCM output are verified |
-| Bluedroid service | Binary SHA-256 `0a551959cf9b185722c8979834e8f56388890f9240685fa5cfa3f329abf442af` | Donor reference; a modern Bluetooth stack is preferred |
-| Dropbear | `2015.68` | Available donor SSH server, but too old for the final platform |
+| Bonefish | Build ID `11d0eab176300d7c3c585b87dd7b82b0dd250d9d`; SHA-256 `f8ca28a9536b2795adee89d17c38a616fca859b89bdf11529228790e36584b24` | Current narrow compatibility router under owned PID 1; not product policy |
+| Autobahn-C++ | Symbols embedded in Bonefish and donor clients; semantic version unresolved | Isolated compatibility dependency |
+| Donor `mcu-interface` | Build ID `140341f267dc32d01b82175787e8d86fc75162bc`; SHA-256 `25e09fa524d0df037d53ceafc93fa938fb73dd008bc5b8d366b3ff968d9c20b7` | Historical protocol evidence; replaced by `reinvoke-mcu-interface` |
+| Donor `dsp-client` | Build ID `bee96ed4a94512944506d92660f1043df0a99385`; SHA-256 `a6ce3ff85ff04d9978e3f60acfe1339c561148254e610c7f392f2eb8fe5c72b8` | Historical protocol evidence; replaced by `reinvoke-dsp-interface` |
+| Donor Bluedroid service | Binary SHA-256 `0a551959cf9b185722c8979834e8f56388890f9240685fa5cfa3f329abf442af` | Historical reference; replaced by BlueZ and patched BlueALSA |
+| Donor Dropbear | `2015.68` | Excluded; SSH is optional and not a product requirement |
 
 ## Preserved hardware evidence
 
-The external evidence directory
-`reinvoke-archive/hardware/dumps/20260902T215700Z-native-ram/` contains:
+The historical external evidence directory
+`<archive>/hardware/dumps/<timestamp>-native-ram/` contains:
 
 * Complete logical NAND data image and SHA-256 manifest
 * Extracted active and configuration SquashFS trees
@@ -396,20 +423,20 @@ The external evidence directory
 * Bounded real-hardware MCU syscall trace
 * Wi-Fi scan count with no SSIDs retained
 
-The SPI-plus-GPIO milestone is preserved under
-`reinvoke-archive/hardware/usb-attempts/20260903T022804Z-replacement-kernel-gcc49-spi-gpio-original-absent/`.
+The SPI-plus-GPIO milestone is preserved under the matching dated directory in
+`<archive>/hardware/usb-attempts/`.
 Its USB capture contains 20,380 packets with zero drops. The
 `native-platform-evidence/` subdirectory records the live kernel, mounts,
 modules, network, GPIO, SPI, process, MCU, DSP, and WAMP state. NAND remained
 unmounted.
 
-The audio and Bluetooth milestone is preserved under
-`reinvoke-archive/hardware/usb-attempts/20260903T031355Z-replacement-kernel-gcc49-audio-original-absent/`.
+The audio and Bluetooth milestone is preserved under the matching dated
+directory in `<archive>/hardware/usb-attempts/`.
 Its 130,649,184-byte USB capture contains 218,178 packets with zero drops. The
 private evidence subtree holds bond and HCI records with directory mode `0700`
 and file mode `0600`; those identifiers are not copied into Git.
 
-The final reproducible RAM pair is:
+The reproducible RAM pair at the 2026-09-03 milestone was:
 
 | Artifact | SHA-256 |
 |----------|---------|
@@ -430,17 +457,17 @@ the launcher can reassert mute. The safe unattended default therefore skips
 `dsp-client`; attended audio work must opt in with `--start-dsp` and wait for
 the launcher to confirm that both outputs were remuted.
 
-The native SD8887 STA/uAP milestone is preserved under
-`reinvoke-archive/hardware/usb-attempts/20260903T105444Z-sd8887-sta-uap-reconnect-arm-stock/`.
-The candidate returned the USB gadget in five seconds and exposed `mlan0`,
-`p2p0`, `hci0`, GPIO, SPI, and both ALSA cards. A Mac mini joined a random-key
+The native SD8887 STA/uAP milestone is preserved under the matching dated
+directory in `<archive>/hardware/usb-attempts/`. That iteration returned the
+USB gadget in five seconds and exposed `mlan0`, `p2p0`, `hci0`, GPIO, SPI, and
+both ALSA cards. A test workstation joined a random-key
 WPA2 AP on `p2p0`, received DHCP without a gateway or DNS, pinned the
 provisioning certificate, and completed an HTTP 202 parser-to-adapter request.
 Forwarding remained disabled, NAND remained unmounted, and all temporary
 credentials and AP processes were removed. The active host staging directory
 was then restored to the proven audio/Bluetooth pair above.
 
-The same boot later cloned the Mac mini's active WPA2 profile through the
+The same boot later cloned the test workstation's active WPA2 profile through the
 authenticated parser without printing or storing the plaintext PSK on the
 host. The real station adapter reached `wpa_state=COMPLETED`, retained only a
 derived key in mode-0600 RAM, acquired a DHCP lease, and verified gateway,
@@ -473,7 +500,7 @@ created new child PIDs and regained association, lease, route, resolver, public
 IPv4, and DNS. The host passed its active profile entirely through shell memory;
 no plaintext credential was printed or written to a host file.
 
-The final hardened checksum-gated lifecycle image was built twice with
+The hardened checksum-gated lifecycle image at that milestone was built twice with
 identical bytes. The external 40,068,440-byte initramfs has SHA-256
 `c056d21b0e147fb9fd38a9458952528be1f58b17566f1223a1147eca14d53e21`.
 Archive inspection confirmed the owned daemon, provisioning adapters, release
@@ -481,7 +508,7 @@ manifest, pinned module tree, and updated PID 1. PID 1 restarts networkd after
 failure with a five-second delay, sends its output to the bounded kernel log, and
 supports `reinvoke.networkd=off` for manual recovery.
 
-On 2026-09-03 the final hardened checksum-gated image was cold-booted through
+On 2026-09-03 that hardened checksum-gated image was cold-booted through
 yellow mode. PID 1 auto-started `reinvoke-networkd`, whose live SHA-256 matched
 `cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66`.
 The packaged `reinvoke-provisiond` also matched
@@ -501,8 +528,8 @@ registered an A2DP sink and `bluealsa-aplay` opened no PCM until a peer connects
 The owned pairing agent registered on the private D-Bus system bus and
 allowlisted one operator-supplied peer address plus A2DP/AVRCP services.
 
-The Mac mini was freshly paired after its stale host record was removed. The
-target reported `Paired=true` for that peer while `Pairable=false` and
+The source workstation was freshly paired after its stale host record was
+removed. The target reported `Paired=true` for that peer while `Pairable=false` and
 `Discoverable=false`. The bond survived a disconnect and reconnect after the
 pairing window closed. Target bond state remained in the volatile
 `/usr/var/lib/bluetooth` directory, and the private D-Bus state remained under
@@ -513,7 +540,7 @@ an A2DP stream opened ALSA card 1 as stereo `S16_LE` at 44.1 kHz. The hardware
 pointer advanced from `192000` to `238080` while the PCM remained `RUNNING`.
 This proves the muted Bluetooth transport, SBC decode, BlueALSA, ALSA, and DMA
 pipeline. For the attended acceptance on 2026-09-03, the owned MCU WAMP
-procedures explicitly unmuted the amplifier and DAC, the paired Mac mini sent a
+procedures explicitly unmuted the amplifier and DAC, the paired workstation sent a
 440 Hz tone at 20 percent host volume, and the operator confirmed audible
 speaker output. The host volume was then restored to one percent; the physical
 outputs remain under the MCU mute procedures.
@@ -524,13 +551,15 @@ produced no audible sound and coincided with sustained I2C arbitration loss.
 That candidate was rejected. ALSA `RUNNING` alone can represent rendered
 silence, so it is not physical-unmute authorization.
 
-The v9 candidate patches `bluealsa-aplay` to create a RAM lease only after
-positive PCM FIFO reads. The lease carries the ALSA-owning worker thread ID.
-The MCU service requires that ID to match ALSA `owner_pid` and the expected
-`/proc/<tid>/exe` while the PCM is `RUNNING`. GPIO handling now requires a real
-`POLLPRI` edge before reading the MCU, preventing the prior I2C read flood.
-This candidate has complete host and reproducibility validation but still
-requires a clean cold-boot and attended audible test.
+The historical v9 candidate introduced a RAM lease after positive PCM FIFO
+reads. The lease carries the ALSA-owning worker thread ID. The MCU service
+requires that ID to match ALSA `owner_pid` and the expected `/proc/<tid>/exe`
+while the PCM is `RUNNING`. GPIO handling requires a real `POLLPRI` edge before
+reading the MCU, preventing the prior I2C read flood. These controls are now
+part of the accepted architecture rather than a current v9 candidate. The
+latest accepted image, which also includes later privacy and playback fixes,
+still needs the cold-boot campaign and attended playback-continuity run listed
+in [PLAN.md](../PLAN.md).
 
 ## Rebuilding the RAM platform
 
@@ -539,10 +568,10 @@ artifacts:
 
 ```bash
 tools/usb-boot/build-native-initramfs.sh \
-  --source-initramfs ../reinvoke-archive/extracted/ota2/OTA2/82_IMAGE \
-  --donor-rootfs ../reinvoke-archive/hardware/dumps/20260902T215700Z-native-ram/rootfs-extracted/primary \
-  --kernel-modules ../reinvoke-archive/build/artifacts/invoke-kernel-acast/modules \
-  --output ../invoke-boot/82_IMAGE.native-ram
+  --source-initramfs <archive>/extracted/ota2/OTA2/82_IMAGE \
+  --donor-rootfs <archive>/hardware/dumps/<snapshot>/rootfs-extracted/primary \
+  --kernel-modules <archive>/build/artifacts/invoke-kernel-acast/modules \
+  --output <boot-dir>/82_IMAGE.native-ram
 ```
 
 Build the hardware-verified GCC 4.9 kernel profile with a checksum-gated DTB:
@@ -550,16 +579,16 @@ Build the hardware-verified GCC 4.9 kernel profile with a checksum-gated DTB:
 ```bash
 tools/kernel/build-native-kernel.sh \
   --profile spi-gpio \
-  --dtb ../reinvoke-archive/build/artifacts/reinvoke-spi-gpio.dtb \
+  --dtb <archive>/build/artifacts/reinvoke-spi-gpio.dtb \
   --dtb-sha256 <reviewed-dtb-sha256> \
-  --output-dir ../reinvoke-archive/build/artifacts/invoke-native-spi-gpio
+  --output-dir <archive>/build/artifacts/invoke-native-spi-gpio
 ```
 
 After ADB returns, reconstruct the tested RAM-only diagnostic service graph:
 
 ```bash
 tools/usb-boot/start-native-services.sh \
-  --rootfs ../reinvoke-archive/hardware/dumps/20260902T215700Z-native-ram/installed-rootfs-region.bin
+  --rootfs <archive>/hardware/dumps/<snapshot>/installed-rootfs-region.bin
 ```
 
 This launcher never starts the stock supervisor or updater and leaves physical
@@ -580,25 +609,28 @@ The builder removes the vendor `flash_custk` executable and
 BusyBox still contains low-level applets, so operator discipline remains part
 of the safety boundary.
 
-## Replacement architecture
+## Accepted replacement architecture
 
-The target architecture is:
+The accepted boundary is:
 
-1. A maintained Linux kernel or the minimum compatible donor kernel layer
-2. An initramfs or persistent rootfs owned by reInvoke
-3. Board firmware and calibration treated as immutable donor assets
-4. Native Wi-Fi and a maintained Bluetooth userspace
-5. A small MCU driver that preserves mute-first power sequencing
-6. A DSP/audio service that exposes stable local APIs
-7. An application layer for local voice, automation, media, and updates
-8. USB yellow mode retained as recovery
+1. the reviewed reInvoke kernel and owned initramfs;
+2. reInvoke PID 1 as lifecycle owner;
+3. board firmware, calibration, and `dsp-img.ldr` as checksum-gated immutable
+   donor assets;
+4. `reinvoke-mcu-interface` as sole MCU/input/LED/speaker-safety and public
+   Mic-Mute policy owner;
+5. `reinvoke-dsp-interface` as sole DSP SPI/GPIO/reset owner, with seven public
+   DSP WAMP registrations and a private root-only microphone Unix socket;
+6. BlueZ 5.55 and patched BlueALSA 4.0.0 for A2DP Sink playback;
+7. `reinvoke-networkd`, `reinvoke-provisiond`, and
+   `reinvoke-wifi-applyd` at separated network and credential boundaries;
+8. Bonefish retained only as a narrow local compatibility router; and
+9. yellow-mode USB retained for recovery and reversible RAM loading.
 
-The current hybrid retains Bonefish and the donor `dsp-client` only as
-comparison points. The reInvoke-owned MCU service has replaced donor
-`mcu-interface` in a live RAM session. It reproduced mute-first expander and
-DAC initialization, denied unmute by default, sent the recovered five-second
-MCU heartbeat, returned version `000116`, and published physical volume-up and
-volume-down events. Provenance is in [P1-048](../metadata/P1-048.json).
+The donor MCU, DSP, Bluedroid, audio UI, source manager, updater, and supervisor
+are comparison points, not current runtime dependencies. See the
+[canonical contract](current-product-contract.md) for the complete service and
+safety policy.
 
 ## Connectivity and provisioning model
 
@@ -609,7 +641,7 @@ control plane, with different transports serving different lifecycle stages:
 |-------|-----------|---------|
 | Recovery | Yellow-mode USB and U-Boot | Load a known RAM kernel and initramfs |
 | Development | USB ADB or ACM | Root shell, logs, file transfer, and control API forwarding |
-| Onboarding | Temporary SD8887 access point | Receive network selection and credentials locally |
+| Onboarding | Temporary isolated SD8887 access point | Receive network selection and credentials locally; final physical-button orchestration is incomplete |
 | Normal operation | Wi-Fi station mode | Authenticated local API, media control, and automation |
 | Maintenance | Optional SSH | Administrative access, not required for normal use |
 
@@ -633,7 +665,9 @@ same logical control API. The persistent platform may replace WAMP with a
 smaller authenticated protocol while retaining a compatibility bridge for
 tested MCU and audio procedures.
 
-The first replacement control-plane component is
+The current provisioning boundary is described in
 [native-provisioning.md](native-provisioning.md). Its static ARM daemon provides
 ephemeral TLS and token-authenticated credential delivery without exposing
-radio or shell privileges to the network parser.
+radio or shell privileges to the network parser. The privileged apply daemon
+requires a UID-0 Unix-socket peer. These validated components do not yet form a
+fully automatic physical-button onboarding flow.

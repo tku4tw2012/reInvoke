@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-const playbackPolicyInterval = 100 * time.Millisecond
+const (
+	playbackPolicyInterval = 100 * time.Millisecond
+	playbackPolicyHoldoff  = 1500 * time.Millisecond
+)
 
 type playbackMuteController interface {
 	setPlaybackActive(bool) error
@@ -46,12 +49,17 @@ func runPlaybackPolicy(
 	ownerExecutable string,
 	controller playbackMuteController,
 	interval time.Duration,
+	holdoff time.Duration,
 	logf func(string, ...interface{}),
 ) error {
 	if interval <= 0 {
 		return fmt.Errorf("playback policy interval must be positive")
 	}
+	if holdoff < 0 {
+		return fmt.Errorf("playback policy holdoff must be non-negative")
+	}
 	active := false
+	var lastRunning time.Time
 	check := func() error {
 		status, err := os.ReadFile(statusPath)
 		running := err == nil && playbackIsRunning(status)
@@ -68,11 +76,20 @@ func runPlaybackPolicy(
 				running = linkErr == nil && actual == ownerExecutable
 			}
 		}
-		if running == active {
+		now := time.Now()
+		if running {
+			lastRunning = now
+		}
+		desired := running
+		if !desired && active &&
+			!lastRunning.IsZero() && now.Sub(lastRunning) < holdoff {
+			desired = true
+		}
+		if desired == active {
 			return nil
 		}
-		if err := controller.setPlaybackActive(running); err != nil {
-			if running {
+		if err := controller.setPlaybackActive(desired); err != nil {
+			if desired {
 				muteErr := controller.setPlaybackActive(false)
 				if muteErr != nil {
 					return fmt.Errorf(
@@ -88,7 +105,7 @@ func runPlaybackPolicy(
 			}
 			return fmt.Errorf("apply playback mute policy: %w", err)
 		}
-		active = running
+		active = desired
 		if logf != nil {
 			logf("physical playback path active=%t", active)
 		}

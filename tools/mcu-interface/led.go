@@ -16,10 +16,12 @@ import (
 const (
 	ledFrameBytes     = 13
 	ledChunkBytes     = 390
+	ledOffFrameCount  = 3
 	ledChunkDelay     = 280 * time.Millisecond
 	maxLEDAssetBytes  = 1024 * 1024
 	ledAnimationCode  = byte(0x0e)
 	ledFirstChunkFlag = byte(0x01)
+	micPrivacyLEDName = "L_108_c_error"
 )
 
 type ledWriter interface {
@@ -31,9 +33,10 @@ type ledPlayer struct {
 	writer    ledWriter
 	logf      func(string, ...interface{})
 
-	mu     sync.Mutex
-	cancel context.CancelFunc
-	done   chan struct{}
+	mu           sync.Mutex
+	cancel       context.CancelFunc
+	done         chan struct{}
+	privacyMuted bool
 }
 
 func (player *ledPlayer) Apply(
@@ -55,8 +58,23 @@ func (player *ledPlayer) Start(
 	name string,
 	repeat bool,
 ) error {
+	return player.start(parent, name, repeat, false)
+}
+
+func (player *ledPlayer) start(
+	parent context.Context,
+	name string,
+	repeat bool,
+	force bool,
+) error {
 	if !validLEDName(name) {
 		return errors.New("invalid LED animation name")
+	}
+	player.mu.Lock()
+	blocked := player.privacyMuted && !force
+	player.mu.Unlock()
+	if blocked {
+		return nil
 	}
 	data, err := os.ReadFile(filepath.Join(player.directory, name+".bin"))
 	if err != nil {
@@ -69,14 +87,24 @@ func (player *ledPlayer) Start(
 
 	player.mu.Lock()
 	defer player.mu.Unlock()
+	if player.privacyMuted && !force {
+		return nil
+	}
 	player.stopLocked()
 	ctx, cancel := context.WithCancel(parent)
 	done := make(chan struct{})
+	started := make(chan error, 1)
 	player.cancel = cancel
 	player.done = done
 	go func() {
 		defer close(done)
-		if err := runLEDAnimation(ctx, player.writer, data, repeat); err != nil &&
+		if err := runLEDAnimationStarted(
+			ctx,
+			player.writer,
+			data,
+			repeat,
+			started,
+		); err != nil &&
 			player.logf != nil {
 			player.logf("LED animation %s: %v", name, err)
 		}
@@ -86,7 +114,29 @@ func (player *ledPlayer) Start(
 			}
 		}
 	}()
+	if err := <-started; err != nil {
+		cancel()
+		<-done
+		player.cancel = nil
+		player.done = nil
+		return err
+	}
 	return nil
+}
+
+func (player *ledPlayer) SetPrivacyMuted(
+	parent context.Context,
+	muted bool,
+) error {
+	player.mu.Lock()
+	player.privacyMuted = muted
+	if !muted {
+		defer player.mu.Unlock()
+		player.stopLocked()
+		return clearLEDs(player.writer)
+	}
+	player.mu.Unlock()
+	return player.start(parent, micPrivacyLEDName, true, true)
 }
 
 func (player *ledPlayer) Clear() error {
@@ -96,10 +146,11 @@ func (player *ledPlayer) Clear() error {
 func (player *ledPlayer) Stop() error {
 	player.mu.Lock()
 	defer player.mu.Unlock()
+	if player.privacyMuted {
+		return nil
+	}
 	player.stopLocked()
-	return player.writer.WriteMCUData(
-		append([]byte{ledAnimationCode, ledFirstChunkFlag}, make([]byte, 13)...),
-	)
+	return clearLEDs(player.writer)
 }
 
 func (player *ledPlayer) stopLocked() {
@@ -117,6 +168,17 @@ func runLEDAnimation(
 	data []byte,
 	repeat bool,
 ) error {
+	return runLEDAnimationStarted(ctx, writer, data, repeat, nil)
+}
+
+func runLEDAnimationStarted(
+	ctx context.Context,
+	writer ledWriter,
+	data []byte,
+	repeat bool,
+	started chan<- error,
+) error {
+	firstWrite := true
 	for {
 		for offset := 0; offset < len(data); offset += ledChunkBytes {
 			end := offset + ledChunkBytes
@@ -131,7 +193,14 @@ func runLEDAnimation(
 			packet[0] = ledAnimationCode
 			packet[1] = flag
 			packet = append(packet, data[offset:end]...)
-			if err := writer.WriteMCUData(packet); err != nil {
+			err := writer.WriteMCUData(packet)
+			if firstWrite {
+				if started != nil {
+					started <- err
+				}
+				firstWrite = false
+			}
+			if err != nil {
 				return fmt.Errorf("send LED animation chunk: %w", err)
 			}
 			if end < len(data) || repeat {
@@ -152,14 +221,11 @@ func runLEDAnimation(
 	}
 }
 
-// clearLEDs blanks the ring with a single all-zero frame. The donor assets
-// carry no trailing blank, so a finished animation otherwise stays lit. This
-// is our addition, not recovered donor behavior.
+// clearLEDs reproduces the donor ledOff packet: three all-zero frames.
 func clearLEDs(writer ledWriter) error {
-	packet := make([]byte, 2, 2+ledFrameBytes)
+	packet := make([]byte, 2+ledOffFrameCount*ledFrameBytes)
 	packet[0] = ledAnimationCode
 	packet[1] = ledFirstChunkFlag
-	packet = append(packet, make([]byte, ledFrameBytes)...)
 	if err := writer.WriteMCUData(packet); err != nil {
 		return fmt.Errorf("clear LED ring: %w", err)
 	}

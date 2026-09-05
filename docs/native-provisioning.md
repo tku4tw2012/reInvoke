@@ -1,16 +1,23 @@
 ---
 title: Native Wi-Fi provisioning boundary
 description: Authenticated RAM-only onboarding architecture for the reInvoke platform
-ms.date: 2026-09-03
+ms.date: 2026-09-05
 ms.topic: concept
 ---
 
 The replacement onboarding path separates untrusted network parsing from radio
 and credential application. The HTTPS parser is implemented and verified on the
-physical Invoke. SD8887 access-point mode and station credential application
-remain separate hardware adapters.
+physical Invoke. SD8887 access-point mode, station credential application, and
+the owned DHCP/resolver lifecycle are also verified.
 
-## Stock boundary
+These components do **not** yet form an automatic product onboarding flow. The
+MCU service publishes Mic-Mute long press for compatibility, but normal
+physical-button orchestration of the bounded AP, descriptor delivery, parser,
+and station transition remains incomplete. Yellow-mode USB is the current
+trusted development bootstrap. See the
+[current product and architecture contract](current-product-contract.md).
+
+## Historical stock boundary
 
 Held `Barracuda_libre-12.2050.3` artifacts establish these reusable hardware
 facts:
@@ -30,19 +37,21 @@ No held executable owns its `/setup/*` endpoint strings. The page is also
 unsuitable for reuse because it posts the network passphrase over
 unauthenticated HTTP and contains `TODO: Encrypt password`.
 
-## Replacement components
+## Current replacement components
 
 The onboarding design has four independent components:
 
-1. A physical gate opens a bounded provisioning window.
+1. A physical gate is intended to open a bounded provisioning window; the final
+   orchestration is not yet implemented.
 2. A radio adapter creates an isolated WPA2 AP on `p2p0`, without forwarding to
    another interface.
 3. `reinvoke-provisiond` accepts one authenticated TLS request.
 4. A privileged station adapter receives the request over a root-owned Unix
    socket and applies it without shell interpolation.
 
-Only the final adapter may write a persistent network configuration. During RAM
-validation it must use a tmpfs configuration and leave NAND unmounted.
+The accepted RAM product writes only tmpfs configuration and leaves NAND
+unmounted. A future persistent product would need a separately reviewed storage,
+recovery, and secret-management design.
 
 ## Authenticated parser
 
@@ -87,19 +96,23 @@ descriptor.
 
 ## Bootstrap transport
 
-The current trusted bootstrap is yellow-mode USB:
+The current trusted development bootstrap is yellow-mode USB:
 
-1. Start the AP and provisioning daemon after a physical long press.
+1. Manually start the isolated AP and provisioning daemon during an attended
+   bounded window.
 2. Read `/run/reinvoke/provisioning.json` through root ADB.
 3. Join the temporary WPA2 AP.
 4. Pin the descriptor's certificate fingerprint.
 5. Send its bearer token and one credential request.
 
-This is sufficient for development and recovery. A product flow can later
-deliver the same descriptor over Bluetooth LE or DPP without weakening the
-HTTPS API or teaching the parser about radio drivers.
+This is sufficient for development and recovery. It is not the finished
+physical-button product flow. A future adapter could deliver the same descriptor
+without weakening the HTTPS API or teaching the parser about radio drivers.
 
-## Physical validation
+## Historical artifact identity and physical validation
+
+The hashes in this section identify the dated 2026-09-03 network milestone.
+They are not aliases for the newest accepted image.
 
 The hardened static ARMv7 binary is 4,784,128 bytes with SHA-256
 `5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07`.
@@ -139,9 +152,10 @@ standard IEEE WPA2 PSK vector, and replacement of an existing 0770
 The adapter-rejection test used only fake credentials and did not touch a radio
 or persistent storage.
 
-## Attended AP validation
+## Historical attended AP validation
 
-The AP candidate remains staged outside the normal boot directory:
+The AP candidate used for that milestone was staged outside the normal boot
+directory:
 
 | Artifact | SHA-256 |
 |----------|---------|
@@ -167,7 +181,7 @@ The test then:
 * Created a random-key WPA2 AP on `p2p0`
 * Bound dnsmasq DHCP only to `p2p0` with DNS disabled
 * Kept IPv4 and IPv6 forwarding disabled
-* Assigned the Mac mini an address in `192.168.43.0/24` with no gateway or DNS
+* Assigned the test workstation an address in `192.168.43.0/24` with no gateway or DNS
 * Verified the TLS certificate fingerprint over the AP
 * Received HTTP 202 from the complete parser-to-adapter path
 * Removed the host connection profile, AP key, derived station configuration,
@@ -181,7 +195,7 @@ afterward.
 
 ## Real station validation
 
-A subsequent RAM-only test cloned the Mac mini's active NetworkManager profile
+A subsequent RAM-only test cloned the test workstation's active NetworkManager profile
 without printing the SSID or PSK. The shell held both values only in memory,
 constructed JSON through standard input, and sent the request through an ADB
 loopback forward. The Wi-Fi secret did not enter a process argument or host
@@ -202,10 +216,10 @@ Both provisioning daemons removed their sockets and exited after success. The
 station supplicant, DHCP renewal client, derived configuration, and resolver
 state remain only in the current RAM boot.
 
-The external evidence bundle is
-`reinvoke-archive/hardware/usb-attempts/20260903T105444Z-sd8887-sta-uap-reconnect-arm-stock/`.
+The external evidence bundle is retained under
+`<archive>/hardware/usb-attempts/<timestamp>-sd8887-sta-uap-reconnect-arm-stock/`.
 
-## Owned network lifecycle
+## Current owned network lifecycle
 
 The hardened static ARMv7 `reinvoke-networkd` artifact is 2,293,760 bytes with
 SHA-256
@@ -236,16 +250,16 @@ The initramfs builder checksum-gates the artifact and PID 1 auto-starts it when
 included. PID 1 sends daemon output to the bounded kernel log and restarts a
 failed supervisor after five seconds. The `reinvoke.networkd=off` kernel
 argument keeps the packaged service disabled for manual recovery. Two clean
-builds of the packaged initramfs were byte-identical. The final hardened
+builds of the packaged initramfs were byte-identical. That historical hardened
 external image is 40,068,440 bytes and has SHA-256
 `c056d21b0e147fb9fd38a9458952528be1f58b17566f1223a1147eca14d53e21`
 and contains the reviewed network daemon, provisioning adapters, pinned kernel
 module tree, release manifest, and PID 1. Provenance is recorded in
 [P1-046](../metadata/P1-046.json).
 
-## Remaining validation
+## Historical 2026-09-03 packaged-image check
 
-The final hardened checksum-gated image cold-booted in yellow mode on
+The checksum-gated image from that milestone cold-booted in yellow mode on
 2026-09-03.
 PID 1 automatically started `reinvoke-networkd`; its live SHA-256 was
 `cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66`.
@@ -261,5 +275,8 @@ DHCP, DNS, and default-route acquisition were not expected in this cold-boot
 check. The already validated credentialed station lifecycle remains covered by
 the live RAM-only validation above.
 
-Persistent storage remains out of scope until backup, rollback, and recovery
-are independently proven.
+The current network boundaries are accepted into the RAM architecture. Remaining
+product work is physical-button onboarding orchestration; the current image also
+shares the project-wide cold-boot campaign in [PLAN.md](../PLAN.md). Persistent
+storage remains out of scope until backup, rollback, recovery, and secret
+handling are independently proven.

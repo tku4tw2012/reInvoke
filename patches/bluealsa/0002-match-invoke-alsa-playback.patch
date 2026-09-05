@@ -1,0 +1,88 @@
+diff --git a/utils/aplay/aplay.c b/utils/aplay/aplay.c
+index 1c9a474..c466b0f 100644
+--- a/utils/aplay/aplay.c
++++ b/utils/aplay/aplay.c
+@@ -76,5 +76,6 @@ static const char *playback_lease_path = NULL;
+ static pthread_mutex_t playback_lease_lock = PTHREAD_MUTEX_INITIALIZER;
+ static unsigned int playback_lease_users = 0;
++static const int pcm_inactive_timeout = 2000;
+ 
+ static struct ba_dbus_ctx dbus_ctx;
+ static char dbus_ba_service[32] = BLUEALSA_SERVICE;
+@@ -513,6 +514,7 @@ static void *pcm_worker_routine(struct pcm_worker *w) {
+ 	 * will be opened, this value will be adjusted to one period size. */
+ 	size_t pcm_max_read_len_init = pcm_1s_samples / 100 * pcm_format_size;
+ 	size_t pcm_max_read_len = pcm_max_read_len_init;
++	snd_pcm_uframes_t pcm_period_frames = 0;
+ 	size_t pcm_open_retries = 0;
+ 
+ 	/* These variables determine how and when the pause command will be send
+@@ -548,6 +550,7 @@ static void *pcm_worker_routine(struct pcm_worker *w) {
+ 			pcm_max_read_len = pcm_max_read_len_init;
+ 			pause_counter = pause_bytes = 0;
+ 			ffb_rewind(&buffer);
++			pcm_period_frames = 0;
+ 			if (w->pcm != NULL) {
+ 				snd_pcm_close(w->pcm);
+ 				w->pcm = NULL;
+@@ -622,6 +625,7 @@ static void *pcm_worker_routine(struct pcm_worker *w) {
+ 
+ 			snd_pcm_get_params(w->pcm, &buffer_size, &period_size);
+ 			pcm_max_read_len = period_size * w->ba_pcm.channels * pcm_format_size;
++			pcm_period_frames = period_size;
+ 			pcm_open_retries = 0;
+ 
+ 			if (verbose >= 2) {
+@@ -643,28 +647,38 @@ static void *pcm_worker_routine(struct pcm_worker *w) {
+ 		if (ret > 0)
+ 			playback_lease_acquire(w);
+ 		w->active = true;
+-		timeout = 500;
++		timeout = pcm_inactive_timeout;
+ 
+ 		ffb_seek(&buffer, ret / pcm_format_size);
+ 
+ 		/* calculate the overall number of frames in the buffer */
+ 		snd_pcm_sframes_t frames = ffb_len_out(&buffer) / w->ba_pcm.channels;
+ 
+-		if ((frames = snd_pcm_writei(w->pcm, buffer.data, frames)) < 0)
+-			switch (-frames) {
+-			case EPIPE:
+-				debug("An underrun has occurred");
+-				snd_pcm_prepare(w->pcm);
+-				usleep(50000);
+-				frames = 0;
+-				break;
+-			default:
+-				error("Couldn't write to PCM: %s", snd_strerror(frames));
+-				goto fail;
++		/* The Invoke's stock player accumulates one complete 512-frame period
++		 * before writing and drains partial writes before polling for input. */
++		if (frames < (snd_pcm_sframes_t)pcm_period_frames)
++			continue;
++
++		while (frames > 0) {
++			snd_pcm_sframes_t written =
++				snd_pcm_writei(w->pcm, buffer.data, frames);
++			if (written == -EAGAIN || written == 0) {
++				snd_pcm_wait(w->pcm, 1000);
++				continue;
++			}
++			if (written < 0) {
++				int recover = snd_pcm_recover(w->pcm, written, 1);
++				if (recover < 0) {
++					error("Couldn't recover PCM: %s", snd_strerror(recover));
++					goto fail;
++				}
++				debug("Recovered PCM after %s", snd_strerror(written));
++				continue;
+ 			}
+ 
+-		/* move leftovers to the beginning and reposition tail */
+-		ffb_shift(&buffer, frames * w->ba_pcm.channels);
++			ffb_shift(&buffer, written * w->ba_pcm.channels);
++			frames -= written;
++		}
+ 
+ 	}
+ 

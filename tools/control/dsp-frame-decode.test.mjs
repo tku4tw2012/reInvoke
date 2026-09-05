@@ -159,5 +159,7 @@ test("leaves unmapped codes unnamed", () => {
 test("parses hex byte lists in either notation", () => {
   assert.deepEqual(parseHexBytes("0x00 0x01 0x04"), [0, 1, 4]);
   assert.deepEqual(parseHexBytes("00,01,ff"), [0, 1, 255]);
-  assert.throws(() => parseHexBytes("0x100"), /not a byte/);
+  for (const invalid of ["0x100", "12x", "1.5", "+1", "0x", "000"]) {
+    assert.throws(() => parseHexBytes(invalid), /not a byte/);
+  }
 });

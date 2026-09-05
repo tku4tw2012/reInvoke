@@ -1,5 +1,10 @@
 # Phase 3 extracted analysis
 
+> [!NOTE]
+> **Historical firmware evidence.** This Phase 3 text layer does not describe
+> the current reInvoke runtime. See the
+> [current contract](../../current-product-contract.md).
+
 This text layer records the small, high-value configuration evidence extracted
 from firmware held in the sibling archive. Binary payloads and complete
 filesystem trees remain outside Git.

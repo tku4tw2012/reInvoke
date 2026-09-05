@@ -3,7 +3,21 @@
 
 package main
 
-import "testing"
+import (
+	"context"
+	"os"
+	"testing"
+)
+
+type recordingMCUEventBus struct {
+	frame [6]byte
+	reads int
+}
+
+func (bus *recordingMCUEventBus) ReadMCUEvent() ([6]byte, error) {
+	bus.reads++
+	return bus.frame, nil
+}
 
 func TestGPIOPollRequiresPriorityEdge(t *testing.T) {
 	hasEdge, err := gpioPollHasEdge(pollPriority | pollError)
@@ -17,6 +31,65 @@ func TestGPIOPollRequiresPriorityEdge(t *testing.T) {
 	hasEdge, err = gpioPollHasEdge(0)
 	if err != nil || hasEdge {
 		t.Fatalf("empty wakeup = %t, error = %v", hasEdge, err)
+	}
+}
+
+func TestDrainReadsLatchedEventAfterInterruptReturnsHigh(t *testing.T) {
+	value, err := os.CreateTemp(t.TempDir(), "gpio-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer value.Close()
+	if _, err := value.WriteString("1"); err != nil {
+		t.Fatal(err)
+	}
+
+	bus := &recordingMCUEventBus{frame: [6]byte{0x04, 0x04}}
+	source := gpioEventSource{value: value, bus: bus}
+	events := make(chan inputEvent, 1)
+	if err := source.drainPendingEvents(
+		context.Background(),
+		make([]byte, 8),
+		events,
+		true,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if bus.reads != 1 {
+		t.Fatalf("MCU reads = %d, want 1", bus.reads)
+	}
+	select {
+	case event := <-events:
+		if event.Name != "micmute" {
+			t.Fatalf("event = %#v, want micmute", event)
+		}
+	default:
+		t.Fatal("latched MCU event was not published")
+	}
+}
+
+func TestDrainDoesNotReadWithoutEdgeWhenInterruptIsHigh(t *testing.T) {
+	value, err := os.CreateTemp(t.TempDir(), "gpio-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer value.Close()
+	if _, err := value.WriteString("1"); err != nil {
+		t.Fatal(err)
+	}
+
+	bus := &recordingMCUEventBus{frame: [6]byte{0x04, 0x04}}
+	source := gpioEventSource{value: value, bus: bus}
+	if err := source.drainPendingEvents(
+		context.Background(),
+		make([]byte, 8),
+		nil,
+		false,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if bus.reads != 0 {
+		t.Fatalf("MCU reads = %d, want 0", bus.reads)
 	}
 }
 
