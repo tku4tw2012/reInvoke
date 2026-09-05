@@ -44,7 +44,7 @@ and initramfs loaded through yellow-mode U-Boot.
 | Microphone capture | The ALSA capture path is resolved: stereo 48 kHz `S32_LE`, 256-frame periods, and 16 periods are verified. Speech/tap correlation was observed while unmuted, and an accepted restart/privacy test captured only zero samples while muted. This proves the software privacy path, not an independent electrical disconnect. |
 | Microphone privacy | Mic-Mute means microphone privacy, not speaker mute. One process-lifetime controller in the MCU service owns physical-button and compatibility-API changes, RAM state, retry, and the red privacy indication. |
 | Physical controls | Rotary volume, Mic-Mute short press, and Bluetooth long press are implemented and observed. Other decoded keys are published for compatibility but do not yet have complete product actions. |
-| LEDs | Animation transport and `ledOff` are recovered. Privacy red-ring on/off and the white pairing indication were observed. Asset names are inherited evidence, not a complete semantic specification for every color or animation. |
+| LEDs | Animation transport, `ledOff`, and the separate front/rear `ledSet` transport are recovered. Privacy red-ring on/off and the top-ring white pairing indication were observed. The owned `ledSet` encoder is host-tested but its physical front and rear outputs have not yet been validated under reInvoke. Asset names are inherited evidence, not a complete semantic specification for every color or animation. |
 | Networking | SD8887 station and STA/uAP modes work in RAM. `reinvoke-networkd` owns DHCP, route, and resolver state after a root-controlled supplicant connects. The authenticated provisioning parser and privileged apply adapter work, but the final physical-button-to-AP orchestration is not yet a normal product path. |
 | Local control | Bonefish provides a legacy MessagePack WAMP compatibility bus. It is unauthenticated, so it is not a public network API. PID 1 accepts ports 9998 and 9999 from loopback and from configured operator allowlist entries, then drops the rest in the INPUT chain. The allowlist is operator-local configuration and is empty by default. Images before v13 carry no firewall and listen on every interface. |
 
@@ -110,6 +110,29 @@ shared expander register.
 `reinvoke-dsp-interface` is the sole owner of the DSP SPI link, handshake GPIOs,
 DSP reset bit, boot-image download, command correlation, and private microphone
 socket. It never calls the amplifier or DAC unmute procedures on DSP boot.
+
+### Front and rear indicator contract
+
+The MCU service registers `com.harman.ledSet`. It requires a first positional
+target and recognizes `front` and `back`; optional `mode` and `color` keyword
+arguments follow the donor contract. Extra positional arguments and unknown
+keyword keys are ignored. Modes encode as `off=0`, `on=1`, `dim=2`,
+`slow-blink=3`, and `fast-blink=4`. Front `white` and `amber` are mutually
+exclusive, while back ignores colour. Unknown targets or front colours send
+the unchanged confirmed state. The service persists the three confirmed
+channel states and sends:
+
+```text
+09 <front-amber> <front-white> <back> 00 00
+```
+
+as one fixed command to MCU address `0x36`. It serializes state and transport,
+rolls back candidate state on I2C failure, and propagates that failure to the
+WAMP caller. The final zero bytes replace indeterminate donor stack residue.
+This contract is supported by static donor disassembly and host tests; it does
+not yet constitute physical validation of either indicator under reInvoke.
+These indicators are separate from the top-ring animation and microphone
+privacy policy.
 
 ### Bluetooth and audio dependencies
 
@@ -243,18 +266,20 @@ accepted image is not a released persistent firmware.
 
 Remaining gates are:
 
-1. cold-boot the v15 candidate and complete boots 4 and 5. Boot 3 ran on v14
+1. cold-boot the v16 candidate and complete boots 4 and 5. Boot 3 ran on v14
    and passed all 23 native acceptance checks, including the DSP fix. Later
-   fault injection exposed two lifecycle regressions now fixed in v15: DSP
-   response retries had started retransmitting commands, and replacement
-   `bluetoothd` generations did not reinitialize `hci0`;
-2. confirm on v15 that a missed DSP response is retried without retransmitting
+   fault injection exposed two lifecycle regressions fixed in v15 and carried
+   into v16: DSP response retries had started retransmitting commands, and
+   replacement `bluetoothd` generations did not reinitialize `hci0`;
+2. confirm on v16 that a missed DSP response is retried without retransmitting
    the command, and that a replacement `bluetoothd` receives a powered
    controller before its pairing agent starts;
 3. confirm the WAMP allowlist closes ports 9998 and 9999 to non-allowlisted
    sources on a live network;
-4. complete one attended playback-continuity run on that image; and
-5. finish physical-button orchestration for an isolated provisioning window.
+4. validate the recovered front and rear indicator transport on the physical
+   diffusers;
+5. complete one attended playback-continuity run on that image; and
+6. finish physical-button orchestration for an isolated provisioning window.
 
 Entering yellow mode requires the recovery button held at power-on, so cold-boot
 gates cannot be driven from software and need the operator present.
