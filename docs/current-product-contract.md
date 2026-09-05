@@ -44,7 +44,7 @@ and initramfs loaded through yellow-mode U-Boot.
 | Microphone capture | The ALSA capture path is resolved: stereo 48 kHz `S32_LE`, 256-frame periods, and 16 periods are verified. Speech/tap correlation was observed while unmuted, and an accepted restart/privacy test captured only zero samples while muted. This proves the software privacy path, not an independent electrical disconnect. |
 | Microphone privacy | Mic-Mute means microphone privacy, not speaker mute. One process-lifetime controller in the MCU service owns physical-button and compatibility-API changes, RAM state, retry, and the red privacy indication. |
 | Physical controls | Rotary volume, Mic-Mute short press, Action short press, Bluetooth long press, and Mic-Mute long press have owned actions. Action toggles Bluetooth play/pause. Bluetooth long reopens the bounded pairing window as a compatibility fallback. Mic-Mute long requests the isolated provisioning window when the image is booted in STA/uAP mode. Other decoded keys are published for compatibility. |
-| LEDs | Animation transport, `ledOff`, and the separate front/rear `ledSet` transport are recovered. Privacy red-ring on/off and the top-ring white pairing indication were observed. The owned `ledSet` encoder is host-tested but its physical front and rear outputs have not yet been validated under reInvoke. Asset names are inherited evidence, not a complete semantic specification for every color or animation. |
+| LEDs | Animation transport, `ledOff`, and the separate front/rear `ledSet` transport are recovered. Privacy red-ring on/off and the top-ring white pairing indication were observed. The owned `ledSet` path physically switched the lower-front diffuser between amber and white, exercised slow/fast blink and off, and controlled the rear light beside the Bluetooth button with on, slow/fast blink, dim, and off. The rear dim state was steady, but its brightness difference was inconclusive. |
 | Networking | SD8887 station and STA/uAP modes work in RAM. `reinvoke-networkd` owns DHCP, route, and resolver state after a root-controlled supplicant connects. The authenticated provisioning parser and privileged apply adapter work, but the final physical-button-to-AP orchestration is not yet a normal product path. |
 | Local control | Bonefish provides a legacy MessagePack WAMP compatibility bus. It is unauthenticated, so it is not a public network API. PID 1 accepts ports 9998 and 9999 from loopback and from configured operator allowlist entries, then drops the rest in the INPUT chain. The allowlist is operator-local configuration and is empty by default. Images before v13 carry no firewall and listen on every interface. |
 
@@ -129,10 +129,12 @@ channel states and sends:
 as one fixed command to MCU address `0x36`. It serializes state and transport,
 rolls back candidate state on I2C failure, and propagates that failure to the
 WAMP caller. The final zero bytes replace indeterminate donor stack residue.
-This contract is supported by static donor disassembly and host tests; it does
-not yet constitute physical validation of either indicator under reInvoke.
-These indicators are separate from the top-ring animation and microphone
-privacy policy.
+This contract is supported by static donor disassembly, host tests, and physical
+v17 validation. Front amber/white mutual exclusion, slow/fast blink, and off
+were observed on the lower-front diffuser. Rear on, slow/fast blink, dim, and off
+were observed beside the Bluetooth button; the dim state was steady, but a
+brightness reduction could not be distinguished. These indicators are separate
+from the top-ring animation and microphone privacy policy.
 
 The donor rear-indicator policy is state-driven:
 
@@ -288,19 +290,18 @@ accepted image is not a released persistent firmware.
 
 Remaining gates are:
 
-1. remove power completely, then cold-boot the v17 candidate. Boot 4 on v16
-   passed all 23 native acceptance checks, but a later microphone command
-   exposed the checksum failure previously reproduced with the original donor
-   client after repeated warm resets. Another reset is not a useful test;
-2. confirm after that clean-power boot that microphone mute responds and
-   restores across a DSP restart, and that a replacement `bluetoothd` receives
-   a powered controller before its pairing agent starts;
+1. cold-boot the v17 candidate and request `getVer` before Mic-Mute, matching
+   the earlier successful command order. Boot 4 on v16 passed all 23 native
+   acceptance checks, but a later microphone command exposed the same checksum
+   failure with both current and accepted-v12 DSP binaries. Every yellow-mode
+   cycle included power removal, so warm state is ruled out;
+2. confirm microphone mute responds and restores across a DSP restart, and that
+   a replacement `bluetoothd` receives a powered controller before its pairing
+   agent starts;
 3. confirm the WAMP allowlist closes ports 9998 and 9999 to non-allowlisted
    sources on a live network;
-4. validate the recovered front and rear indicator transport on the physical
-   diffusers;
-5. complete one attended playback-continuity run on that image; and
-6. finish physical-button orchestration for an isolated provisioning window.
+4. complete one attended playback-continuity run on that image; and
+5. finish physical-button orchestration for an isolated provisioning window.
 
 Entering yellow mode requires the recovery button held at power-on, so cold-boot
 gates cannot be driven from software and need the operator present.
