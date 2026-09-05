@@ -291,7 +291,8 @@ The link again sends exactly once. A rejected or all-zero header sleeps, waits
 for Ready, and retries receive only. Valid unrelated frames are still preserved
 and response ID/opcode correlation remains. Unit tests assert one command
 transmission across the retry. A RAM-only replacement on the already
-warm-wedged DSP did not recover it, so cold-boot confirmation remains necessary.
+unresponsive DSP did not recover it, so a new boot confirmation remained
+necessary.
 The speculative one-second post-boot settle tested during diagnosis did not
 help and was removed.
 
@@ -387,11 +388,11 @@ the DSP downloaded all 40,121 transfers, and `EVENT_DSP_BOOTUP` arrived.
 The first microphone-mute control request changed the authoritative RAM state
 to `muted`, then received an all-zero DSP response header. The DSP subsequently
 booted but failed every attempt to restore muted state. Replacing it in RAM with
-the preserved accepted-v12 DSP binary produced the same result. This rules out
-the v15 response-retry change as the cause. Earlier acceptance records already
-show the original donor client failing checksums after repeated warm resets, so
-the remaining discriminator is a genuine power removal, not another reset into
-yellow mode.
+the preserved accepted-v12 DSP binary produced the same result. This rules out the v15 response-retry change as the cause. The operator later
+clarified that every yellow-mode cycle included power removal, so the same
+result also rules out the earlier warm-reset explanation. The next discriminator
+is command order: the earlier successful sequence requested `getVer` before
+Mic-Mute.
 
 That degraded state exposed a separate MCU coupling. Every failed DSP-session
 mute reconciliation returned an error from `handleDSPSessionEvent`, which tore
@@ -422,3 +423,38 @@ the runtime manifest is
 and the 32,390,080-byte initramfs is
 `2d0f17105343b9f8d5cd3d0cb8a530608c8c62ad73b5b3380c365eda7fc21cd4`.
 Both runtime and initramfs were built twice byte-identically.
+
+### Armed-catcher first-attempt regression
+
+The last two armed cycles sent commands before the new BootROM/U-Boot banner,
+and U-Boot never echoed or processed image 81. A manual retry after the actual
+prompt worked. This is not a device requirement for two attempts.
+
+The waiter previously accepted any prompt appended after its byte offset. When
+armed against a running Linux gadget, a delayed prompt from the old console
+generation could satisfy that condition after USB disconnected. It now records
+whether Linux was present when armed and, in that case, requires both a new
+`U-Boot 2013.04` banner and prompt after the offset. A deterministic regression
+test appends a stale prompt, proves the waiter stays blocked, then appends the
+new banner and prompt and proves it releases.
+
+### Physical indicator acceptance
+
+With the v17 MCU service kept online during degraded DSP retries, an attended
+test exercised the recovered fixed-command transport:
+
+* front `on` amber: steady amber/orange;
+* front `on` white: switched from amber to steady white;
+* front `slow-blink` amber: visibly slow;
+* front `fast-blink` white: visibly faster;
+* front `off`: fully dark;
+* back `on`: steady light visible beside the Bluetooth button;
+* back `slow-blink`: visibly slow;
+* back `fast-blink`: visibly faster;
+* back `dim`: steady output, with brightness reduction inconclusive; and
+* back `off`: fully dark.
+
+Every WAMP call returned success and the MCU process remained alive. Front
+amber/white mutual exclusion and the physical rear aperture are therefore
+confirmed. Automatic Bluetooth-state policy remains separate work; this test
+only proves direct indicator control.

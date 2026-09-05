@@ -10,9 +10,11 @@ ms.topic: overview
 Implementation is 99 percent complete for this RPI cycle. LED clearing,
 playback continuity, fail-closed microphone routing, service fault injection,
 and reproducible ARM artifacts are implemented and machine-tested in RAM.
-Four boot cycles are complete. The final cycle must start after complete power
-removal rather than another warm reset. Final DSP/Bluetooth fault confirmation,
-physical indicator observation, and attended playback remain.
+Four boot cycles are complete. Every yellow-mode cycle included power removal,
+so DSP command failure is not a warm-reset artifact. The final cycle must test
+`getVer` before Mic-Mute to reproduce the earlier successful order. Final
+DSP/Bluetooth fault confirmation, physical indicator observation, and attended
+playback remain.
 
 ## Completed in iteration 1
 
@@ -76,9 +78,9 @@ physical indicator observation, and attended playback remain.
 * Disassembled the donor DSP loop and proved the original owned transmit order
   was reversed. The corrected service now sends the command before waiting for
   the response-ready edge.
-* A controlled donor-client test also failed its checksum on the heavily
-  warm-reset DSP state. Final response validation therefore waits for one clean
-  power cycle; no reset will be requested while the operator is away.
+* A controlled donor-client test also failed its checksum after a reset cycle.
+  Later operator clarification established that every yellow-mode cycle removed
+  power, so warm state was not proved by this result.
 * Added five owned WAMP volume and mute procedures backed by the real BlueALSA
   PCM. Live calls read and changed volume, toggled software mute, and continued
   to reject direct physical unmute.
@@ -350,15 +352,17 @@ attended audible output, and microphone correlation.
 * Built two byte-identical 32,389,027-byte v16 initramfs images at SHA-256
   `fef5f412fd0d5589f5a1cf739c9b131127f9e788147574c4388ef7122eea4453`.
   v16 keeps the v15 lifecycle fixes and adds the indicator contract.
-* Physical front and rear indicator validation remains outstanding; this
-  iteration records static donor evidence and host validation only.
+* Physical validation later confirmed front amber/white mutual exclusion,
+  front slow/fast blink and off, and rear on, slow/fast blink, dim, and off.
+  Rear `dim` was steady, but its brightness delta was inconclusive.
 
 ## Completed in iteration 19
 
 * Booted v16 and passed all 23 native acceptance checks.
 * Proved the preserved accepted-v12 DSP binary also fails response validation
-  on the current heavily warm-reset part. A true power removal is required to
-  distinguish hardware state; another reset is not useful.
+  on the same hardware state. Operator clarification later established that
+  every yellow-mode entry included power removal, so this rules out both the
+  v15 retry change and a merely warm reset.
 * Decoupled MCU WAMP lifetime from failed DSP mute reconciliation. Failure is
   logged and scheduled on the existing background retry without withdrawing
   unrelated MCU procedures.
