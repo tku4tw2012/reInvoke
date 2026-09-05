@@ -158,6 +158,21 @@ on a matching ERROR, and queues everything else for the session loop, bounded at
 DSP seven and one, so both had a wide window. Tests cover interleaved traffic on
 both clients and an ERROR reply on the MCU.
 
+### ledSet vocabulary recovered
+
+The front Wi-Fi diffuser and rear pairing indicator are driven by
+`com.harman.ledSet`, which reInvoke does not implement. Static recovery from the
+donor `mcu-interface` and `audio-ui` gives targets `front` and `back`, related
+names `wifi` and `bluetooth`, states `slow-blink` and `fast-blink`, colours
+`white`, `amber`, `green`, `blue`, and `black`, and a separate brightness
+procedure bounded to 0-100. That matches both observed behaviours: amber and
+white Wi-Fi states, and a rear slow-blink while pairing is open.
+
+The wire transport is still unresolved. Argument order, opcode, and frame layout
+need handler disassembly, as `ledAnimate` and `ledOff` did. These indicators must
+not be approximated with top-ring animations, which would report Wi-Fi and
+pairing state on the wrong physical part.
+
 ### Remaining
 
 Cold boots 2 through 5 need the operator, because yellow mode requires the
