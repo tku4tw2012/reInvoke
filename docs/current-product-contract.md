@@ -243,7 +243,10 @@ accepted image is not a released persistent firmware.
 
 Remaining gates are:
 
-1. cold-boot the v13 candidate and complete boots 2 through 5;
+1. cold-boot the v14 candidate and complete boots 2 through 5. Boot 2 ran on
+   v13 and passed the firewall, privacy-boundary, and setup-reader gates, but
+   exposed a kernel SPI regression that stopped the DSP from booting. v14 fixes
+   it and is staged;
 2. validate the complete startup order and pairing-agent generation guard from
    that image;
 3. confirm the WAMP allowlist closes ports 9998 and 9999 to non-allowlisted
