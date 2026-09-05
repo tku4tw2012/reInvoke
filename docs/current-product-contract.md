@@ -288,14 +288,13 @@ accepted image is not a released persistent firmware.
 
 Remaining gates are:
 
-1. cold-boot the v16 candidate and complete boots 4 and 5. Boot 3 ran on v14
-   and passed all 23 native acceptance checks, including the DSP fix. Later
-   fault injection exposed two lifecycle regressions fixed in v15 and carried
-   into v16: DSP response retries had started retransmitting commands, and
-   replacement `bluetoothd` generations did not reinitialize `hci0`;
-2. confirm on v16 that a missed DSP response is retried without retransmitting
-   the command, and that a replacement `bluetoothd` receives a powered
-   controller before its pairing agent starts;
+1. remove power completely, then cold-boot the v17 candidate. Boot 4 on v16
+   passed all 23 native acceptance checks, but a later microphone command
+   exposed the checksum failure previously reproduced with the original donor
+   client after repeated warm resets. Another reset is not a useful test;
+2. confirm after that clean-power boot that microphone mute responds and
+   restores across a DSP restart, and that a replacement `bluetoothd` receives
+   a powered controller before its pairing agent starts;
 3. confirm the WAMP allowlist closes ports 9998 and 9999 to non-allowlisted
    sources on a live network;
 4. validate the recovered front and rear indicator transport on the physical
