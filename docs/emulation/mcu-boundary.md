@@ -167,8 +167,40 @@ The owned `ledOff` path is now resolved and physically verified: it cancels the
 ordinary animation and sends a 41-byte packet containing opcode `0x0e`,
 first-chunk flag `0x01`, and three zero 13-byte frames. It cleared the red ring
 after microphone unmute. Generic `ledOff` and animation calls are rejected while
-microphone mute requires the protected privacy indication. Direct `ledSet`
-semantics remain unresolved.
+microphone mute requires the protected privacy indication.
+
+### Recovered `ledSet` vocabulary
+
+The Invoke has indicators the top ring does not cover: a small front diffuser
+for Wi-Fi and a rear indicator used during Bluetooth pairing. `com.harman.ledSet`
+drives them, and reInvoke does not implement it.
+
+Static string recovery from the donor `mcu-interface` and `audio-ui` gives the
+argument vocabulary. These tokens sit together in the string table, and
+`audio-ui` references `com.harman.ledSet` alongside `front`, `back`, and
+`slow-blink`.
+
+| Field | Recovered tokens |
+|---|---|
+| Target | `front`, `back` |
+| Related target names | `wifi`, `bluetooth` |
+| State | `slow-blink`, `fast-blink` |
+| Colour | `white`, `amber`, `green`, `blue`, `black` |
+
+Brightness is a separate procedure, `com.harman.vui.SetRGBLEDBrightness`, which
+rejects out-of-range input with `brightness value error. need to be 0-100`.
+
+This is consistent with the two behaviours observed on hardware and in the retail
+manual: amber and white Wi-Fi states on the front diffuser, and a rear
+slow-blink while Bluetooth pairing is open. `black` reads as the off state rather
+than a colour.
+
+Vocabulary is not transport. What the `ledSet` handler writes to MCU address
+`0x36` is still unresolved, so the argument order, the opcode, and the frame
+layout remain unknown. Recovering those needs disassembly of the handler in the
+same way `ledAnimate` and `ledOff` were recovered. Until then these indicators
+must not be approximated with top-ring animations, because that would report
+Wi-Fi and pairing state on the wrong physical part.
 
 ## Physical RAM-native validation
 
