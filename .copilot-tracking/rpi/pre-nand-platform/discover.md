@@ -250,3 +250,78 @@ One MCU log line appeared during the DSP restart storm and has not been
 explained: `rotary input: MCU interrupt remained low after 1024 pending reads`.
 It may be a consequence of the DSP crash-loop contending for the shared IO
 expander. Re-check it on the v14 boot, when the DSP is healthy.
+
+## Iteration 17: cold boot 3 on v14
+
+The host reboot removed the old USB boot session, relay, FIFO, and armed
+catcher. The v14 images survived with their expected hashes. A new session was
+started from scratch, all safety gates passed, and the catcher injected v14
+when the operator entered yellow mode. ADB returned in five seconds.
+
+### v14 acceptance
+
+The bounded SPI-ready wait fixed the v13 regression:
+
+* the DSP downloaded all 40,121 transfers and 160,484 bytes;
+* it registered seven procedures;
+* `EVENT_DSP_BOOTUP` arrived; and
+* the native acceptance suite passed 23 of 23 checks, including the WAMP
+  firewall, DSP marker, and all supervised services.
+
+One DSP restart also completed the full download, recreated the private
+microphone socket, and restored the boot marker.
+
+### DSP response-retry regression
+
+An experimental capture probe opened the verified 48 kHz stereo `S32_LE`
+device but timed out in the codec DMA path. The next microphone-mute request
+changed the durable RAM state to `muted`, then received an all-zero DSP response
+header. That is fail-closed, but the DSP service treated the missing response as
+a link failure. Every following service generation booted the DSP, then failed
+while restoring the muted state and restarted.
+
+The link refactor in v13 had changed an important older behavior. Previously it
+sent a command once, then retried the response read after sleeping and waiting
+for active-low Ready again. The refactor instead retransmitted the complete
+command up to three times. That loses the behavior already documented after
+the first all-zero-header hardware finding and can duplicate a command whose
+effect occurred even though its response was missed.
+
+The link again sends exactly once. A rejected or all-zero header sleeps, waits
+for Ready, and retries receive only. Valid unrelated frames are still preserved
+and response ID/opcode correlation remains. Unit tests assert one command
+transmission across the retry. A RAM-only replacement on the already
+warm-wedged DSP did not recover it, so cold-boot confirmation remains necessary.
+The speculative one-second post-boot settle tested during diagnosis did not
+help and was removed.
+
+### Bluetooth generation lifecycle
+
+Fault injection validated the generation guard itself:
+
+* old `bluetoothd` PID 913 and pairing-agent PID 965;
+* the old agent was gone within one second of killing the daemon;
+* new `bluetoothd` PID 2958 appeared at five seconds; and
+* new pairing-agent PID 2985 appeared at six seconds.
+
+The test exposed a separate gap. `hci-init --reset` ran only before the first
+daemon generation. The restarted daemon therefore saw `hci0` as `Not Powered`,
+and replacement agents failed in bounded cleanup/retry cycles. Running the
+owned HCI initializer live restored the real 120-second pairing window.
+
+PID 1 now wraps every supervised `bluetoothd` generation with
+`hci-init --reset`, then `exec`s the daemon so the PID file still identifies the
+actual generation. The existing pairing guard therefore invalidates old agents
+on PID change, and every replacement daemon starts with an initialized,
+powered controller.
+
+### v15 candidate
+
+The kernel stays at
+`d29a007535794d74d8ed900da366f02631a9a981356caea707e6b163f6d07746`.
+The v15 runtime manifest is
+`4685923f86a8e485cc5be4bf0618384593b488ddfbf481525e174f8aa3cfc6bb`,
+and the 32,382,132-byte initramfs is
+`9ab76db2ee7f8d9e7533355ce91d2dde014205a5d6f22111096db256004eddd9`.
+Two independent runtime and initramfs builds agree byte for byte. The pair is
+staged for cold boot 4.

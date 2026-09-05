@@ -10,8 +10,8 @@ ms.topic: overview
 Implementation is 99 percent complete for this RPI cycle. LED clearing,
 playback continuity, fail-closed microphone routing, service fault injection,
 and reproducible ARM artifacts are implemented and machine-tested in RAM.
-Booting the accepted image, repeated cold boots, and final attended playback
-remain.
+Three cold boots are complete. Cold boots 4 and 5, final fault confirmation on
+v15, and attended playback remain.
 
 ## Completed in iteration 1
 
@@ -305,6 +305,34 @@ attended audible output, and microphone correlation.
     `e28b17016fe38078af439cf27e80c212689265cc494366849422ab5fee0389d8`
 * Staged the pair through the checksum-gated loader. It is ready to inject at
   the next yellow-mode window.
+
+## Completed in iteration 17
+
+* Caught cold boot 3 and loaded v14. ADB returned in five seconds.
+* Confirmed the bounded SPI-ready fix: the DSP downloaded 40,121 transfers,
+  emitted `EVENT_DSP_BOOTUP`, and stayed up through native acceptance.
+* Passed all 23 native acceptance checks, including storage isolation, runtime
+  hashes, the WAMP firewall, DSP readiness, and every supervised service.
+* Restarted the DSP once; it completed the download, recreated its private
+  microphone socket, and restored its boot marker.
+* Validated the pairing-agent generation guard on hardware. The old agent died
+  within one second of `bluetoothd`; the replacement daemon appeared at five
+  seconds and its replacement agent at six.
+* Found that HCI initialization only covered the first daemon generation.
+  Restarted BlueZ therefore saw `hci0` as not powered. Live `hci-init --reset`
+  restored a real 120-second pairing window. PID 1 now initializes HCI before
+  every supervised daemon generation.
+* Found that the response-correlation refactor retransmitted an entire DSP
+  command after an all-zero response header. Restored the earlier receive-only
+  retry: send once, sleep, wait for Ready, and retry response reads. This avoids
+  duplicating an effect whose acknowledgement was missed.
+* Built the DSP binary twice at SHA-256
+  `c64bf11cd821b92a8362a55523e2b6d7afeb350a66cd8894d2c76d11849d7be9`.
+* Built two byte-identical v15 runtime manifests at SHA-256
+  `4685923f86a8e485cc5be4bf0618384593b488ddfbf481525e174f8aa3cfc6bb`.
+* Built two byte-identical 32,382,132-byte v15 initramfs images at SHA-256
+  `9ab76db2ee7f8d9e7533355ce91d2dde014205a5d6f22111096db256004eddd9`.
+* Staged v15 with the unchanged reproducible v14 kernel for cold boot 4.
 
 ## Change log
 
