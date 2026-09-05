@@ -243,12 +243,14 @@ accepted image is not a released persistent firmware.
 
 Remaining gates are:
 
-1. cold-boot the v14 candidate and complete boots 2 through 5. Boot 2 ran on
-   v13 and passed the firewall, privacy-boundary, and setup-reader gates, but
-   exposed a kernel SPI regression that stopped the DSP from booting. v14 fixes
-   it and is staged;
-2. validate the complete startup order and pairing-agent generation guard from
-   that image;
+1. cold-boot the v15 candidate and complete boots 4 and 5. Boot 3 ran on v14
+   and passed all 23 native acceptance checks, including the DSP fix. Later
+   fault injection exposed two lifecycle regressions now fixed in v15: DSP
+   response retries had started retransmitting commands, and replacement
+   `bluetoothd` generations did not reinitialize `hci0`;
+2. confirm on v15 that a missed DSP response is retried without retransmitting
+   the command, and that a replacement `bluetoothd` receives a powered
+   controller before its pairing agent starts;
 3. confirm the WAMP allowlist closes ports 9998 and 9999 to non-allowlisted
    sources on a live network;
 4. complete one attended playback-continuity run on that image; and

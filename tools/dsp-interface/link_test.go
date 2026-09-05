@@ -324,18 +324,18 @@ func TestTransmitRetriesRejectedResponse(t *testing.T) {
 	if retryDelayCount != 1 {
 		t.Fatalf("retry delays = %d, want 1", retryDelayCount)
 	}
-	if got := link.Stats().FramesSent; got != 2 {
-		t.Fatalf("frames sent = %d, want command retransmission", got)
+	if got := link.Stats().FramesSent; got != 1 {
+		t.Fatalf("frames sent = %d, want one command transmission", got)
 	}
 	if err := <-completion; err != nil {
 		t.Fatalf("tracked command completion = %v, want nil", err)
 	}
 	commandLength := frameLength(1)
 	responseLength := frameLength(1)
-	wantTransfers := 2*commandLength + 9 + responseLength
+	wantTransfers := commandLength + 9 + responseLength
 	if len(spi.Recorded) != wantTransfers {
 		t.Fatalf(
-			"transfer count = %d, want %d after command retransmission",
+			"transfer count = %d, want %d after response retry",
 			len(spi.Recorded),
 			wantTransfers,
 		)
@@ -409,10 +409,10 @@ func TestTransmitPreservesUnrelatedValidFrame(t *testing.T) {
 	}
 }
 
-// TestTransmitResendsCommandAfterRejectedResponse proves the link follows the
-// donor loop by retransmitting the request instead of repeatedly reading a
-// response that the DSP never produced.
-func TestTransmitResendsCommandAfterRejectedResponse(t *testing.T) {
+// TestTransmitRetriesReceiveAfterRejectedResponse proves a silent bus read
+// waits for Ready again without repeating a command that the DSP may already
+// have applied.
+func TestTransmitRetriesReceiveAfterRejectedResponse(t *testing.T) {
 	spi := newMemorySPI()
 	spi.Queue([]byte{
 		0x00, 0x00, 0x00, 0x00, 0x00, 0, 0, 0, 0,
@@ -440,10 +440,10 @@ func TestTransmitResendsCommandAfterRejectedResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("transmit failed despite DSP becoming ready again: %v", err)
 	}
-	if readyReads < 2 {
-		t.Fatalf("ready line read %d times, want one check per transmission", readyReads)
+	if readyReads < 3 {
+		t.Fatalf("ready line read %d times, want retry to wait for Ready", readyReads)
 	}
-	if got := link.Stats().FramesSent; got != 2 {
-		t.Fatalf("frames sent = %d, want command retransmission", got)
+	if got := link.Stats().FramesSent; got != 1 {
+		t.Fatalf("frames sent = %d, want one command transmission", got)
 	}
 }

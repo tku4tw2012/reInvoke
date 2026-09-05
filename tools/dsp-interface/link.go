@@ -46,7 +46,7 @@ const (
 	maxDevicePayload   = 64
 	maxHeaderShifts    = 4
 	maxUnrelatedFrames = 8
-	maxTransmitRetries = 3
+	maxReceiveRetries  = 3
 	receiveRetryDelay  = 100 * time.Millisecond
 )
 
@@ -442,21 +442,7 @@ func (l *link) Poll() (*frame, bool, error) {
 }
 
 func (l *link) transmit(message []byte) (*frame, error) {
-	var lastError error
-	for attempt := 0; attempt < maxTransmitRetries; attempt++ {
-		received, err := l.transmitOnce(message)
-		if err == nil {
-			return received, nil
-		}
-		if !isFrameError(err) {
-			return nil, err
-		}
-		lastError = err
-		if attempt+1 < maxTransmitRetries {
-			l.sleep(receiveRetryDelay)
-		}
-	}
-	return nil, fmt.Errorf("%w: %v", errCommandResponse, lastError)
+	return l.transmitOnce(message)
 }
 
 func (l *link) transmitOnce(message []byte) (*frame, error) {
@@ -480,10 +466,29 @@ func (l *link) transmitOnce(message []byte) (*frame, error) {
 	l.mu.Unlock()
 	expectedID := uint16(message[0])<<8 | uint16(message[1])
 	expectedCode := message[5]
-	for unrelated := 0; unrelated <= maxUnrelatedFrames; unrelated++ {
+	var lastReceiveError error
+	receiveFailures := 0
+	unrelated := 0
+	for unrelated <= maxUnrelatedFrames {
 		received, err := l.receive()
 		if err != nil {
-			return nil, err
+			if !isFrameError(err) {
+				return nil, err
+			}
+			lastReceiveError = err
+			receiveFailures++
+			if receiveFailures >= maxReceiveRetries {
+				return nil, fmt.Errorf(
+					"%w: %v",
+					errCommandResponse,
+					lastReceiveError,
+				)
+			}
+			l.sleep(receiveRetryDelay)
+			if err := l.waitReady(); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		actualCode, hasCode := received.Code()
 		if received.ID == expectedID && hasCode && actualCode == expectedCode {
@@ -493,7 +498,8 @@ func (l *link) transmitOnce(message []byte) (*frame, error) {
 		l.stats.FramesRejected++
 		l.mu.Unlock()
 		l.stashFrame(*received)
-		if unrelated == maxUnrelatedFrames {
+		unrelated++
+		if unrelated > maxUnrelatedFrames {
 			break
 		}
 		if err := l.waitReady(); err != nil {

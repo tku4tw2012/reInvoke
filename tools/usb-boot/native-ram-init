@@ -161,6 +161,18 @@ run_with_bluetoothd_generation() {
   return "${guard_child_status}"
 }
 
+run_bluetoothd_generation() {
+  generation_hci_init="$1"
+  shift
+  until ${BB} test -e /run/reinvoke/shutdown ||
+    "${generation_hci_init}" --reset; do
+    log "HCI initialization failed; retrying"
+    ${BB} sleep 5
+  done
+  ${BB} test -e /run/reinvoke/shutdown && return 0
+  exec "$@"
+}
+
 configure_wamp_firewall() {
   ${BB} mkdir -p /usr/lib/xtables
   for module in libxt_standard.so libxt_tcp.so; do
@@ -325,13 +337,8 @@ start_autonomous_runtime() {
         ${BB} sleep 1
       done
       ${BB} test -e /run/reinvoke/shutdown && exit 0
-      until ${BB} test -e /run/reinvoke/shutdown ||
-        "${runtime_bin}/hci-init" --reset; do
-        log "HCI initialization failed; retrying"
-        ${BB} sleep 5
-      done
-      ${BB} test -e /run/reinvoke/shutdown && exit 0
       supervise bluetoothd \
+        run_bluetoothd_generation "${runtime_bin}/hci-init" \
         ${BB} env DBUS_SYSTEM_BUS_ADDRESS="${runtime_bus}" \
         "${runtime_bin}/bluetoothd" -n -p a2dp,avrcp \
         -f "${runtime_root}/etc/bluez-main.conf"
