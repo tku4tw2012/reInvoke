@@ -6,8 +6,13 @@ current clock and the header checksum that covers it. Two builds of an
 identical arch/arm/boot/Image therefore produce different piggy.lzo files,
 and the difference propagates into zImage and the final uImage.
 
-Compress the input as a named file instead, with its mode and modification
+Compress a scratch copy of the input instead, with its mode and modification
 time pinned first. lzop then records those fixed values.
+
+The copy matters. Pinning the times on the input itself would leave
+arch/arm/boot/Image permanently older than the vmlinux it is built from, so
+if_changed would rebuild the whole objcopy, compress, link, and image tail on
+every later make even with no source change.
 
 The kernel's own LZO decompressor is unaffected. parse_header() in
 lib/decompress_unlzo.c skips the mode, both mtime words, the file name, and
@@ -16,16 +21,18 @@ nothing it reads.
 
 --- a/scripts/Makefile.lib
 +++ b/scripts/Makefile.lib
-@@ -303,8 +303,10 @@
+@@ -303,9 +303,11 @@
  	(rm -f $@ ; false)
  
  quiet_cmd_lzo = LZO     $@
 -cmd_lzo = (cat $(filter-out FORCE,$^) | \
 -	lzop -9 && $(call size_append, $(filter-out FORCE,$^))) > $@ || \
-+cmd_lzo = (chmod 0644 $(filter-out FORCE,$^) && \
-+	touch -d @0 $(filter-out FORCE,$^) && \
-+	lzop -9 -c $(filter-out FORCE,$^) && \
-+	$(call size_append, $(filter-out FORCE,$^))) > $@ || \
- 	(rm -f $@ ; false)
+-	(rm -f $@ ; false)
++cmd_lzo = (cp $(filter-out FORCE,$^) $@.in && chmod 0644 $@.in && \
++	touch -d @0 $@.in && lzop -9 -c $@.in && \
++	$(call size_append, $(filter-out FORCE,$^))) > $@ && \
++	rm -f $@.in || \
++	(rm -f $@ $@.in ; false)
  
  # U-Boot mkimage
+ # ---------------------------------------------------------------------------
