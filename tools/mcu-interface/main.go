@@ -272,15 +272,16 @@ func main() {
 	}
 
 	service := wampService{
-		address:    *routerHost + ":" + strconv.Itoa(*routerPort),
-		realm:      *realm,
-		controller: control,
-		media:      media,
-		lights:     lights,
-		events:     source,
-		version:    recoveredMCUVersion,
-		privacy:    privacy,
-		logf:       log.Printf,
+		address:       *routerHost + ":" + strconv.Itoa(*routerPort),
+		realm:         *realm,
+		controller:    control,
+		media:         media,
+		lights:        lights,
+		indicatorLEDs: newIndicatorLEDController(bus),
+		events:        source,
+		version:       recoveredMCUVersion,
+		privacy:       privacy,
+		logf:          log.Printf,
 	}
 	log.Printf(
 		"hardware initialized muted; WAMP unmute policy=%t",

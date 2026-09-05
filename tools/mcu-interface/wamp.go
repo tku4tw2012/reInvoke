@@ -45,21 +45,23 @@ var procedures = []string{
 	"com.harman.musicMuteSet",
 	"com.harman.musicMuteToggle",
 	"com.harman.ledAnimate",
+	"com.harman.ledSet",
 	"com.harman.ledOff",
 	"com.harman.dsp.micMute",
 }
 
 type wampService struct {
-	address     string
-	realm       string
-	controller  *controller
-	media       *blueALSAController
-	lights      *ledPlayer
-	events      eventSource
-	version     string
-	flushEvents bool
-	privacy     *microphonePrivacyController
-	logf        func(string, ...interface{})
+	address       string
+	realm         string
+	controller    *controller
+	media         *blueALSAController
+	lights        *ledPlayer
+	indicatorLEDs *indicatorLEDController
+	events        eventSource
+	version       string
+	flushEvents   bool
+	privacy       *microphonePrivacyController
+	logf          func(string, ...interface{})
 }
 
 type wampConnection struct {
@@ -292,6 +294,11 @@ func (service *wampService) handleInvocation(
 	if len(message) > 4 {
 		args, _ = message[4].([]interface{})
 	}
+	kwargs := map[string]interface{}{}
+	kwargsValid := true
+	if len(message) > 5 {
+		kwargs, kwargsValid = message[5].(map[string]interface{})
+	}
 
 	var result []interface{}
 	resultKwargs := map[string]interface{}{}
@@ -389,6 +396,22 @@ func (service *wampService) handleInvocation(
 		}
 		if invocationError == nil {
 			invocationError = service.lights.Start(ctx, name, repeat)
+		}
+	case "com.harman.ledSet":
+		var target, mode, color string
+		if !kwargsValid {
+			invocationError = errors.New("invalid argument format")
+		} else {
+			target, mode, color, invocationError = indicatorLEDArguments(
+				args,
+				kwargs,
+			)
+		}
+		if invocationError == nil && service.indicatorLEDs == nil {
+			invocationError = errors.New("indicator LED controller is unavailable")
+		}
+		if invocationError == nil {
+			invocationError = service.indicatorLEDs.Set(target, mode, color)
 		}
 	case "com.harman.ledOff":
 		if len(args) != 0 {
@@ -523,6 +546,33 @@ func ledArguments(args []interface{}) (string, bool, error) {
 		return "", false, errors.New("invalid argument format")
 	}
 	return name, state == 1, nil
+}
+
+func indicatorLEDArguments(
+	args []interface{},
+	kwargs map[string]interface{},
+) (string, string, string, error) {
+	if len(args) == 0 {
+		return "", "", "", errors.New("invalid argument format")
+	}
+	target, ok := args[0].(string)
+	if !ok {
+		return "", "", "", errors.New("invalid argument format")
+	}
+	var mode, color string
+	if value, exists := kwargs["mode"]; exists {
+		mode, ok = value.(string)
+		if !ok {
+			return "", "", "", errors.New("invalid argument format")
+		}
+	}
+	if value, exists := kwargs["color"]; exists {
+		color, ok = value.(string)
+		if !ok {
+			return "", "", "", errors.New("invalid argument format")
+		}
+	}
+	return target, mode, color, nil
 }
 
 func mediaVolumeState(snapshot blueALSASnapshot) map[string]interface{} {

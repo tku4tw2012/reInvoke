@@ -1,7 +1,7 @@
 ---
 title: Pre-NAND platform implementation
 description: Implementation log for completing the owned RAM-only replacement platform
-ms.date: 2026-09-04
+ms.date: 2026-09-05
 ms.topic: overview
 ---
 
@@ -333,6 +333,24 @@ attended audible output, and microphone correlation.
 * Built two byte-identical 32,382,132-byte v15 initramfs images at SHA-256
   `9ab76db2ee7f8d9e7533355ce91d2dde014205a5d6f22111096db256004eddd9`.
 * Staged v15 with the unchanged reproducible v14 kernel for cold boot 4.
+
+## Completed in iteration 18
+
+* Statically recovered and implemented the donor `com.harman.ledSet` contract:
+  persistent front amber, front white, and back states in one zero-padded
+  six-byte opcode-`0x09` MCU command.
+* Serialized indicator state with I2C publication, retained only confirmed
+  state after failures, and added focused mapping, rollback, WAMP, and
+  concurrency tests.
+* Built the MCU binary twice at SHA-256
+  `c3db4b9e650588f7261f5967a4137a62f543a24bfca704e2b88ea44d16cbd36f`.
+* Built two byte-identical v16 runtime manifests at SHA-256
+  `1bf8622eb08517739628fd6a17737945435a000b18c7f78f7be0166266401980`.
+* Built two byte-identical 32,389,027-byte v16 initramfs images at SHA-256
+  `fef5f412fd0d5589f5a1cf739c9b131127f9e788147574c4388ef7122eea4453`.
+  v16 keeps the v15 lifecycle fixes and adds the indicator contract.
+* Physical front and rear indicator validation remains outstanding; this
+  iteration records static donor evidence and host validation only.
 
 ## Change log
 
