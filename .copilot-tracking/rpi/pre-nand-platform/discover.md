@@ -451,10 +451,73 @@ test exercised the recovered fixed-command transport:
 * back `on`: steady light visible beside the Bluetooth button;
 * back `slow-blink`: visibly slow;
 * back `fast-blink`: visibly faster;
-* back `dim`: steady output, with brightness reduction inconclusive; and
+* back `dim`: no visible output during a later isolated dark-room test; and
 * back `off`: fully dark.
 
 Every WAMP call returned success and the MCU process remained alive. Front
 amber/white mutual exclusion and the physical rear aperture are therefore
 confirmed. Automatic Bluetooth-state policy remains separate work; this test
 only proves direct indicator control.
+
+## Iteration 20: resolving DSP command timing
+
+Every yellow-mode entry in this campaign included power removal. `getVer` first
+and Mic-Mute first both failed without tracing, and the preserved accepted-v12
+binary failed identically on the same runtime, ruling out command order and the
+new response-correlation code.
+
+The original donor client initially failed too because its shell-based `devmem`
+helper parsed the final `pwd` output from `/etc/profile`. Removing that output
+in RAM and supplying the historical toolbox calling convention made the donor
+succeed on the same hardware and kernel:
+
+```text
+readmsg: 0x00 0x00 0x08 0x00 0x00 0x64 0x58
+EVENT_DSP_VERSION=0.0.64.58
+```
+
+A syscall trace of that success preserves one eight-byte transmit and one
+twelve-byte response. Donor nominal one-microsecond sleeps took 8.6-9.4 ms on
+this old kernel.
+
+Tracing the owned client made its nominal 10 ms waits take 18-19 ms. Under that
+delay it immediately completed `getVer`, then completed Mic-Mute with
+`EVENT_MIC_MUTE`. The untraced 20 ms build reproduced both successes, proving a
+timing envelope rather than a frame-format problem.
+
+Startup mute had a second timing edge. A mute acknowledged immediately after
+`EVENT_DSP_BOOTUP` did not persist into a later first capture. Waiting one
+second after the boot event, then restoring persisted mute, produced a first
+five-second capture with all 244,736 samples zero. That WAV is byte-identical to
+the later attended muted capture.
+
+The attended pair is conclusive:
+
+| State | Samples | Nonzero | RMS | Peak |
+|---|---:|---:|---:|---:|
+| unmuted | 244,224 | 244,163 (99.975%) | 88,026,326 | 1,808,420,363 |
+| muted | 244,736 | 0 | 0 | 0 |
+
+The swiveling red animation appeared for confirmed mute and cleared for
+confirmed unmute. The observer was asked only about the light; state came from
+RAM, DSP events, and DMA analysis.
+
+Focused review found that WAMP commands could still enter during the one-second
+settle. The DSP service now keeps its router session and pump live but blocks
+external dispatch on the readiness channel. Persisted startup mute uses the
+private ungated link method, then closes readiness; queued WAMP work can proceed
+only afterward. Cancellation and release are covered by unit and race tests.
+
+Evidence is outside Git under
+`reinvoke-archive/hardware/software-captures/20260905T183500Z-donor-getver-success/`,
+`reinvoke-archive/hardware/software-captures/20260905T184500Z-owned-traced-success/`,
+and
+`reinvoke-archive/hardware/usb-attempts/20260905T180300Z-v17-cold-boot-5/privacy/`.
+
+The final v19 DSP binary is
+`95c223f94594ab8658043e491434b6d206da5dfbc5be7052fd82676b8173b548`,
+the runtime manifest is
+`47343f69a1398e0dcd87abb97d716731001747e52719c9d033e4ab0e8e7959f5`,
+and the 32,389,139-byte initramfs is
+`ca9d5ce4b3cd11881a97a72c02d17a35981f6e7cfdc76f2dbf72e3537070a72d`.
+Each was reproduced independently.

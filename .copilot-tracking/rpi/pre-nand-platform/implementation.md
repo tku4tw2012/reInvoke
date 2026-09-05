@@ -353,8 +353,9 @@ attended audible output, and microphone correlation.
   `fef5f412fd0d5589f5a1cf739c9b131127f9e788147574c4388ef7122eea4453`.
   v16 keeps the v15 lifecycle fixes and adds the indicator contract.
 * Physical validation later confirmed front amber/white mutual exclusion,
-  front slow/fast blink and off, and rear on, slow/fast blink, dim, and off.
-  Rear `dim` was steady, but its brightness delta was inconclusive.
+  front slow/fast blink and off, and rear on, slow/fast blink, and off. Repeated
+  isolated ten-second front-white and rear `dim` tests produced no visible
+  output even in a dark room.
 
 ## Completed in iteration 19
 
@@ -375,6 +376,35 @@ attended audible output, and microphone correlation.
   `b3d0a36234693ed289af82dca00e926756ddaf1e57ef9c7b595a0ad9a0fae1f4`.
 * Built two byte-identical 32,390,080-byte v17 initramfs images at SHA-256
   `2d0f17105343b9f8d5cd3d0cb8a530608c8c62ad73b5b3380c365eda7fc21cd4`.
+
+## Completed in iteration 20
+
+* Captured a clean successful donor `getVer` transaction on the current
+  hardware and kernel after removing `/etc/profile` output contamination:
+  `EVENT_DSP_VERSION=0.0.64.58`.
+* Traced the owned client under the same conditions. Diagnostic tracing
+  stretched nominal 10 ms waits to 18-19 ms; `getVer` and Mic-Mute then both
+  succeeded.
+* Increased the owned handshake and release waits to the verified untraced
+  20 ms envelope. Without tracing, startup mute restore, `getVer`, unmute, and
+  mute all completed and returned the matching DSP events.
+* Added a cancellable one-second post-boot settle before restoring persisted
+  microphone mute. An immediate acknowledged startup mute had later been
+  overwritten by DSP initialization; the settled restore persisted.
+* Repeated the attended DMA test at stereo 48 kHz `S32_LE`, 256-frame periods,
+  and 16 periods:
+  * unmuted: 244,163 of 244,224 samples nonzero, RMS 88,026,326;
+  * muted: 0 of 244,736 samples nonzero, RMS and peak exactly zero.
+* Restarted the combined timing candidate with muted state. Its first capture
+  was again 244,736 zero samples and byte-identical to the attended muted WAV.
+* Added a readiness barrier so WAMP commands cannot enter during the settle and
+  be acknowledged before DSP initialization overwrites them.
+* Built the final DSP candidate twice at SHA-256
+  `95c223f94594ab8658043e491434b6d206da5dfbc5be7052fd82676b8173b548`.
+* Built two byte-identical v19 runtime manifests at SHA-256
+  `47343f69a1398e0dcd87abb97d716731001747e52719c9d033e4ab0e8e7959f5`.
+* Built two byte-identical 32,389,139-byte v19 initramfs images at SHA-256
+  `ca9d5ce4b3cd11881a97a72c02d17a35981f6e7cfdc76f2dbf72e3537070a72d`.
 
 ## Change log
 

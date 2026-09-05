@@ -255,11 +255,11 @@ func TestTransmitUsesObservedHardwareHandshakeTiming(t *testing.T) {
 		t.Fatalf("unexpected transmit result: worked=%t event=%#v", worked, event)
 	}
 	want := []time.Duration{
-		10 * time.Millisecond,
-		10 * time.Millisecond,
-		10 * time.Millisecond,
-		10 * time.Millisecond,
-		10 * time.Millisecond,
+		20 * time.Millisecond,
+		20 * time.Millisecond,
+		20 * time.Millisecond,
+		20 * time.Millisecond,
+		20 * time.Millisecond,
 	}
 	if len(sleeps) != len(want) {
 		t.Fatalf("sleep sequence = %v, want %v", sleeps, want)

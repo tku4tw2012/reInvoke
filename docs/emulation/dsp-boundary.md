@@ -241,6 +241,19 @@ The receive path repeats steps 6 through 9 without a queued frame, which is how
 unsolicited events arrive. `Dsp_msg_process` calls `msgproc` in a loop and
 sleeps 200 milliseconds whenever it reports no traffic.
 
+The donor's nominal microsecond sleeps do not last a microsecond on the target's
+old kernel. A successful syscall trace measured 8.6-9.4 ms. The owned Go path
+with 10 ms waits consistently read an all-zero response header; tracing stretched
+those waits to 18-19 ms and made both `getVer` and Mic-Mute succeed. The accepted
+owned compatibility envelope is therefore 20 ms for handshake and release.
+
+After `EVENT_DSP_BOOTUP`, the owned service waits one second before restoring
+persisted microphone mute and publishing service readiness. A mute acknowledged
+immediately after the boot event was later overwritten during DSP
+initialization. The settled restore produced an all-zero first capture. External
+WAMP and subscribed-state commands wait on the same readiness barrier; the
+internal startup mute is the only command allowed to bypass it.
+
 The binary additionally shells out to `/system/bin/toolbox devmem` through
 `popen` and `system` to read and modify three registers:
 

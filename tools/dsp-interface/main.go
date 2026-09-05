@@ -29,6 +29,19 @@ import (
 	"time"
 )
 
+const dspBootSettleDelay = time.Second
+
+func waitForDSPSettle(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
 func main() {
 	imagePath := flag.String("image", "", "path to dsp-img.ldr (required)")
 	allowUnverified := flag.Bool(
@@ -227,6 +240,13 @@ func main() {
 		return
 	}
 	bootTimer.Stop()
+	if !waitForDSPSettle(ctx, dspBootSettleDelay) {
+		stopRuntime()
+		<-wampDone
+		<-pumpDone
+		_ = dsp.Close()
+		return
+	}
 	micControlDone := make(chan error, 1)
 	micControlReady := make(chan struct{})
 	service.micControlMu.Lock()
@@ -272,7 +292,7 @@ func main() {
 	}
 	microphoneMuted, err := microphoneMuteRequired(*microphoneState)
 	if err == nil && microphoneMuted {
-		err = service.dispatch(
+		err = service.dispatchLink(
 			runtimeContext,
 			micMuteSpec,
 			[]interface{}{uint64(1)},
