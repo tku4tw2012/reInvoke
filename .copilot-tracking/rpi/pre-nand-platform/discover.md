@@ -105,10 +105,19 @@ header modification time and the header checksum that covers it.
 
 `cmd_lzo` piped the payload into lzop, which leaves lzop no source file to take
 a time from, so it stored the current clock. Patch
-`0004-reproducible-lzo-piggy.patch` compresses the input as a named file with
+`0004-reproducible-lzo-piggy.patch` compresses a scratch copy of the input with
 its mode and modification time pinned first. `parse_header` in
 `lib/decompress_unlzo.c` skips mode, both mtime words, the file name, and the
 header checksum, so the kernel decompressor reads nothing that changed.
+
+Review caught a regression in the first version of this patch, which pinned the
+times on `arch/arm/boot/Image` itself. `Image` is a make target built from
+`vmlinux`, so pinning it to epoch left `vmlinux` permanently newer and made
+`if_changed` rebuild the objcopy, compress, link, and image tail on every later
+make with no source change. Modelling the real `vmlinux` to `Image` to `piggy`
+edges reproduced it: three consecutive runs each rebuilt both targets. With the
+scratch copy, run 1 builds and runs 2 and 3 report up to date, the scratch file
+is removed, and determinism is unchanged.
 
 ### Digest substitutions
 
@@ -132,7 +141,7 @@ confirmed by two consecutive byte-identical builds.
 Runtime manifest `a3f2ab500af7d34bec553de56525c5d2a028fc3b1a7e933024a8104a3c2dbf20`,
 initramfs `27d052e7cfa2fba18188ee698712bb3612ab235fc897e60993bfef0a3d4043a2` at
 32,384,776 bytes, and kernel
-`eaf31eb8e4a33709752579c097bb17f5136f3fd98598876b1df8af59581ab67c`. Two independent builds of both are byte-identical. v13 is
+`514700fa88835c591cf6a02e8db7ef8d80d5b5f199355e643317609b69e33500`. Two independent builds of both are byte-identical. v13 is
 the first image carrying the WAMP allowlist and `iptables`, the private DSP
 microphone socket, the MCU privacy controller, top-tap media control, and the
 provisioning window daemon.

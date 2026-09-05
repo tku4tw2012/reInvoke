@@ -296,7 +296,7 @@ attended audible output, and microphone correlation.
   documented with its reason in the v13 build notes.
 * Built the v13 candidate. Two independent builds agree byte for byte:
   * kernel SHA-256
-    `eaf31eb8e4a33709752579c097bb17f5136f3fd98598876b1df8af59581ab67c`
+    `514700fa88835c591cf6a02e8db7ef8d80d5b5f199355e643317609b69e33500`
   * modules SHA-256
     `05a8bfadeccf846396721c21a7714a8c117a53eb9b80a8e8824e64f13edfc496`
   * runtime manifest SHA-256
