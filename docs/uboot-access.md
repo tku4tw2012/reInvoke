@@ -1,12 +1,14 @@
 ---
 title: U-Boot console access over Micro-USB
 description: Verified non-destructive procedure for reaching an interactive U-Boot prompt on the Harman Kardon Invoke
-ms.date: 2026-09-02
+ms.date: 2026-09-05
 ms.topic: how-to
 ---
 
-Status: verified on hardware, 2026-09-02, on unit `myInvoke-1`. Reproduced twice
-in the same session.
+Status: verified on hardware on 2026-09-02 and reproduced twice in the same
+session. This is the current USB/U-Boot procedure. See the
+[current product and architecture contract](current-product-contract.md) for the
+RAM runtime loaded through it.
 
 An interactive U-Boot prompt is reachable over the Micro-USB port without
 opening the enclosure and without writing to the device. The boot chain runs
@@ -29,7 +31,7 @@ USB hotplug event, so a device that is already connected will not be picked up.
 1. Start the capture and boot tool with `08_IMAGE` absent:
 
    ```bash
-   INVOKE_USBMON_INTERFACE=usbmon3 INVOKE_CAPTURE_LIMIT_SECONDS=3600 \
+   INVOKE_USBMON_INTERFACE=<usbmonN> INVOKE_CAPTURE_LIMIT_SECONDS=3600 \
      tools/usb-boot/capture-attempt.sh uboot-session original-absent
    ```
 
@@ -156,7 +158,7 @@ set bootargs console=ttyS0,115200 loglevel=8 debug root=/dev/ram rdinit=/init in
 bootm 0x0c400000
 ```
 
-This was verified on `myInvoke-1`. The replacement PID 1 configured root ADB,
+This was verified on the closed test unit. The replacement PID 1 configured root ADB,
 left NAND unmounted, loaded native SD8887 Wi-Fi, and ran selected hardware
 adapters under its own lifecycle. A full 268,435,456-byte logical NAND data
 image was then read through a fresh read-only MTD node. Its SHA-256 is

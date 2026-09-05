@@ -18,14 +18,17 @@ const (
 	wampWelcome    = 2
 	wampError      = 8
 	wampPublish    = 16
-	wampCall       = 48
-	wampResult     = 50
+	wampSubscribe  = 32
+	wampSubscribed = 33
+	wampEvent      = 36
 	wampRegister   = 64
 	wampRegistered = 65
 	wampInvocation = 68
 	wampYield      = 70
 
 	wampReconnectDelay = 5 * time.Second
+	dspSessionTopic    = "com.reinvoke.dsp.session"
+	dspBootTopic       = "com.harman.dsp.bootup"
 )
 
 var procedures = []string{
@@ -39,6 +42,7 @@ var procedures = []string{
 	"com.harman.musicMuteToggle",
 	"com.harman.ledAnimate",
 	"com.harman.ledOff",
+	"com.harman.dsp.micMute",
 }
 
 type wampService struct {
@@ -50,7 +54,8 @@ type wampService struct {
 	events      eventSource
 	version     string
 	flushEvents bool
-	micMuted    bool
+	privacy     *microphonePrivacyController
+	logf        func(string, ...interface{})
 }
 
 type wampConnection struct {
@@ -87,6 +92,16 @@ func (service *wampService) run(ctx context.Context) error {
 		stopSession()
 		return err
 	}
+	dspSessionSubscription, err := client.subscribe(dspSessionTopic)
+	if err != nil {
+		stopSession()
+		return err
+	}
+	dspBootSubscription, err := client.subscribe(dspBootTopic)
+	if err != nil {
+		stopSession()
+		return err
+	}
 
 	messages := make(chan []interface{})
 	readErrors := make(chan error, 1)
@@ -107,7 +122,6 @@ func (service *wampService) run(ctx context.Context) error {
 			}
 		}
 	}()
-
 	var events <-chan inputEvent
 	if service.events != nil {
 		events = service.events.Events(sessionContext)
@@ -146,27 +160,36 @@ func (service *wampService) run(ctx context.Context) error {
 			if err := client.publish(topic, args); err != nil {
 				return err
 			}
-			if event.Name == "micmute" {
-				service.micMuted = !service.micMuted
-				muteArg := 0
-				if service.micMuted {
-					muteArg = 1
-				}
-				_ = client.call("com.harman.dsp.micMute", []interface{}{muteArg})
-				if service.lights != nil {
-					if service.micMuted {
-						_ = service.lights.Start(sessionContext, "L_108_c_error", true)
-					} else {
-						_ = service.lights.Clear()
-					}
-				}
-			}
 		case message, ok := <-messages:
 			if !ok {
 				if ctx.Err() != nil {
 					return nil
 				}
 				return errors.New("WAMP connection closed")
+			}
+			handled, err := service.handleDSPSessionEvent(
+				sessionContext,
+				client,
+				dspSessionSubscription,
+				message,
+			)
+			if err != nil {
+				return err
+			}
+			if handled {
+				continue
+			}
+			handled, err = service.handleDSPSessionEvent(
+				sessionContext,
+				client,
+				dspBootSubscription,
+				message,
+			)
+			if err != nil {
+				return err
+			}
+			if handled {
+				continue
 			}
 			if messageType(message) != wampInvocation {
 				continue
@@ -188,6 +211,30 @@ func (service *wampService) run(ctx context.Context) error {
 			}(message)
 		}
 	}
+}
+
+func (service *wampService) handleDSPSessionEvent(
+	ctx context.Context,
+	_ *wampConnection,
+	subscription uint64,
+	message []interface{},
+) (bool, error) {
+	if messageType(message) != wampEvent || len(message) < 4 {
+		return false, nil
+	}
+	subscriptionID, ok := unsigned(message[1])
+	if !ok || subscriptionID != subscription {
+		return false, nil
+	}
+
+	if service.privacy == nil {
+		return true, nil
+	}
+	if err := service.privacy.Reconcile(ctx); err != nil {
+		service.privacy.RequestReconcile()
+		return true, fmt.Errorf("restore DSP microphone mute: %w", err)
+	}
+	return true, nil
 }
 
 func discardPendingInputEvents(
@@ -336,6 +383,18 @@ func (service *wampService) handleInvocation(
 		} else {
 			invocationError = service.lights.Stop()
 		}
+	case "com.harman.dsp.micMute":
+		var muted bool
+		muted, invocationError = microphoneMuteArgument(args)
+		if invocationError == nil && service.privacy == nil {
+			invocationError = errors.New("microphone privacy backend is unavailable")
+		}
+		if invocationError == nil {
+			invocationError = service.privacy.Set(ctx, muted)
+		}
+		if invocationError == nil {
+			result = []interface{}{muted}
+		}
 	default:
 		invocationError = errors.New("unsupported procedure")
 	}
@@ -362,6 +421,29 @@ func (service *wampService) handleInvocation(
 		result,
 		resultKwargs,
 	})
+}
+
+func microphoneMuteArgument(args []interface{}) (bool, error) {
+	if len(args) != 1 {
+		return false, errors.New("invalid argument format")
+	}
+	switch value := args[0].(type) {
+	case bool:
+		return value, nil
+	case uint64:
+		if value <= 1 {
+			return value == 1, nil
+		}
+	case int64:
+		if value == 0 || value == 1 {
+			return value == 1, nil
+		}
+	case int:
+		if value == 0 || value == 1 {
+			return value == 1, nil
+		}
+	}
+	return false, errors.New("invalid argument format")
 }
 
 type mediaEvent struct {
@@ -496,8 +578,10 @@ func (client *wampConnection) negotiate(realm string) error {
 		realm,
 		map[string]interface{}{
 			"roles": map[string]interface{}{
-				"callee":    map[string]interface{}{},
-				"publisher": map[string]interface{}{},
+				"callee":     map[string]interface{}{},
+				"caller":     map[string]interface{}{},
+				"publisher":  map[string]interface{}{},
+				"subscriber": map[string]interface{}{},
 			},
 		},
 	}); err != nil {
@@ -551,6 +635,30 @@ func (client *wampConnection) register(
 	return registrations, nil
 }
 
+func (client *wampConnection) subscribe(topic string) (uint64, error) {
+	requestID := client.requestID()
+	if err := client.writeFrame([]interface{}{
+		wampSubscribe,
+		requestID,
+		map[string]interface{}{},
+		topic,
+	}); err != nil {
+		return 0, err
+	}
+	response, err := client.readFrame()
+	if err != nil {
+		return 0, err
+	}
+	if messageType(response) != wampSubscribed || len(response) < 3 {
+		return 0, fmt.Errorf("subscription failed for %s: %v", topic, response)
+	}
+	subscriptionID, ok := unsigned(response[2])
+	if !ok {
+		return 0, fmt.Errorf("subscription ID is invalid for %s", topic)
+	}
+	return subscriptionID, nil
+}
+
 func (client *wampConnection) publish(
 	topic string,
 	args []interface{},
@@ -560,19 +668,6 @@ func (client *wampConnection) publish(
 		client.requestID(),
 		map[string]interface{}{},
 		topic,
-		args,
-	})
-}
-
-func (client *wampConnection) call(
-	procedure string,
-	args []interface{},
-) error {
-	return client.writeFrame([]interface{}{
-		wampCall,
-		client.requestID(),
-		map[string]interface{}{},
-		procedure,
 		args,
 	})
 }

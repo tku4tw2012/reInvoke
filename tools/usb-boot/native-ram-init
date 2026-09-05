@@ -122,6 +122,67 @@ wait_service_stop() {
   fi
 }
 
+run_with_bluetoothd_generation() {
+  guard_child_pid_file="$1"
+  shift
+  guard_expected_pid=""
+  while ${BB} test -z "${guard_expected_pid}" &&
+    ! ${BB} test -e /run/reinvoke/shutdown; do
+    if ${BB} test -f /run/reinvoke/bluetoothd.pid; then
+      guard_expected_pid="$(${BB} cat /run/reinvoke/bluetoothd.pid)"
+    fi
+    ${BB} test -n "${guard_expected_pid}" || ${BB} sleep 1
+  done
+  ${BB} test -n "${guard_expected_pid}" || return 1
+
+  "$@" &
+  guard_child_pid="$!"
+  echo "${guard_child_pid}" >"${guard_child_pid_file}"
+  trap '${BB} kill "${guard_child_pid}" 2>/dev/null || true
+    wait "${guard_child_pid}" 2>/dev/null || true
+    ${BB} rm -f "${guard_child_pid_file}"
+    exit 0' TERM INT
+  while ${BB} kill -0 "${guard_child_pid}" 2>/dev/null; do
+    ${BB} sleep 1
+    guard_current_pid=""
+    if ${BB} test -f /run/reinvoke/bluetoothd.pid; then
+      guard_current_pid="$(${BB} cat /run/reinvoke/bluetoothd.pid)"
+    fi
+    if ! ${BB} test "${guard_current_pid}" = "${guard_expected_pid}"; then
+      ${BB} kill "${guard_child_pid}" 2>/dev/null || true
+      wait "${guard_child_pid}" 2>/dev/null || true
+      ${BB} rm -f "${guard_child_pid_file}"
+      return 1
+    fi
+  done
+  wait "${guard_child_pid}"
+  guard_child_status="$?"
+  ${BB} rm -f "${guard_child_pid_file}"
+  return "${guard_child_status}"
+}
+
+configure_wamp_firewall() {
+  ${BB} mkdir -p /usr/lib/xtables
+  for module in libxt_standard.so libxt_tcp.so; do
+    ${BB} ln -sf "${runtime_lib}/xtables/${module}" \
+      "/usr/lib/xtables/${module}" || return 1
+  done
+  for port in 9998 9999; do
+    "${runtime_loader}" --library-path "${runtime_lib}" \
+      "${runtime_bin}/iptables" \
+      -A INPUT -i lo -p tcp --dport "${port}" -j ACCEPT || return 1
+    for cidr in ${WAMP_ALLOW_CIDRS:-}; do
+      "${runtime_loader}" --library-path "${runtime_lib}" \
+        "${runtime_bin}/iptables" \
+        -A INPUT -p tcp -s "${cidr}" --dport "${port}" \
+        -j ACCEPT || return 1
+    done
+    "${runtime_loader}" --library-path "${runtime_lib}" \
+      "${runtime_bin}/iptables" \
+      -A INPUT -p tcp --dport "${port}" -j DROP || return 1
+  done
+}
+
 stop_runtime() {
   ${BB} touch /run/reinvoke/shutdown
   log "stopping autonomous runtime with mute-first service order"
@@ -132,7 +193,7 @@ stop_runtime() {
   stop_service mcu-interface
   wait_service_stop mcu-interface
   for stop_attempt in 1 2; do
-    for service_name in dsp-interface pairing-agent \
+    for service_name in provision-windowd dsp-interface pairing-agent-guard \
       bluealsa-aplay bluealsa bluetoothd dbus bonefish networkd; do
       stop_service "${service_name}"
     done
@@ -165,10 +226,34 @@ start_autonomous_runtime() {
     /usr/var/lib/bluetooth
   ${BB} chmod 0700 /run/reinvoke/dbus /run/reinvoke/logs \
     /usr/var/lib/bluetooth
+  if ! configure_wamp_firewall; then
+    log "WAMP firewall setup failed; autonomous runtime remains stopped"
+    return
+  fi
   if ! cmdline_has reinvoke.router=off; then
     supervise bonefish \
       "${runtime_loader}" --library-path "${runtime_lib}" \
       "${runtime_bin}/bonefish" -r default -t 9999 -w 9998 -d
+  fi
+  if ${BB} test -x /usr/sbin/reinvoke-provision-windowd &&
+    ${BB} test -x /usr/sbin/reinvoke-provisiond &&
+    ${BB} test -x /usr/sbin/reinvoke-wifi-applyd &&
+    ${BB} test -f "${runtime_root}/etc/provision-ap-ssid" &&
+    ${BB} test -f "${runtime_root}/etc/provision-ap-psk"; then
+    if ${BB} test -d /sys/class/net/p2p0; then
+      supervise provision-windowd \
+        /usr/sbin/reinvoke-provision-windowd \
+        -hostapd "${runtime_bin}/hostapd" \
+        -hostapd-loader "${runtime_loader}" \
+        -hostapd-library-path "${runtime_lib}/hostapd:${runtime_lib}" \
+        -busybox "${BB}" \
+        -wifi-applyd /usr/sbin/reinvoke-wifi-applyd \
+        -provisiond /usr/sbin/reinvoke-provisiond \
+        -ap-ssid-file "${runtime_root}/etc/provision-ap-ssid" \
+        -ap-psk-file "${runtime_root}/etc/provision-ap-psk"
+    else
+      log "provisioning window requires reinvoke.wifi_mode=sta-uap"
+    fi
   fi
   if ! cmdline_has reinvoke.mcu=off; then
     supervise mcu-interface \
@@ -177,12 +262,32 @@ start_autonomous_runtime() {
       --router-host 127.0.0.1 --router-port 9999 \
       --bluealsa-cli "${runtime_bin}/bluealsa-cli" \
       --bluealsa-peer "${PEER_ADDRESS}" \
+      --media-control "${runtime_bin}/bluez-media-control" \
       --playback-status /proc/asound/card1/pcm0p/sub0/status \
       --playback-lease /run/reinvoke/bluealsa-playback-active \
       --playback-owner-executable "${runtime_bin}/bluealsa-aplay" \
       --pairing-agent-pid /run/reinvoke/pairing-agent.pid \
       --pairing-agent-executable "${runtime_bin}/bluez-pairing-agent" \
+      --provisioning-socket /run/reinvoke/provision-window.sock \
+      --dsp-mic-control-socket /run/reinvoke/dsp-mic-control.sock \
       --lights-dir "${runtime_root}/share/lights"
+    microphone_state_attempt=0
+    while ! ${BB} test -s /run/reinvoke/microphone-state &&
+      ${BB} test "${microphone_state_attempt}" -lt 10; do
+      ${BB} sleep 1
+      microphone_state_attempt=$((microphone_state_attempt + 1))
+    done
+    if ! ${BB} test -s /run/reinvoke/microphone-state; then
+      log "microphone privacy state was not initialized"
+      return
+    fi
+  elif ! cmdline_has reinvoke.dsp=off &&
+    ! ${BB} test -s /run/reinvoke/microphone-state; then
+    (umask 077
+      echo muted >/run/reinvoke/microphone-state) || {
+      log "could not initialize fail-closed microphone state"
+      return
+    }
   fi
   if ! cmdline_has reinvoke.dsp=off; then
     # Without state-changing procedures the DSP never receives its volume
@@ -196,6 +301,8 @@ start_autonomous_runtime() {
       "${runtime_bin}/reinvoke-dsp-interface" \
       -image "${runtime_root}/share/dsp-img.ldr" \
       -boot-state /run/reinvoke/dsp-booted \
+      -microphone-state /run/reinvoke/microphone-state \
+      -mic-control-socket /run/reinvoke/dsp-mic-control.sock \
       ${dsp_state_flag} \
       -router-host 127.0.0.1 -router-port 9999
   fi
@@ -242,9 +349,13 @@ start_autonomous_runtime() {
       supervise bluealsa-aplay \
         ${BB} env DBUS_SYSTEM_BUS_ADDRESS="${runtime_bus}" \
         REINVOKE_PLAYBACK_LEASE=/run/reinvoke/bluealsa-playback-active \
-        "${runtime_bin}/bluealsa-aplay" -D plughw:1,0 \
+        "${runtime_bin}/bluealsa-aplay" \
+        --pcm-buffer-time=170000 --pcm-period-time=20000 \
+        -D plughw:1,0 \
         "${PEER_ADDRESS}"
-      supervise pairing-agent \
+      supervise pairing-agent-guard \
+        run_with_bluetoothd_generation \
+        /run/reinvoke/pairing-agent.pid \
         ${BB} env DBUS_SYSTEM_BUS_ADDRESS="${runtime_bus}" \
         "${runtime_bin}/bluez-pairing-agent" \
         "${PEER_ADDRESS}" "${PAIR_SECONDS}" "${PAIR_SECONDS}"

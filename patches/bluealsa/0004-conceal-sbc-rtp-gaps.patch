@@ -1,0 +1,44 @@
+diff --git a/src/a2dp-sbc.c b/src/a2dp-sbc.c
+--- a/src/a2dp-sbc.c
++++ b/src/a2dp-sbc.c
+@@ -369,14 +369,38 @@
+ 		if ((rtp_media_header = rtp_a2dp_get_payload(rtp_header)) == NULL)
+ 			continue;
+ 
+-		int missing_rtp_frames = 0;
+-		rtp_state_sync_stream(&rtp, rtp_header, &missing_rtp_frames, NULL);
++		int missing_rtp_packets = 0;
++		int missing_pcm_frames = 0;
++		rtp_state_sync_stream(&rtp, rtp_header,
++				&missing_rtp_packets, &missing_pcm_frames);
+ 
+ 		if (!ba_transport_pcm_is_active(&t->a2dp.pcm)) {
+ 			rtp.synced = false;
+ 			continue;
+ 		}
+ 
++		if (missing_pcm_frames > 0) {
++			size_t missing_frames = missing_pcm_frames;
++			if (missing_frames > samplerate) {
++				warn("Clamping missing SBC PCM frames: %zu", missing_frames);
++				missing_frames = samplerate;
++			}
++			const size_t silence_capacity =
++				ffb_blen_in(&pcm) / (channels * sizeof(int16_t));
++			while (missing_frames > 0) {
++				const size_t frames =
++					missing_frames < silence_capacity ?
++					missing_frames : silence_capacity;
++				const size_t samples = frames * channels;
++				memset(pcm.data, 0, samples * sizeof(int16_t));
++				if (io_pcm_write(&t->a2dp.pcm, pcm.data, samples) == -1) {
++					error("FIFO silence write error: %s", strerror(errno));
++					break;
++				}
++				missing_frames -= frames;
++			}
++		}
++
+ 		const uint8_t *rtp_payload = (uint8_t *)(rtp_media_header + 1);
+ 		size_t rtp_payload_len = len - (rtp_payload - (uint8_t *)bt.data);
+ 

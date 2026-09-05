@@ -14,6 +14,12 @@ import (
 	"math"
 )
 
+const (
+	maxMessagePackStringBytes        = 1 << 20
+	maxMessagePackCollectionElements = 4096
+	maxMessagePackDepth              = 32
+)
+
 func encodeMessagePack(value interface{}) ([]byte, error) {
 	return appendValue(nil, value)
 }
@@ -171,7 +177,7 @@ func appendMap(out []byte, values map[string]interface{}) ([]byte, error) {
 }
 
 func decodeMessagePack(payload []byte) (interface{}, error) {
-	value, rest, err := decodeValue(payload)
+	value, rest, err := decodeValue(payload, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +187,10 @@ func decodeMessagePack(payload []byte) (interface{}, error) {
 	return value, nil
 }
 
-func decodeValue(payload []byte) (interface{}, []byte, error) {
+func decodeValue(payload []byte, depth int) (interface{}, []byte, error) {
+	if depth > maxMessagePackDepth {
+		return nil, nil, errors.New("MessagePack nesting exceeds limit")
+	}
 	if len(payload) == 0 {
 		return nil, nil, errors.New("truncated MessagePack value")
 	}
@@ -194,9 +203,9 @@ func decodeValue(payload []byte) (interface{}, []byte, error) {
 	case tag >= 0xe0:
 		return int64(int8(tag)), rest, nil
 	case tag&0xf0 == 0x80:
-		return decodeMap(rest, int(tag&0x0f))
+		return decodeMap(rest, int(tag&0x0f), depth+1)
 	case tag&0xf0 == 0x90:
-		return decodeArray(rest, int(tag&0x0f))
+		return decodeArray(rest, int(tag&0x0f), depth+1)
 	case tag&0xe0 == 0xa0:
 		return decodeString(rest, int(tag&0x1f))
 	}
@@ -263,7 +272,7 @@ func decodeValue(payload []byte) (interface{}, []byte, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		return decodeArray(rest, length)
+		return decodeArray(rest, length, depth+1)
 	case 0xde, 0xdf:
 		width := 2
 		if tag == 0xdf {
@@ -273,7 +282,7 @@ func decodeValue(payload []byte) (interface{}, []byte, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		return decodeMap(rest, length)
+		return decodeMap(rest, length, depth+1)
 	}
 	return nil, nil, fmt.Errorf("unsupported MessagePack tag 0x%02x", tag)
 }
@@ -315,20 +324,24 @@ func decodeUnsigned(payload []byte, width int) (uint64, []byte, error) {
 }
 
 func decodeString(payload []byte, length int) (interface{}, []byte, error) {
-	if len(payload) < length {
+	if length > maxMessagePackStringBytes || len(payload) < length {
 		return nil, nil, errors.New("truncated MessagePack string")
 	}
 	return string(payload[:length]), payload[length:], nil
 }
 
-func decodeArray(payload []byte, length int) (interface{}, []byte, error) {
-	if length > len(payload) {
+func decodeArray(
+	payload []byte,
+	length int,
+	depth int,
+) (interface{}, []byte, error) {
+	if length > maxMessagePackCollectionElements || length > len(payload) {
 		return nil, nil, errors.New("MessagePack array length exceeds payload")
 	}
 	values := make([]interface{}, 0, length)
 	rest := payload
 	for index := 0; index < length; index++ {
-		value, remainder, err := decodeValue(rest)
+		value, remainder, err := decodeValue(rest, depth)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -338,18 +351,22 @@ func decodeArray(payload []byte, length int) (interface{}, []byte, error) {
 	return values, rest, nil
 }
 
-func decodeMap(payload []byte, length int) (interface{}, []byte, error) {
-	if length > len(payload)/2 {
+func decodeMap(
+	payload []byte,
+	length int,
+	depth int,
+) (interface{}, []byte, error) {
+	if length > maxMessagePackCollectionElements || length > len(payload)/2 {
 		return nil, nil, errors.New("MessagePack map length exceeds payload")
 	}
 	values := make(map[string]interface{}, length)
 	rest := payload
 	for index := 0; index < length; index++ {
-		key, remainder, err := decodeValue(rest)
+		key, remainder, err := decodeValue(rest, depth)
 		if err != nil {
 			return nil, nil, err
 		}
-		value, next, err := decodeValue(remainder)
+		value, next, err := decodeValue(remainder, depth)
 		if err != nil {
 			return nil, nil, err
 		}

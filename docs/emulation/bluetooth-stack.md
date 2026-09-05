@@ -1,18 +1,53 @@
 ---
 title: Bluetooth stack
-description: Evidence and emulation boundaries for the Invoke Bluedroid stack
-ms.date: 2026-09-02
+description: Current BlueZ and patched BlueALSA architecture plus historical Invoke Bluedroid evidence
+ms.date: 2026-09-05
 ms.topic: concept
 ---
 
-The examined Bluetooth service in the final firmware does not use the BlueZ
-user-space path (`bluetoothd`/D-Bus). Recording this because earlier documents
-in this repository treated BlueZ as the missing component, which shaped a wrong
-conclusion about what emulation would require.
+This document separates current reInvoke behavior from the 2021 final Harman
+firmware. The vendor firmware used Bluedroid; the owned RAM target uses BlueZ
+5.55, patched BlueALSA 4.0.0, private D-Bus, and owned HCI/pairing helpers. See
+the [current product and architecture contract](../current-product-contract.md)
+for the normative boundary.
 
-## What the firmware actually uses
+## Current reInvoke stack
 
-`usr/bin/bluetooth` links `libhardware.so`, `libcutils.so`, `libutils.so`, and
+The accepted path is:
+
+```text
+allowlisted peer
+  -> SD8887 HCI / BlueZ 5.55
+  -> BlueALSA 4.0.0 A2DP Sink decoder
+  -> patched bluealsa-aplay
+  -> Invoke ALSA PCM
+  -> MCU-owned speaker safety gates
+```
+
+The pairing agent authorizes only `<allowlisted-peer>` and the A2DP/AVRCP
+service UUIDs during a bounded window. The HCI initializer resets volatile
+controller state. Bonds, D-Bus state, configuration, and the active-PCM lease
+remain in RAM.
+
+The accepted BlueALSA build applies six reviewed patches:
+
+1. emit an active-PCM lease containing the ALSA-owning worker thread;
+2. match the Invoke ALSA hardware contract and recover partial writes/underruns;
+3. buffer decoded PCM against scheduling jitter;
+4. insert bounded silence for timestamp-confirmed SBC RTP gaps;
+5. drain clips that end before the normal prefill threshold; and
+6. drain buffered audio after the PCM FIFO closes.
+
+The MCU service authorizes physical unmute only when the lease thread matches
+ALSA's owner, resolves to the packaged player, and ALSA is `RUNNING`. Silence,
+disconnect, player exit, or shutdown reasserts mute, with a 1.5-second holdoff
+for brief transport gaps. Earlier audible playback and control runs passed.
+The latest accepted image still needs one attended playback-continuity run.
+
+## Historical Harman Bluedroid stack
+
+The final Harman `usr/bin/bluetooth` links `libhardware.so`, `libcutils.so`,
+`libutils.so`, and
 `libasound.so.2`. It links neither `libbluetooth` nor `libdbus`. Its error
 vocabulary is `HCI_ERR_*`, and it references `[BT][BluedroidCall]` and
 `/data/misc/bluedroid/.a2dp_data`.
@@ -34,7 +69,7 @@ Android hardware abstraction layer:
 D-Bus is present in the rootfs and used elsewhere in the product, but the
 Bluetooth service does not depend on it.
 
-## Evidence classification
+### Evidence classification
 
 Verified facts:
 
@@ -56,7 +91,7 @@ Inference:
 * A host-created virtual HCI adapter is the plausible next emulation substitute.
   That has not yet been tested with this Bluedroid stack.
 
-## The real emulation boundary
+### Historical emulation boundary
 
 `libbt-vendor.so` opens `/dev/rfkill` and waits for an `hci%d` interface. That
 places the boundary at the kernel Bluetooth subsystem: an HCI device plus
@@ -69,7 +104,7 @@ Consequences for the sandbox:
 * A virtual HCI adapter from the host's `hci_vhci` module is the plausible
   substitute to test, since Bluedroid speaks HCI directly.
 
-## Experimental HCI management shim
+### Historical experimental HCI management shim
 
 `tools/emulation/invoke-ioctl-shim.c` can now return one synthetic, active
 `hci0` device for `HCIGETDEVLIST`, `HCIGETDEVINFO`, and `HCIDEVUP`. The library
@@ -79,7 +114,7 @@ This is management-plane scaffolding only. It does not emulate HCI commands,
 events, ACL traffic, pairing, media transport, or `/dev/rfkill`. No Bluetooth
 procedure has completed through this shim.
 
-## Physical RAM-native validation
+### Historical donor-assisted RAM validation
 
 The recovery kernel identifies the SD8887 combo device as Marvell SDIO
 functions `02df:9135`, `02df:9136`, and `02df:9137`. Its Wi-Fi module binds
@@ -93,7 +128,8 @@ metadata to `3.8.13-mrvl`. Loaded into the ephemeral recovery kernel, it:
 * Reported `BT FW is active(2)`
 * Created `hci0`
 * Created an rfkill entry
-* Applied the temporary address `02:52:49:4e:56:02`
+* Applied a temporary locally administered address matching
+  `02:XX:XX:XX:XX:XX`
 
 The first observed HCI command `0x080f` timed out. The installed Bluedroid
 service nevertheless joined the RAM-owned Bonefish router and registered its
@@ -121,8 +157,8 @@ The matching module and RAM-only Bluedroid stack then:
 Bluedroid normally calls `com.harman.identifiersGet`, a procedure owned by the
 broad stock supervisor. Static analysis recovered its two result fields,
 `mac-hex` and `unique-hex`. A reInvoke-owned fixed-response WAMP service supplies
-only those RAM-safe fields. Bluedroid derives the current compatibility name
-`HK Invoke_4E5601` from that response.
+only those RAM-safe fields. Bluedroid derived a compatibility name matching
+`HK Invoke_<address-suffix>` from that response.
 
 An iPhone completed a RAM-only bond and A2DP negotiation at 44.1 kHz stereo.
 The physical ring changed the ALSA music control and Bluedroid forwarded the
@@ -144,34 +180,32 @@ raising HCI, L2CAP, and BTIF trace levels. It does not disable A2DP decoding.
 This boundary is preserved for later work, but it should not delay replacing
 the obsolete Bluedroid userspace with a maintained stack.
 
-## RAM-only BlueZ and BlueALSA replacement
+## RAM-only BlueZ and BlueALSA validation
 
 The physical RAM-native platform now has a working classic-Bluetooth replacement
 path. BlueZ 5.55 is built statically for the target's old EGLIBC userland and
 started with `ControllerMode=bredr`; this avoids the unsupported GATT setup
-required by the target's MGMT 1.2 kernel. BlueALSA 4.0.0 registers an A2DP
-sink, and `bluealsa-aplay` is ready against ALSA card 1 (`plughw:1,0`) at
-initial volume zero.
+required by the target's MGMT 1.2 kernel. BlueALSA 4.0.0 registers an A2DP sink, and the patched `bluealsa-aplay` targets
+ALSA card 1 (`plughw:1,0`) under MCU-owned safety policy.
 
 The owned [bluez-pairing-agent.c](../../tools/control/bluez-pairing-agent.c)
 registers as the default `org.bluez.Agent1` through a private D-Bus socket. It
 accepts only the operator-supplied peer address and the A2DP/AVRCP service UUIDs;
 all other peers and services are rejected. Pairing, D-Bus state, and BlueZ
-configuration remain in volatile RAM under `/tmp` and
-`/usr/var/lib/bluetooth`. They disappear on reboot. The source and artifact
+configuration remain in volatile runtime storage. They disappear on reboot. The source and artifact
 hashes are recorded in [P1-045](../../metadata/P1-045.json).
 
 Launch a clean stack with an explicit peer and bounded pairing window:
 
 ```bash
 tools/usb-boot/start-bluez-audio.sh \
-  --rootfs path/to/installed-rootfs-region.bin \
-  --bluetoothd path/to/bluetoothd \
-  --bluealsa path/to/bluealsa \
-  --bluealsa-aplay path/to/bluealsa-aplay \
-  --hci-init path/to/hci-init \
-  --pairing-agent path/to/bluez-pairing-agent \
-  --peer-address AA:BB:CC:DD:EE:FF \
+  --rootfs <donor-rootfs-region> \
+  --bluetoothd <path-to>/bluetoothd \
+  --bluealsa <path-to>/bluealsa \
+  --bluealsa-aplay <path-to>/bluealsa-aplay \
+  --hci-init <path-to>/hci-init \
+  --pairing-agent <path-to>/bluez-pairing-agent \
+  --peer-address XX:XX:XX:XX:XX:XX \
   --pair-seconds 60
 ```
 
@@ -181,7 +215,7 @@ pairable completed a transient `No Bonding` exchange. Enabling host pairability
 for the bounded exchange created a bond that persisted across disconnect. Host
 pairability was disabled immediately afterward.
 
-The Mac mini completed a fresh bond with the RAM-only stack. The target then
+The source workstation completed a fresh bond with the RAM-only stack. The target then
 returned to `Pairable=false` and `Discoverable=false`. After disconnecting and
 waiting for the pairing window to close, the host retained `Paired=true`, the
 target retained its volatile bond record, and A2DP reconnected without opening
@@ -191,8 +225,10 @@ With the MCU amplifier and DAC mute asserted and the host sink limited to one
 percent, a streamed test tone put ALSA card 1 into `RUNNING` state. The PCM was
 stereo `S16_LE` at 44.1 kHz, and its hardware pointer advanced from `192000` to
 `238080`. This proves A2DP transport, SBC decode, BlueALSA handoff, ALSA
-playback, and DMA operation. Physical mute remained asserted, so audible
-Bluetooth playback still requires a short attended acceptance test.
+playback, and DMA operation. A later attended run produced audible Bluetooth
+playback and validated rotary volume. The accepted patch set has reproducible
+host and machine validation; its newest integrated image still needs the final
+attended continuity run.
 
 The UIPC command values, sink queue, decoder-reset path, and expected automatic
 decode trigger were cross-checked against official AOSP `system/bt` tag
@@ -200,7 +236,7 @@ decode trigger were cross-checked against official AOSP `system/bt` tag
 `3ba689bd4e88946eeb40b8d8b91fb7f42db46529`. The pinned source snapshot and
 Apache license evidence are recorded in `P1-043`.
 
-## What is unresolved
+## Historical donor-emulation gaps
 
 Whether `qemu-user` forwards `AF_BLUETOOTH` sockets faithfully enough for the
 Bluedroid stack to complete initialization. This is untested.
@@ -209,18 +245,19 @@ Whether the host's `/dev/vhci` can be used safely. The workstation has real
 Bluetooth hardware at `hci0`, so any virtual adapter work must target a
 separate created adapter and must never drive the host's own controller.
 
-Whether a maintained userspace can decode the verified incoming SBC frames and
-feed the proven ALSA `music` path. The donor stack pairs and receives media but
-does not release decoded PCM.
+Whether donor Bluedroid could be made to release decoded PCM remains
+unresolved. This is not a current product blocker: maintained BlueZ and patched
+BlueALSA decode and feed the proven ALSA path.
 
-No Bluetooth procedure has yet been shown to complete under emulation. Current
-evidence is limited to service registration on the WAMP bus and static/runtime
-evidence for the stack boundary.
+No donor Bluetooth procedure was shown to complete under `qemu-user` emulation.
+That limit applies to historical donor research, not physical reInvoke
+validation.
 
 ## Practical assessment
 
-The physical unit is the cheaper source of truth here. It has a working
-Bluedroid stack, a real controller, and a real peer whenever a phone is paired.
-The emulator advantage that applied to I2C and ALSA, where a narrow ioctl
-boundary could be answered synthetically, is weaker for Bluetooth because the
-missing piece is a stateful protocol stack rather than a handful of calls.
+The physical unit remains the useful source of truth for transport timing,
+controller behavior, and attended sound. `qemu-user` emulation remains useful
+only for historical Bluedroid interface research because the missing dependency
+is a stateful HCI protocol stack. Current development should validate the owned
+BlueZ/BlueALSA path with host tests, reproducible builds, machine continuity
+checks, and bounded attended hardware runs.

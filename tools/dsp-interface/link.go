@@ -23,6 +23,7 @@ const (
 	// mute bits. Both sides read-modify-write, so neither clobbers the other.
 	expanderAddress = 0x20
 	expanderOutput  = 0x01
+	expanderConfig  = 0x03
 	dspResetMask    = byte(0x01)
 
 	// Programmed by the donor's dspopen.
@@ -36,16 +37,17 @@ const (
 	frameDelayUsecs    = uint16(1)
 	downloadDelayUsecs = uint16(0)
 
-	resetHoldDelay    = 20 * time.Millisecond
-	resetSettleDelay  = 10 * time.Millisecond
-	downloadStageWait = 10 * time.Millisecond
-	handshakeDelay    = time.Microsecond
-	releaseDelay      = 2 * time.Microsecond
-	readyPollInterval = 100 * time.Millisecond
-	maxDevicePayload  = 64
-	maxHeaderShifts   = 4
-	maxReceiveRetries = 3
-	receiveRetryDelay = 100 * time.Millisecond
+	resetHoldDelay     = 20 * time.Millisecond
+	resetSettleDelay   = 10 * time.Millisecond
+	downloadStageWait  = 10 * time.Millisecond
+	handshakeDelay     = 10 * time.Millisecond
+	releaseDelay       = 10 * time.Millisecond
+	readyPollInterval  = 100 * time.Millisecond
+	maxDevicePayload   = 64
+	maxHeaderShifts    = 4
+	maxUnrelatedFrames = 8
+	maxTransmitRetries = 3
+	receiveRetryDelay  = 100 * time.Millisecond
 )
 
 // pinout holds the five handshake lines. The roles are inferred from the order
@@ -80,11 +82,18 @@ type link struct {
 	sleep        func(time.Duration)
 	readyTimeout time.Duration
 
-	mu    sync.Mutex
-	queue [][]byte
-	stats linkStats
+	mu      sync.Mutex
+	queue   []queuedMessage
+	pending []frame
+	stats   linkStats
 
 	booted bool
+}
+
+type queuedMessage struct {
+	frame      []byte
+	completion chan error
+	context    context.Context
 }
 
 type linkOptions struct {
@@ -96,7 +105,7 @@ type linkOptions struct {
 func newLink(spi spiBus, gpio gpioLines, i2c i2cBus, options linkOptions) *link {
 	sleep := options.Sleep
 	if sleep == nil {
-		sleep = hardwareDelay
+		sleep = time.Sleep
 	}
 
 	timeout := options.ReadyTimeout
@@ -110,16 +119,6 @@ func newLink(spi spiBus, gpio gpioLines, i2c i2cBus, options linkOptions) *link 
 		pins:         options.Pins,
 		sleep:        sleep,
 		readyTimeout: timeout,
-	}
-}
-
-func hardwareDelay(delay time.Duration) {
-	if delay >= time.Millisecond {
-		time.Sleep(delay)
-		return
-	}
-	started := time.Now()
-	for time.Since(started) < delay {
 	}
 }
 
@@ -144,6 +143,19 @@ func (l *link) setReset(asserted bool) error {
 		},
 	); err != nil {
 		return fmt.Errorf("update IO expander: %w", err)
+	}
+	return nil
+}
+
+func (l *link) configureResetOutput() error {
+	if err := l.i2c.UpdateRegister(
+		expanderAddress,
+		expanderConfig,
+		func(current byte) byte {
+			return current &^ dspResetMask
+		},
+	); err != nil {
+		return fmt.Errorf("configure DSP reset output: %w", err)
 	}
 	return nil
 }
@@ -182,6 +194,9 @@ func (l *link) BootContext(ctx context.Context, image bootImage) error {
 		return fmt.Errorf("configure SPI: %w", err)
 	}
 	if err := l.prepareDownloadLines(); err != nil {
+		return err
+	}
+	if err := l.configureResetOutput(); err != nil {
 		return err
 	}
 	if err := l.pulseReset(); err != nil {
@@ -296,34 +311,85 @@ func (l *link) prepareHandshake() error {
 
 // Enqueue adds one message to the transmit ring.
 func (l *link) Enqueue(id uint16, payload []byte) error {
+	_, err := l.enqueue(context.Background(), id, payload, false)
+	return err
+}
+
+func (l *link) EnqueueTracked(
+	ctx context.Context,
+	id uint16,
+	payload []byte,
+) (<-chan error, error) {
+	return l.enqueue(ctx, id, payload, true)
+}
+
+func (l *link) enqueue(
+	ctx context.Context,
+	id uint16,
+	payload []byte,
+	tracked bool,
+) (<-chan error, error) {
 	message, err := buildFrame(id, payload)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	var completion chan error
+	if tracked {
+		completion = make(chan error, 1)
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if !l.booted {
-		return errors.New("DSP link is not booted")
+		return nil, errors.New("DSP link is not booted")
 	}
-	l.queue = append(l.queue, message)
-	return nil
+	l.queue = append(l.queue, queuedMessage{
+		frame:      message,
+		completion: completion,
+		context:    ctx,
+	})
+	return completion, nil
 }
 
-func (l *link) dequeue() []byte {
+func (l *link) dequeue() (queuedMessage, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if len(l.queue) == 0 {
-		return nil
+		return queuedMessage{}, false
 	}
 	message := l.queue[0]
 	l.queue = l.queue[1:]
-	return message
+	return message, true
 }
 
-func (l *link) requeue(message []byte) {
+func (l *link) requeue(message queuedMessage) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.queue = append([][]byte{message}, l.queue...)
+	l.queue = append([]queuedMessage{message}, l.queue...)
+}
+
+func (l *link) stashFrame(received frame) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.pending = append(l.pending, received)
+}
+
+func (l *link) takePendingFrame() (*frame, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.pending) == 0 {
+		return nil, false
+	}
+	received := l.pending[0]
+	l.pending = l.pending[1:]
+	return &received, true
+}
+
+func (message queuedMessage) complete(err error) {
+	if message.completion == nil {
+		return
+	}
+	message.completion <- err
+	close(message.completion)
 }
 
 // Poll runs one msgproc iteration. It reports whether it moved any traffic;
@@ -335,8 +401,15 @@ func (l *link) Poll() (*frame, bool, error) {
 	if err := l.gpio.Write(l.pins.Active, false); err != nil {
 		return nil, false, fmt.Errorf("lower transfer line: %w", err)
 	}
+	if received, ok := l.takePendingFrame(); ok {
+		return received, true, nil
+	}
 
-	if message := l.dequeue(); message != nil {
+	if message, ok := l.dequeue(); ok {
+		if err := message.context.Err(); err != nil {
+			message.complete(err)
+			return nil, true, nil
+		}
 		busy, err := l.gpio.Read(l.pins.Busy)
 		if err != nil {
 			l.requeue(message)
@@ -346,7 +419,8 @@ func (l *link) Poll() (*frame, bool, error) {
 			l.requeue(message)
 			return nil, false, nil
 		}
-		received, err := l.transmit(message)
+		received, err := l.transmit(message.frame)
+		message.complete(err)
 		if err != nil {
 			return nil, true, err
 		}
@@ -368,6 +442,24 @@ func (l *link) Poll() (*frame, bool, error) {
 }
 
 func (l *link) transmit(message []byte) (*frame, error) {
+	var lastError error
+	for attempt := 0; attempt < maxTransmitRetries; attempt++ {
+		received, err := l.transmitOnce(message)
+		if err == nil {
+			return received, nil
+		}
+		if !isFrameError(err) {
+			return nil, err
+		}
+		lastError = err
+		if attempt+1 < maxTransmitRetries {
+			l.sleep(receiveRetryDelay)
+		}
+	}
+	return nil, fmt.Errorf("%w: %v", errCommandResponse, lastError)
+}
+
+func (l *link) transmitOnce(message []byte) (*frame, error) {
 	if err := l.gpio.Write(l.pins.Active, true); err != nil {
 		return nil, fmt.Errorf("raise transfer line: %w", err)
 	}
@@ -386,27 +478,34 @@ func (l *link) transmit(message []byte) (*frame, error) {
 	l.mu.Lock()
 	l.stats.FramesSent++
 	l.mu.Unlock()
-	var lastError error
-	for attempt := 0; attempt < maxReceiveRetries; attempt++ {
+	expectedID := uint16(message[0])<<8 | uint16(message[1])
+	expectedCode := message[5]
+	for unrelated := 0; unrelated <= maxUnrelatedFrames; unrelated++ {
 		received, err := l.receive()
-		if err == nil {
-			return received, nil
-		}
-		if !isFrameError(err) {
+		if err != nil {
 			return nil, err
 		}
-		lastError = err
-		if attempt+1 < maxReceiveRetries {
-			l.sleep(receiveRetryDelay)
-			// The DSP may deassert Ready while it computes a response. Waiting
-			// for it again avoids clocking a silent bus, which returns an
-			// all-zero header and burns the remaining retries.
-			if err := l.waitReady(); err != nil {
-				return nil, l.finishTransfer(err)
-			}
+		actualCode, hasCode := received.Code()
+		if received.ID == expectedID && hasCode && actualCode == expectedCode {
+			return received, nil
+		}
+		l.mu.Lock()
+		l.stats.FramesRejected++
+		l.mu.Unlock()
+		l.stashFrame(*received)
+		if unrelated == maxUnrelatedFrames {
+			break
+		}
+		if err := l.waitReady(); err != nil {
+			return nil, err
 		}
 	}
-	return nil, fmt.Errorf("DSP response retries exhausted: %v", lastError)
+	return nil, fmt.Errorf(
+		"%w: no matching response for id=%d code=0x%02x",
+		errFrameRejected,
+		expectedID,
+		expectedCode,
+	)
 }
 
 func (l *link) receive() (*frame, error) {
@@ -529,7 +628,7 @@ func (l *link) transferSerial(buffer []byte, read bool) ([]byte, error) {
 		var rx []byte
 		if read {
 			rx = out[index : index+1]
-			tx = []byte{0}
+			tx = nil
 		}
 		if err := l.spi.Transfer(
 			tx,

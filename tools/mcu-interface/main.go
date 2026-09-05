@@ -37,6 +37,16 @@ func main() {
 		"/run/reinvoke/mcu-protocol-ready",
 		"RAM marker for the once-per-boot MCU startup exchange",
 	)
+	microphoneState := flag.String(
+		"microphone-state",
+		"/run/reinvoke/microphone-state",
+		"RAM state used to restore microphone privacy after a service restart",
+	)
+	microphoneControlSocket := flag.String(
+		"dsp-mic-control-socket",
+		"/run/reinvoke/dsp-mic-control.sock",
+		"root-only DSP microphone control socket",
+	)
 	allowUnmute := flag.Bool(
 		"allow-unmute",
 		false,
@@ -67,6 +77,11 @@ func main() {
 		"",
 		"allowlisted Bluetooth peer used for rotary volume control",
 	)
+	mediaControl := flag.String(
+		"media-control",
+		"",
+		"BlueZ AVRCP helper used by the top-panel short tap",
+	)
 	pairingAgentPID := flag.String(
 		"pairing-agent-pid",
 		"",
@@ -76,6 +91,11 @@ func main() {
 		"pairing-agent-executable",
 		"",
 		"expected pairing agent executable path",
+	)
+	provisioningSocket := flag.String(
+		"provisioning-socket",
+		"",
+		"root-only socket used to open a Wi-Fi provisioning window",
 	)
 	lightsDirectory := flag.String(
 		"lights-dir",
@@ -108,12 +128,20 @@ func main() {
 			"playback-status, playback-lease, and playback-owner-executable must be supplied together",
 		)
 	}
+	if *mediaControl != "" && (*blueALSAPeer == "" || *playbackStatus == "") {
+		log.Fatal(
+			"media-control requires bluealsa-peer and playback-status",
+		)
+	}
 	if (*pairingAgentPID == "") != (*pairingAgentExecutable == "") {
 		log.Fatal(
 			"pairing-agent-pid and pairing-agent-executable must be supplied together",
 		)
 	}
-
+	microphoneMuted, err := loadOrInitializeMicrophoneState(*microphoneState)
+	if err != nil {
+		log.Fatal(err)
+	}
 	bus, err := openLinuxI2C(*i2cPath)
 	if err != nil {
 		log.Fatal(err)
@@ -173,10 +201,23 @@ func main() {
 		}
 		inputControls = append(inputControls, media)
 	}
+	if *mediaControl != "" {
+		inputControls = append(inputControls, &blueZMediaController{
+			command:    *mediaControl,
+			peer:       *blueALSAPeer,
+			statusPath: *playbackStatus,
+			run:        runMediaControlCommand,
+		})
+	}
 	if *pairingAgentPID != "" {
 		inputControls = append(inputControls, pairingSignalController{
 			pidPath:    *pairingAgentPID,
 			executable: *pairingAgentExecutable,
+		})
+	}
+	if *provisioningSocket != "" {
+		inputControls = append(inputControls, provisioningController{
+			socketPath: *provisioningSocket,
 		})
 	}
 	if *lightsDirectory != "" {
@@ -186,13 +227,31 @@ func main() {
 			logf:      log.Printf,
 		}
 		inputControls = append(inputControls, lights)
-		if err := lights.Start(
-			ctx,
-			"L_311_d_pluggedin",
-			false,
-		); err != nil {
-			log.Fatalf("start boot LED animation: %v", err)
+		if !microphoneMuted {
+			if err := lights.Start(
+				ctx,
+				"L_311_d_pluggedin",
+				false,
+			); err != nil {
+				log.Fatalf("start boot LED animation: %v", err)
+			}
 		}
+	}
+	privacy := newMicrophonePrivacyController(
+		microphoneMuted,
+		*microphoneState,
+		*microphoneControlSocket,
+		lights,
+		log.Printf,
+	)
+	inputControls = append(inputControls, privacy)
+	privacyDone := make(chan struct{})
+	go func() {
+		defer close(privacyDone)
+		privacy.Run(ctx)
+	}()
+	if microphoneMuted {
+		privacy.RequestReconcile()
 	}
 	var relayDone chan struct{}
 	if source != nil {
@@ -213,14 +272,15 @@ func main() {
 	}
 
 	service := wampService{
-		address:     *routerHost + ":" + strconv.Itoa(*routerPort),
-		realm:       *realm,
-		controller:  control,
-		media:       media,
-		lights:      lights,
-		events:      source,
-		version:     recoveredMCUVersion,
-		flushEvents: true,
+		address:    *routerHost + ":" + strconv.Itoa(*routerPort),
+		realm:      *realm,
+		controller: control,
+		media:      media,
+		lights:     lights,
+		events:     source,
+		version:    recoveredMCUVersion,
+		privacy:    privacy,
+		logf:       log.Printf,
 	}
 	log.Printf(
 		"hardware initialized muted; WAMP unmute policy=%t",
@@ -244,6 +304,7 @@ func main() {
 				*playbackOwnerExecutable,
 				control,
 				playbackPolicyInterval,
+				playbackPolicyHoldoff,
 				log.Printf,
 			)
 			if err != nil {
@@ -261,6 +322,7 @@ func main() {
 		log.Printf,
 	)
 	cancel()
+	<-privacyDone
 	heartbeatErr := <-heartbeatDone
 	playbackErr := <-playbackDone
 	if relayDone != nil {

@@ -86,8 +86,9 @@ func buildFrame(id uint16, payload []byte) ([]byte, error) {
 }
 
 var (
-	errFrameRejected = errors.New("device frame rejected by header check")
-	errFrameChecksum = errors.New("device frame checksum mismatch")
+	errFrameRejected   = errors.New("device frame rejected by header check")
+	errFrameChecksum   = errors.New("device frame checksum mismatch")
+	errCommandResponse = errors.New("DSP command response failed")
 )
 
 // parseDeviceHeader applies the donor's header check: a frame whose first two

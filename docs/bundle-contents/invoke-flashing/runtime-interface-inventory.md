@@ -1,9 +1,15 @@
 # Runtime Interface Inventory
 
-Static inventory from the extracted `83_IMAGE` rootfs. This is an interface
-map, not proof that any service is safe to expose on a modern network.
+> [!IMPORTANT]
+> **Historical vendor inventory.** This static map describes the extracted
+> `83_IMAGE` rootfs, not the current reInvoke runtime. See the
+> [current contract](../../current-product-contract.md) for owned service
+> boundaries.
 
-| Boundary | Evidence | Current interpretation |
+This is an interface map, not proof that any vendor service is safe to expose
+on a modern network.
+
+| Boundary | Evidence | Interpretation at the donor boundary |
 |---|---|---|
 | Message bus | `logwrapper bonefish -r default -t 9999 -w 9998 -d` in `system-manager` | A `bonefish` WAMP router owns both ports: realm `default`, rawsocket on 9999, WebSocket on 9998 |
 | MCU control | `mcu-interface 127.0.0.1 9999`; `MCUInterface::register_wamp` symbols in the binary | A WAMP *client* dialing the router, not a listener on 9999. Reaches three I2C peers on `/dev/i2c-0` at `0x20`, `0x36`, and `0x4c` with sysfs GPIO handshake. See [mcu-boundary.md](../../emulation/mcu-boundary.md) |

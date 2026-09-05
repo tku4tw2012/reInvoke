@@ -1,14 +1,20 @@
 ---
-title: Hardware validation plan
-description: Closed-unit validation and software-interface recovery plan for reInvoke
-ms.date: 2026-09-03
+title: Historical hardware validation plan
+description: Pre-bring-up closed-unit validation and interface-recovery plan retained as evidence
+ms.date: 2026-09-05
 ms.topic: concept
 ---
 
 ## Validation boundary
 
-This is the gate between static firmware research and any physical revival
-work. It is intentionally non-destructive.
+> [!IMPORTANT]
+> **Historical plan.** The project has completed this gate and now runs an owned
+> RAM lifecycle. Keep this document as the pre-bring-up rationale; use the
+> [current contract](current-product-contract.md), [PLAN.md](../PLAN.md), and
+> [U-Boot procedure](uboot-access.md) for current behavior and next steps.
+
+This was the gate between static firmware research and physical revival work.
+It was intentionally non-destructive.
 
 ## What is already established without a physical unit
 

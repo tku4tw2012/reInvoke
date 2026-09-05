@@ -76,7 +76,7 @@ func (hardware *recordingHardware) UpdateRegister(
 	return hardware.WriteRegister(address, register, update(current))
 }
 
-func TestInitializePreservesMuteFirstCapturedOrder(t *testing.T) {
+func TestInitializeMutesBeforeConfiguringDSPPowerRails(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
 	control := newController(hardware, mutePolicy{})
 	var slept time.Duration
@@ -98,9 +98,8 @@ func TestInitializePreservesMuteFirstCapturedOrder(t *testing.T) {
 		{kind: "write", address: 0x20, register: 0x03, value: 0x00},
 		{kind: "write", address: 0x20, register: 0x01, value: 0x02},
 		{kind: "write", address: 0x20, register: 0x01, value: 0x02},
-		{kind: "write", address: 0x20, register: 0x01, value: 0x03},
-		{kind: "write", address: 0x20, register: 0x01, value: 0x13},
-		{kind: "write", address: 0x20, register: 0x01, value: 0x1b},
+		{kind: "write", address: 0x20, register: 0x01, value: 0x12},
+		{kind: "write", address: 0x20, register: 0x01, value: 0x1a},
 	}
 	if !reflect.DeepEqual(writes[:len(expectedPrefix)], expectedPrefix) {
 		t.Fatalf("startup writes = %#v, want prefix %#v", writes, expectedPrefix)
@@ -141,6 +140,21 @@ func TestLiveExpanderValueIsPreservedByInitialization(t *testing.T) {
 	}
 }
 
+func TestInitializationPreservesDSPResetDirection(t *testing.T) {
+	hardware := newRecordingHardware(0)
+	hardware.registers[[2]byte{expanderAddress, expanderConfig}] = 0xff
+	control := newController(hardware, mutePolicy{})
+	control.sleep = func(time.Duration) {}
+
+	if err := control.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	value := hardware.registers[[2]byte{expanderAddress, expanderConfig}]
+	if value != 0xe1 {
+		t.Fatalf("expander configuration = 0x%02x, want 0xe1", value)
+	}
+}
+
 func TestUnmuteRequiresPolicyAndDACFirst(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
 	control := newController(hardware, mutePolicy{})
@@ -164,8 +178,8 @@ func TestUnmuteRequiresPolicyAndDACFirst(t *testing.T) {
 	}
 
 	value := hardware.registers[[2]byte{expanderAddress, expanderOutput}]
-	if value != 0x1d {
-		t.Fatalf("unmuted expander value = 0x%02x, want 0x1d", value)
+	if value != 0x1c {
+		t.Fatalf("unmuted expander value = 0x%02x, want 0x1c", value)
 	}
 }
 
@@ -195,8 +209,8 @@ func TestShutdownMutesAmplifierBeforeDAC(t *testing.T) {
 		}
 	}
 	if len(writes) != 2 ||
-		writes[0].value != 0x1f ||
-		writes[1].value != 0x1b {
+		writes[0].value != 0x1e ||
+		writes[1].value != 0x1a {
 		t.Fatalf("shutdown writes = %#v", writes)
 	}
 }
@@ -225,7 +239,7 @@ func TestPlaybackPolicyOwnsOrderedUnmuteAndRemute(t *testing.T) {
 			writes = append(writes, operation)
 		}
 	}
-	want := []byte{0x1f, 0x1d, 0x1f, 0x1b}
+	want := []byte{0x1e, 0x1c, 0x1e, 0x1a}
 	if len(writes) != len(want) {
 		t.Fatalf("playback writes = %#v", writes)
 	}

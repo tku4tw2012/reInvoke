@@ -1,11 +1,15 @@
 ---
 title: reInvoke revival roadmap
-description: Staged roadmap for closed-unit software replacement and recovery
-ms.date: 2026-09-03
+description: Staged roadmap and completed milestones for closed-unit reInvoke software replacement
+ms.date: 2026-09-05
 ms.topic: overview
 ---
 
 ## End state
+
+The [current product and architecture contract](current-product-contract.md)
+defines the accepted target. This roadmap retains completed stages as historical
+milestones and identifies the remaining product work.
 
 Reach **repurposing completeness (L2)**: a documented, reproducible way to
 reuse the Invoke enclosure, speakers, microphones, UI, and/or compute module,
@@ -37,30 +41,31 @@ removes Cortana and Spotify and adds a Wi-Fi blocker, converting the product
 into a local Bluetooth speaker. See
 `docs/bundle-contents/invoke-ota2/ota2-analysis.md`.
 
-The hardware-side transport and electrical details remain unproven.
+That donor finding was a comparison point. The current target is the owned
+RAM-only reInvoke stack, not Harman's 2021 firmware.
 
-### 3. Safe observation on one physical sample — ready to start
+### 3. Safe observation on one physical sample — complete
 
-Donor device(s) are available. The full non-invasive procedure is in
-`docs/no-disassembly-observation-procedure.md`, ordered so the cheapest and
-most decisive observations come first.
+The closed sample completed USB/U-Boot access, RAM boot, NAND readback, Wi-Fi,
+Bluetooth, playback and capture ALSA, MCU, DSP, controls, LEDs, and attended
+audio checks. The original
+[no-disassembly procedure](no-disassembly-observation-procedure.md) is retained
+as the historical plan; [U-Boot access](uboot-access.md) is the current USB
+procedure.
 
-Because Harman's own final build already targets Bluetooth-speaker operation,
-the first question is which firmware a unit carries and whether it pairs and
-plays audio. A unit that does is already close to the end goal. Only after
-that does USB download-mode probing matter, and that probe is a hard gate on
-any RAM-boot work.
+The sample carries `Barracuda_libre-12.2050.3`, not the 2021 final image.
+Yellow-mode USB and owned RAM boot are resolved and no longer a project gate.
 
 Do not flash until a recovery and image-integrity procedure is independently
 established.
 
-### 4. Software interface validation
+### 4. Software interface validation — accepted boundary
 
-Recover the MCU, DSP, audio, UI, button, LED, and microphone contracts without
-opening the enclosure. Use held binaries, WAMP traffic, emulation shims,
-interposed system calls, kernel interfaces, and live RAM-only logs. A
-log-and-forward ioctl recorder can capture byte-exact I2C and SPI exchanges,
-including device responses, while the donor process continues operating.
+The required MCU, DSP, audio, button, LED, and microphone contracts were
+recovered without opening the enclosure. Owned MCU and DSP services now
+implement the target boundary. Physical meanings for every button/animation,
+occasional missing MCU Mic-Mute events, and onboarding orchestration remain
+explicit gaps rather than blockers hidden behind donor binaries.
 
 Electrical characterization and replacement-compute design are optional future
 hardware projects. They do not gate a maintained userland on the working
@@ -75,11 +80,12 @@ BG2CDP platform.
 - **Bypass electronics:** optional future hardware project if the existing
   audio/control path fails.
 
-### 6. Minimal revival demonstrator
+### 6. Minimal revival demonstrator — implemented, final campaign pending
 
-Build the smallest testable stack: local playback, volume/mute, LED/UI
-feedback, Bluetooth or network input, and safe shutdown. Keep voice assistant
-and cloud dependencies optional. Record reproducible setup and test results.
+The owned PID 1, Bluetooth playback, volume, speaker safety, microphone privacy,
+LED transport, networking, provisioning boundary, and safe shutdown are
+implemented. The current image still needs the remaining cold boots and one
+attended playback-continuity run in [PLAN.md](../PLAN.md).
 
 ### 7. Hardening and preservation release
 

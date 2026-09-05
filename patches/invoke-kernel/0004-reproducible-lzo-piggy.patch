@@ -1,0 +1,31 @@
+Make the LZO-compressed kernel payload reproducible.
+
+lzop stores a modification time in its header. Reading the payload from a
+pipe leaves lzop no source file to take that time from, so it stores the
+current clock and the header checksum that covers it. Two builds of an
+identical arch/arm/boot/Image therefore produce different piggy.lzo files,
+and the difference propagates into zImage and the final uImage.
+
+Compress the input as a named file instead, with its mode and modification
+time pinned first. lzop then records those fixed values.
+
+The kernel's own LZO decompressor is unaffected. parse_header() in
+lib/decompress_unlzo.c skips the mode, both mtime words, the file name, and
+the header checksum, so recording a name and a zero timestamp changes
+nothing it reads.
+
+--- a/scripts/Makefile.lib
++++ b/scripts/Makefile.lib
+@@ -303,8 +303,10 @@
+ 	(rm -f $@ ; false)
+ 
+ quiet_cmd_lzo = LZO     $@
+-cmd_lzo = (cat $(filter-out FORCE,$^) | \
+-	lzop -9 && $(call size_append, $(filter-out FORCE,$^))) > $@ || \
++cmd_lzo = (chmod 0644 $(filter-out FORCE,$^) && \
++	touch -d @0 $(filter-out FORCE,$^) && \
++	lzop -9 -c $(filter-out FORCE,$^) && \
++	$(call size_append, $(filter-out FORCE,$^))) > $@ || \
+ 	(rm -f $@ ; false)
+ 
+ # U-Boot mkimage

@@ -16,8 +16,9 @@ const (
 	expanderConfig  = 0x03
 	dacAddress      = 0x4c
 
-	ampMuteMask = byte(0x02)
-	dacMuteMask = byte(0x04)
+	ampMuteMask   = byte(0x02)
+	dacMuteMask   = byte(0x04)
+	mcuOutputMask = ampMuteMask | dacMuteMask | 0x08 | 0x10
 )
 
 var dacInitialization = [][2]byte{
@@ -69,10 +70,12 @@ func (c *controller) initialize() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if err := c.hardware.WriteRegister(
+	if err := c.hardware.UpdateRegister(
 		expanderAddress,
 		expanderConfig,
-		0x00,
+		func(current byte) byte {
+			return current &^ mcuOutputMask
+		},
 	); err != nil {
 		return fmt.Errorf("configure IO expander: %w", err)
 	}
@@ -83,11 +86,11 @@ func (c *controller) initialize() error {
 		return fmt.Errorf("mute DAC: %w", err)
 	}
 
-	for _, mask := range []byte{0x01, 0x10, 0x08} {
+	for _, mask := range []byte{0x10, 0x08} {
 		if err := c.updateExpanderLocked(func(value byte) byte {
 			return value | mask
 		}); err != nil {
-			return fmt.Errorf("power DSP: %w", err)
+			return fmt.Errorf("configure DSP power rails: %w", err)
 		}
 	}
 	for _, setting := range dacInitialization {

@@ -92,6 +92,20 @@ else
   fail dsp.boot_event
 fi
 
+wamp_rules="$(
+  /opt/reinvoke/lib/ld-linux-armhf.so.3 \
+    --library-path /opt/reinvoke/lib \
+    /opt/reinvoke/bin/iptables -S INPUT 2>/dev/null
+)"
+if echo "${wamp_rules}" |
+     ${BB} grep -q -- '--dport 9998 -j DROP' &&
+   echo "${wamp_rules}" |
+     ${BB} grep -q -- '--dport 9999 -j DROP'; then
+  pass network.wamp_firewall
+else
+  fail network.wamp_firewall
+fi
+
 for service in syslogd bonefish mcu-interface dsp-interface dbus bluetoothd \
   bluealsa bluealsa-aplay pairing-agent; do
   check_pid_file "${service}"

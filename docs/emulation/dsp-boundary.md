@@ -1,20 +1,49 @@
 ---
 title: DSP boundary
-description: Recovered SPI, GPIO, I2C, and WAMP behavior of the donor dsp-client and what a replacement must honor
-ms.date: 2026-09-03
+description: Current owned DSP service boundary and the recovered donor SPI, GPIO, I2C, and WAMP evidence behind it
+ms.date: 2026-09-05
 ms.topic: concept
 ---
 
-What the audio-DSP boundary looks like without opening the unit: the host-side
-transport recovered from the preserved `usr/bin/dsp-client` binary, the wire
-framing and event vocabulary, the parts of it already confirmed on the physical
-unit, and what a replacement service would have to reproduce.
+This document separates the current owned audio-DSP boundary from the donor
+evidence used to recover it. The
+[current product and architecture contract](../current-product-contract.md) is
+normative.
 
 This is the DSP counterpart to [MCU boundary](mcu-boundary.md). No hardware was
 opened, no probe was attached, and no provisioning file was touched to produce
 it.
 
-## Evidence classification
+## Current owned boundary
+
+`reinvoke-dsp-interface` is the sole owner of DSP image loading, SPI framing,
+handshake GPIOs, and the shared-expander DSP reset bit. It downloads the
+checksum-gated `dsp-img.ldr` at every start and preserves the other expander
+bits. Unlike the donor, it never requests amplifier or DAC unmute on a DSP boot
+event.
+
+The service exposes seven public DSP WAMP procedures:
+
+* `com.harman.dsp.micTestSingle`
+* `com.harman.dsp.micTestPair`
+* `com.harman.dsp.micTestNormal`
+* `com.harman.test.dspBypassMode`
+* `com.harman.dsp.volumeSet`
+* `com.harman.dsp.getVer`
+* `com.harman.dsp.dumpDspMemory`
+
+Raw microphone mutation is deliberately absent from that unauthenticated
+surface. The DSP service creates `/run/reinvoke/dsp-mic-control.sock` with mode
+`0600` for opcode `0x09`. Only root-controlled components can reach it. The MCU
+service registers `com.harman.dsp.micMute` and funnels both compatibility calls
+and physical-button events through one process-lifetime privacy controller.
+
+On every DSP restart, the service reads the mode-`0600` RAM privacy state,
+restores required mute before publishing readiness, and fails startup if that
+reconciliation cannot be completed. This makes microphone privacy independent
+of WAMP session lifetime.
+
+## Historical donor evidence classification
 
 Verified facts:
 
@@ -43,7 +72,7 @@ Verified facts:
   `dsp call mcu unmute!!!`.
 * A byte-exact `SPI_IOC_MESSAGE` log-and-forward capture was taken on the
   physical unit on 2026-09-03, archived as
-  `hardware/software-captures/20260903T191657Z-dsp-ioctl-record/dsp-ioctl.log`
+  `<archive>/hardware/software-captures/<timestamp>-dsp-ioctl-record/dsp-ioctl.log`
   (SHA-256 `d867a4dc…7732ab72ba`) with the matching service log
   `dsp-service.log` (SHA-256 `9f3f1cb7…a7d084c3b0`). It holds 40,144 SPI
   transfers: 40,121 four-byte image words followed by 23 one-byte message
@@ -77,7 +106,7 @@ Inference:
   [Boot image](#boot-image). No DSP part number is established by any of this,
   and `HKI-AUD-008` remains UNKNOWN.
 
-Current limits:
+Donor-evidence limits:
 
 * The capture covers one service start: a full image download, the boot event,
   and one `com.harman.dsp.getVer` exchange. It ended while the version reply
@@ -298,7 +327,7 @@ single-byte frame traffic from a longer session; that trace was not retained in
 this format and is not re-derived here. Counting a capture by direction is what
 `tools/emulation/spi-capture-label.mjs` does.
 
-## WAMP surface
+## Historical donor WAMP surface
 
 `dsp-client` dials the Bonefish router at `127.0.0.1:9999`, realm `default`,
 and registers as a client. Startup order, confirmed by both the disassembly and
@@ -356,20 +385,18 @@ transiently unmutes the DAC and amplifier, and why
 `tools/usb-boot/start-native-services.sh` keeps it behind the opt-in
 `--start-dsp` flag.
 
-## What a replacement must reproduce
+## Historical recovery requirements and current differences
 
-A replacement `dsp-client` is a well-bounded problem. It is the only service
-that speaks the SPI link, and its outward dependencies are the router, the SPI
-node, five GPIOs, and one expander bit. Power sequencing is not its job:
-`mcu-interface` registers `com.harman.vui.powerdspcontrol` and logs
-`mcu_interface start power_on_dsp()` before the DSP answers.
+The replacement problem was well bounded by the donor evidence. The current
+service is the only process that speaks the SPI link, and its hardware
+dependencies are the SPI node, five GPIOs, and one expander bit. Power sequencing
+remains the MCU service's job.
 
-Required, in order of risk:
+The recovered requirements and their current disposition are:
 
-1. WAMP client on `127.0.0.1:9999`, realm `default`, registering the eight
-   procedures above and subscribing to `com.harman.stateChanged`, so that
-   callers keep working. The captured router log shows exactly those eight
-   registrations.
+1. The donor registered eight WAMP procedures. The owned DSP service registers
+   seven: it omits `com.harman.dsp.micMute`, which the MCU privacy controller now
+   owns, and provides the raw opcode only on the root-only Unix socket.
 2. Publishing `com.harman.dsp.version` on `EVENT_DSP_VERSION`.
 3. The `spidev0.0` configuration, frame layout, and checksum above.
 4. The GPIO handshake order in [Control lines](#control-lines).
@@ -384,9 +411,10 @@ Required, in order of risk:
 Deliberately not required: the `devmem` shell-outs, the Breakpad minidump
 writer that targets `/data/crash`, and the memory-dump path.
 
-The one behavior a replacement should *not* copy blindly is
-`call_mcu_unmute`. A replacement can gate it, which would remove the reason
-`--start-dsp` has to stay opt-in.
+The owned service intentionally does not copy `call_mcu_unmute`. DSP startup
+restores required microphone mute before readiness but never opens the speaker
+path. PID 1 can therefore supervise it as a normal service rather than an
+attended opt-in donor adapter.
 
 ## Non-invasive instrumentation
 

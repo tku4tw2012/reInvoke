@@ -3,7 +3,7 @@
 
 package main
 
-// The WAMP surface of the replacement: the eight procedures the donor
+// The WAMP surface of the replacement: seven procedures recovered from the donor
 // registers on the Bonefish router, the one topic it subscribes to, and the
 // version publication.
 //
@@ -41,11 +41,13 @@ const (
 	wampMaxFrameLen = 0xffffff
 
 	wampReconnectDelay = 5 * time.Second
+	dspCommandTimeout  = 3 * time.Second
 )
 
 const (
 	versionTopic = "com.harman.dsp.version"
 	stateTopic   = "com.harman.stateChanged"
+	sessionTopic = "com.reinvoke.dsp.session"
 )
 
 // forbiddenProcedures are the physical mute gates. This service must never
@@ -78,8 +80,14 @@ var procedures = []procedureSpec{
 	{Name: "com.harman.test.dspBypassMode", ID: messageIDTest, Opcode: 0x03, Arguments: 1},
 	{Name: "com.harman.dsp.volumeSet", ID: messageIDControl, Opcode: 0x04, Arguments: 1},
 	{Name: "com.harman.dsp.getVer", ID: messageIDControl, Opcode: 0x08},
-	{Name: "com.harman.dsp.micMute", ID: messageIDControl, Opcode: 0x09, Arguments: 1},
 	{Name: "com.harman.dsp.dumpDspMemory", ID: messageIDControl, Opcode: 0x0c, Arguments: 2},
+}
+
+var micMuteSpec = procedureSpec{
+	Name:      "DSP microphone control",
+	ID:        messageIDControl,
+	Opcode:    0x09,
+	Arguments: 1,
 }
 
 // stateChangedSpec is a subscription in the donor, not a registration.
@@ -128,7 +136,12 @@ type wampService struct {
 	safeOnly bool
 
 	// idle is how long the message loop sleeps when it moved no traffic.
-	idle time.Duration
+	idle           time.Duration
+	commandTimeout time.Duration
+	device         <-chan frame
+	ready          <-chan struct{}
+	bootEvents     chan<- struct{}
+	micControlMu   sync.Mutex
 
 	logf func(string, ...interface{})
 }
@@ -214,32 +227,27 @@ func (service *wampService) serve(
 		}
 	}()
 
-	pumpContext, stopPump := context.WithCancel(sessionContext)
-	pumpDone := make(chan struct{})
 	defer func() {
 		stopSession()
-		stopPump()
 		_ = client.connection.Close()
 		<-routerDone
-		<-pumpDone
 	}()
-	device := make(chan frame)
-	deviceErrors := make(chan error, 1)
-	go func() {
-		defer close(pumpDone)
-		defer close(device)
-		service.pump(pumpContext, device, deviceErrors)
-	}()
-
+	ready := service.ready
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-ready:
+			if err := client.publish(
+				sessionTopic,
+				[]interface{}{"ready"},
+			); err != nil {
+				return fmt.Errorf("publish DSP session readiness: %w", err)
+			}
+			ready = nil
 		case err := <-routerErrors:
 			return err
-		case err := <-deviceErrors:
-			return fmt.Errorf("%w: %v", errDSPLinkFailure, err)
-		case received, ok := <-device:
+		case received, ok := <-service.device:
 			if !ok {
 				return fmt.Errorf("%w: link closed", errDSPLinkFailure)
 			}
@@ -251,6 +259,7 @@ func (service *wampService) serve(
 				return errors.New("WAMP connection closed")
 			}
 			if err := service.handleMessage(
+				sessionContext,
 				client,
 				registrations,
 				subscription,
@@ -267,29 +276,47 @@ func (service *wampService) serve(
 func (service *wampService) pump(
 	ctx context.Context,
 	device chan<- frame,
-	failures chan<- error,
-) {
+) error {
 	idle := service.idle
 	if idle <= 0 {
 		idle = 200 * time.Millisecond
 	}
 	for {
 		if ctx.Err() != nil {
-			return
+			return nil
 		}
 		received, worked, err := service.link.Poll()
 		if err != nil {
 			if !isFrameError(err) {
-				failures <- err
-				return
+				return err
 			}
 			service.log("discarded frame: %v", err)
 		}
 		if received != nil {
+			if code, ok := received.Code(); ok &&
+				eventName(received.ID, code) == "EVENT_DSP_BOOTUP" {
+				// The link is the authority for this fact. Record it here so
+				// readiness never depends on the frame also reaching a live
+				// WAMP session; delivery below is best effort.
+				if err := recordDSPBootState(
+					service.policy.BootStatePath,
+				); err != nil {
+					service.log("%v", err)
+				}
+				select {
+				case service.bootEvents <- struct{}{}:
+				default:
+				}
+			}
 			select {
 			case device <- *received:
 			case <-ctx.Done():
-				return
+				return nil
+			default:
+				service.log(
+					"dropped DSP event id=%d while WAMP delivery was unavailable",
+					received.ID,
+				)
 			}
 		}
 		if !worked {
@@ -298,13 +325,14 @@ func (service *wampService) pump(
 			case <-timer.C:
 			case <-ctx.Done():
 				timer.Stop()
-				return
+				return nil
 			}
 		}
 	}
 }
 
 func (service *wampService) handleMessage(
+	ctx context.Context,
 	client *wampConnection,
 	registrations map[uint64]procedureSpec,
 	subscription uint64,
@@ -312,9 +340,9 @@ func (service *wampService) handleMessage(
 ) error {
 	switch messageType(message) {
 	case wampInvocation:
-		return service.handleInvocation(client, registrations, message)
+		return service.handleInvocation(ctx, client, registrations, message)
 	case wampEvent:
-		return service.handleEvent(subscription, message)
+		return service.handleEvent(ctx, subscription, message)
 	case wampResult, wampError:
 		service.log("router response: %v", message)
 		return nil
@@ -324,6 +352,7 @@ func (service *wampService) handleMessage(
 }
 
 func (service *wampService) handleInvocation(
+	ctx context.Context,
 	client *wampConnection,
 	registrations map[uint64]procedureSpec,
 	message []interface{},
@@ -348,7 +377,7 @@ func (service *wampService) handleInvocation(
 		args, _ = message[4].([]interface{})
 	}
 
-	invocationError := service.dispatch(spec, args)
+	invocationError := service.dispatch(ctx, spec, args)
 	if invocationError != nil {
 		return client.writeFrame([]interface{}{
 			wampError,
@@ -369,21 +398,50 @@ func (service *wampService) handleInvocation(
 
 // dispatch encodes one procedure call into a frame and queues it.
 func (service *wampService) dispatch(
+	ctx context.Context,
 	spec procedureSpec,
 	args []interface{},
 ) error {
-	if service.safeOnly {
+	if service.safeOnly && !isSafeMicrophoneMute(spec, args) {
 		return fmt.Errorf("%s is disabled by local policy", spec.Name)
 	}
 	payload, err := encodeCall(spec, args)
 	if err != nil {
 		return err
 	}
-	if err := service.link.Enqueue(spec.ID, payload); err != nil {
+	timeout := service.commandTimeout
+	if timeout <= 0 {
+		timeout = dspCommandTimeout
+	}
+	commandContext, cancelCommand := context.WithTimeout(ctx, timeout)
+	defer cancelCommand()
+	completion, err := service.link.EnqueueTracked(
+		commandContext,
+		spec.ID,
+		payload,
+	)
+	if err != nil {
 		return err
 	}
 	service.log("queued %s as id %d payload % x", spec.Name, spec.ID, payload)
-	return nil
+	select {
+	case err := <-completion:
+		if err != nil {
+			return fmt.Errorf("transmit %s: %w", spec.Name, err)
+		}
+		service.log("completed %s", spec.Name)
+		return nil
+	case <-commandContext.Done():
+		return commandContext.Err()
+	}
+}
+
+func isSafeMicrophoneMute(spec procedureSpec, args []interface{}) bool {
+	if spec.Opcode != micMuteSpec.Opcode || len(args) != 1 {
+		return false
+	}
+	value, ok := byteArgument(args[0])
+	return ok && value == 1
 }
 
 // encodeCall builds the payload bytes of a procedure: its opcode followed by
@@ -440,6 +498,7 @@ func byteArgument(value interface{}) (byte, bool) {
 // source name to the donor's one byte state, so a non numeric state is
 // reported and dropped rather than guessed.
 func (service *wampService) handleEvent(
+	ctx context.Context,
 	subscription uint64,
 	message []interface{},
 ) error {
@@ -463,7 +522,7 @@ func (service *wampService) handleEvent(
 			stateTopic, args[0])
 		return nil
 	}
-	if err := service.dispatch(stateChangedSpec, args); err != nil {
+	if err := service.dispatch(ctx, stateChangedSpec, args); err != nil {
 		service.log("ignored %s: %v", stateTopic, err)
 	}
 	return nil

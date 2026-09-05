@@ -10,6 +10,7 @@ readonly EXPECTED_SOURCE_SHA256="08a8f96a5c476a08ba19441d83637e606f27f442d56c268
 readonly EXPECTED_PROVISIOND_SHA256="5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07"
 readonly EXPECTED_WIFI_APPLYD_SHA256="6697df000d130a6461d1e3f57b6ebe8b1ad1742984a94250bc1e243dca097610"
 readonly EXPECTED_NETWORKD_SHA256="cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66"
+readonly EXPECTED_WINDOWD_SHA256="789eee1b9151d807eed5f2077e52c348780461d970d23883e63ec3144601dffe"
 readonly EXPECTED_MODULE_TREE_MANIFEST_SHA256="06d7a5f5bc43c3b3d869b9b962e1ef70d7f3c3fc15d934c8dc020332b57b940a"
 readonly MAX_NATIVE_INITRAMFS_BYTES=$((60 * 1024 * 1024))
 
@@ -24,6 +25,7 @@ Usage: build-native-initramfs.sh \
   [--provisiond PATH] \
   [--wifi-applyd PATH] \
   [--networkd PATH] \
+  [--windowd PATH] \
   [--runtime-bundle PATH --runtime-manifest-sha256 SHA256] \
   --output PATH
 
@@ -51,6 +53,7 @@ main() {
   local provisiond=""
   local wifi_applyd=""
   local networkd=""
+  local windowd=""
   local runtime_bundle=""
   local runtime_manifest_sha256=""
   local output_path=""
@@ -102,6 +105,11 @@ main() {
       --networkd)
         [[ -n "${2:-}" ]] || err "--networkd requires a path"
         networkd="$2"
+        shift 2
+        ;;
+      --windowd)
+        [[ -n "${2:-}" ]] || err "--windowd requires a path"
+        windowd="$2"
         shift 2
         ;;
       --runtime-bundle)
@@ -157,6 +165,9 @@ main() {
   fi
   if [[ -n "${networkd}" ]]; then
     networkd="$(realpath "${networkd}")"
+  fi
+  if [[ -n "${windowd}" ]]; then
+    windowd="$(realpath "${windowd}")"
   fi
   if [[ -n "${runtime_bundle}" ]]; then
     runtime_bundle="$(realpath "${runtime_bundle}")"
@@ -251,6 +262,13 @@ main() {
       sha256sum --check --status ||
       err "network lifecycle service checksum mismatch"
   fi
+  if [[ -n "${windowd}" ]]; then
+    [[ -f "${windowd}" ]] ||
+      err "provisioning window daemon not found: ${windowd}"
+    printf "%s  %s\n" "${EXPECTED_WINDOWD_SHA256}" "${windowd}" |
+      sha256sum --check --status ||
+      err "provisioning window daemon checksum mismatch"
+  fi
   if [[ -n "${runtime_bundle}" || -n "${runtime_manifest_sha256}" ]]; then
     [[ -n "${runtime_bundle}" && -n "${runtime_manifest_sha256}" ]] ||
       err "runtime bundle and manifest checksum must be supplied together"
@@ -327,6 +345,10 @@ main() {
     install -m 0755 "${networkd}" \
       "${rootfs_dir}/usr/sbin/reinvoke-networkd"
   fi
+  if [[ -n "${windowd}" ]]; then
+    install -m 0755 "${windowd}" \
+      "${rootfs_dir}/usr/sbin/reinvoke-provision-windowd"
+  fi
   if [[ -n "${runtime_bundle}" ]]; then
     mkdir -p "${rootfs_dir}/opt/reinvoke"
     cp -a "${runtime_bundle}/." "${rootfs_dir}/opt/reinvoke/"
@@ -349,6 +371,9 @@ main() {
     fi
     if [[ -n "${provisiond}" ]]; then
       printf "provisioning daemon: included, manual start only\n"
+    fi
+    if [[ -n "${windowd}" ]]; then
+      printf "provisioning window daemon: included\n"
     fi
     if [[ -n "${wifi_applyd}" ]]; then
       printf "Wi-Fi apply daemon: included, manual start only\n"

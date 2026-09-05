@@ -1,13 +1,18 @@
 ---
-title: Local control surface of the final firmware
-description: Reachability and evidence boundaries for the final Invoke firmware services
-ms.date: 2026-09-02
+title: Historical local control surface of Harman's final firmware
+description: Reachability and evidence boundaries for Harman's 2021 Invoke firmware services
+ms.date: 2026-09-05
 ms.topic: concept
 ---
 
 What can and cannot be reached in the preserved `Barracuda_libre-12.2134.0`
 build. The physical unit's extracted active rootfs is the earlier
 `Barracuda_libre-12.2050.3` release.
+
+> [!IMPORTANT]
+> This is historical vendor-firmware evidence, not the reInvoke public surface.
+> The owned RAM target excludes the vendor supervisor and policy services. See
+> the [current product and architecture contract](../current-product-contract.md).
 
 Everything below is static analysis of the preserved rootfs, corroborated by
 running the same binaries under emulation. Selected Wi-Fi, Bluetooth, and MCU

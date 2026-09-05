@@ -35,9 +35,10 @@ type pollDescriptor struct {
 }
 
 type inputEvent struct {
-	Name  string
-	Step  string
-	Topic string
+	Name       string
+	Step       string
+	Topic      string
+	OccurredAt time.Time
 }
 
 type eventSource interface {
@@ -122,14 +123,17 @@ func (source *gpioEventSource) drainPendingEvents(
 	ctx context.Context,
 	buffer []byte,
 	events chan<- inputEvent,
+	readFirst bool,
 ) error {
 	for count := 0; count < maxMCUPendingReads; count++ {
-		lineHigh, err := readGPIOLevel(source.value, buffer)
-		if err != nil {
-			return err
-		}
-		if lineHigh {
-			return nil
+		if !readFirst || count != 0 {
+			lineHigh, err := readGPIOLevel(source.value, buffer)
+			if err != nil {
+				return err
+			}
+			if lineHigh {
+				return nil
+			}
 		}
 		frame, err := source.bus.ReadMCUEvent()
 		if err != nil {
@@ -137,6 +141,7 @@ func (source *gpioEventSource) drainPendingEvents(
 		}
 		if events != nil {
 			if event, ok := decodeMCUEvent(frame); ok {
+				event.OccurredAt = time.Now()
 				select {
 				case events <- event:
 				case <-ctx.Done():
@@ -164,7 +169,12 @@ func (source *gpioEventSource) Events(
 		if err != nil {
 			source.logError(err)
 		} else if !lineHigh {
-			if err := source.drainPendingEvents(ctx, buffer, nil); err != nil {
+			if err := source.drainPendingEvents(
+				ctx,
+				buffer,
+				nil,
+				false,
+			); err != nil {
 				source.logError(err)
 				recoverySuppressed = errors.Is(err, errMCUDrainLimit)
 			} else {
@@ -213,6 +223,7 @@ func (source *gpioEventSource) Events(
 						ctx,
 						buffer,
 						publish,
+						false,
 					); err != nil && ctx.Err() == nil {
 						source.logError(err)
 						recoverySuppressed = errors.Is(
@@ -246,6 +257,7 @@ func (source *gpioEventSource) Events(
 				ctx,
 				buffer,
 				publish,
+				true,
 			); err != nil && ctx.Err() == nil {
 				source.logError(err)
 				recoverySuppressed = errors.Is(err, errMCUDrainLimit)
