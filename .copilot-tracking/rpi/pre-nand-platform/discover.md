@@ -325,3 +325,51 @@ and the 32,382,132-byte initramfs is
 `9ab76db2ee7f8d9e7533355ce91d2dde014205a5d6f22111096db256004eddd9`.
 Two independent runtime and initramfs builds agree byte for byte. The pair is
 staged for cold boot 4.
+
+## Iteration 18: exact indicator transport and donor policy
+
+Static ARM disassembly recovered `com.harman.ledSet` end to end. The WAMP
+handler accepts a required target, optional `mode` and `color` keyword
+arguments, retains front amber, front white, and back state, and sends one
+six-byte command:
+
+```text
+09 <front-amber> <front-white> <back> <stack> <stack>
+```
+
+The final donor bytes are uninitialized stack residue. The owned encoder sends
+zeroes instead. It uses the existing fixed MCU-command transport, serializes
+state with the I2C write, and commits only a successfully written state.
+
+Modes are `off=0`, `on=1`, `dim=2`, `slow-blink=3`, and `fast-blink=4`.
+Selecting front white clears amber and selecting amber clears white. Back
+ignores color. Unknown target or front color sends the unchanged state; unknown
+mode on a selected channel resolves to off. Host, WAMP, rollback, concurrency,
+and race tests pass, and focused review found no significant issue.
+
+The donor caller trace then recovered policy separately from transport.
+`audio-ui` alone calls `ledSet`:
+
+* Bluetooth `pairing` sends back `slow-blink`;
+* `connected` sends back `on`; and
+* disconnected or other state sends back off.
+
+Its logical Bluetooth short press starts pairing, and another short press while
+pairing cancels it. It defines no Bluetooth-long action. The physical bridge is
+still absent from the donor rootfs: MCU publishes
+`com.harman.vui.keypress`, while `audio-ui` subscribes only to
+`com.harman.test.inputEvent`, and no local binary references both.
+
+reInvoke retains its already-validated long-press fallback until it owns
+pairing-window cancellation and authoritative connected/pairing state. Wiring
+the rear LED directly to a button would be incorrect because timeout,
+connection, and daemon restart could leave it stale.
+
+The v16 MCU binary is
+`c3db4b9e650588f7261f5967a4137a62f543a24bfca704e2b88ea44d16cbd36f`,
+the runtime manifest is
+`1bf8622eb08517739628fd6a17737945435a000b18c7f78f7be0166266401980`,
+and the 32,389,027-byte initramfs is
+`fef5f412fd0d5589f5a1cf739c9b131127f9e788147574c4388ef7122eea4453`.
+Each was reproduced in a second independent build. v16 is staged and armed for
+cold boot 4.
