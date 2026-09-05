@@ -662,3 +662,88 @@ func invokeForTest(
 	}
 	return response
 }
+
+// A router may deliver an event or an invocation between a setup request and
+// its reply. Those messages must reach the session loop rather than being
+// mistaken for the reply or dropped.
+func TestSetupResponseQueuesInterleavedMessages(t *testing.T) {
+	clientConnection, routerConnection := net.Pipe()
+	defer clientConnection.Close()
+	defer routerConnection.Close()
+	client := &wampConnection{connection: clientConnection, nextID: 1}
+	router := &wampConnection{connection: routerConnection, nextID: 1}
+
+	requestID := client.requestID()
+	routerDone := make(chan error, 1)
+	go func() {
+		for _, message := range [][]interface{}{
+			{wampEvent, uint64(300), uint64(7), map[string]interface{}{}},
+			{wampInvocation, uint64(9), uint64(201),
+				map[string]interface{}{}},
+			{wampRegistered, requestID, uint64(205)},
+		} {
+			if err := router.writeFrame(message); err != nil {
+				routerDone <- err
+				return
+			}
+		}
+		routerDone <- nil
+	}()
+
+	var deferred [][]interface{}
+	response, err := client.awaitSetupResponse(
+		wampRegistered,
+		requestID,
+		"registration",
+		&deferred,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-routerDone; err != nil {
+		t.Fatal(err)
+	}
+	registrationID, ok := unsigned(response[2])
+	if !ok || registrationID != 205 {
+		t.Fatalf("registration response = %v, want registration 205", response)
+	}
+	if len(deferred) != 2 {
+		t.Fatalf("queued %d messages, want the event and the invocation",
+			len(deferred))
+	}
+	if messageType(deferred[0]) != wampEvent ||
+		messageType(deferred[1]) != wampInvocation {
+		t.Fatalf("queued the wrong messages: %v", deferred)
+	}
+}
+
+// A router that answers a setup request with ERROR must fail the session
+// instead of waiting for a reply that will never arrive.
+func TestSetupResponseFailsOnError(t *testing.T) {
+	clientConnection, routerConnection := net.Pipe()
+	defer clientConnection.Close()
+	defer routerConnection.Close()
+	client := &wampConnection{connection: clientConnection, nextID: 1}
+	router := &wampConnection{connection: routerConnection, nextID: 1}
+
+	requestID := client.requestID()
+	go func() {
+		_ = router.writeFrame([]interface{}{
+			wampError,
+			uint64(wampRegister),
+			requestID,
+			map[string]interface{}{},
+			"wamp.error.procedure_already_exists",
+		})
+	}()
+
+	var deferred [][]interface{}
+	if _, err := client.awaitSetupResponse(
+		wampRegistered,
+		requestID,
+		"registration",
+		&deferred,
+	); err == nil {
+		t.Fatal("registration error was accepted")
+	}
+}

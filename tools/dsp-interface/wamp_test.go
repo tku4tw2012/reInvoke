@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -160,5 +161,52 @@ func TestPumpRecordsBootStateWithoutWAMPDelivery(t *testing.T) {
 
 	if _, err := os.Stat(statePath); err != nil {
 		t.Fatalf("DSP boot state was not recorded: %v", err)
+	}
+}
+
+// The DSP client must also survive a router that interleaves traffic with its
+// setup replies, because it registers seven procedures and one subscription
+// before its session loop starts.
+func TestSetupResponseQueuesInterleavedMessages(t *testing.T) {
+	clientConnection, routerConnection := net.Pipe()
+	defer clientConnection.Close()
+	defer routerConnection.Close()
+	client := &wampConnection{connection: clientConnection, nextID: 1}
+	router := &wampConnection{connection: routerConnection, nextID: 1}
+
+	requestID := client.requestID()
+	routerDone := make(chan error, 1)
+	go func() {
+		for _, message := range [][]interface{}{
+			{wampEvent, uint64(400), uint64(3), map[string]interface{}{}},
+			{wampSubscribed, requestID, uint64(11)},
+		} {
+			if err := router.writeFrame(message); err != nil {
+				routerDone <- err
+				return
+			}
+		}
+		routerDone <- nil
+	}()
+
+	var deferred [][]interface{}
+	response, err := client.awaitSetupResponse(
+		wampSubscribed,
+		requestID,
+		"subscription",
+		&deferred,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-routerDone; err != nil {
+		t.Fatal(err)
+	}
+	subscription, ok := unsigned(response[2])
+	if !ok || subscription != 11 {
+		t.Fatalf("subscription response = %v, want subscription 11", response)
+	}
+	if len(deferred) != 1 || messageType(deferred[0]) != wampEvent {
+		t.Fatalf("queued the wrong messages: %v", deferred)
 	}
 }
