@@ -42,6 +42,7 @@ func TestDispatchStopsWhenPumpContextEnds(t *testing.T) {
 		link:           dsp,
 		commandTimeout: time.Second,
 	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -70,6 +71,72 @@ func TestDispatchStopsWhenPumpContextEnds(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("dispatch did not stop after pump cancellation")
+	}
+}
+
+func TestDispatchWaitsForServiceReady(t *testing.T) {
+	dsp := newLink(
+		newMemorySPI(),
+		newMemoryGPIO(),
+		newMemoryI2C(),
+		linkOptions{Pins: defaultPinout()},
+	)
+	dsp.booted = true
+	ready := make(chan struct{})
+	service := &wampService{
+		link:           dsp,
+		commandTimeout: time.Second,
+		ready:          ready,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- service.dispatch(ctx, procedures[5], nil)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	dsp.mu.Lock()
+	queuedBeforeReady := len(dsp.queue)
+	dsp.mu.Unlock()
+	if queuedBeforeReady != 0 {
+		t.Fatalf("queued %d commands before service readiness", queuedBeforeReady)
+	}
+
+	close(ready)
+	deadline := time.Now().Add(time.Second)
+	for {
+		dsp.mu.Lock()
+		queued := len(dsp.queue)
+		dsp.mu.Unlock()
+		if queued == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("dispatch did not queue after service readiness")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("dispatch error = %v, want context cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("dispatch did not stop after cancellation")
+	}
+}
+
+func TestDispatchReadyWaitHonorsCancellation(t *testing.T) {
+	service := &wampService{ready: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := service.dispatch(ctx, procedures[5], nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("dispatch error = %v, want context cancellation", err)
 	}
 }
 
