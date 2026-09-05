@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -579,6 +580,45 @@ func TestDSPBootReconcilesConfirmedMicrophoneMute(t *testing.T) {
 	}
 	if request := <-requests; request != "1\n" {
 		t.Fatalf("request = %q, want mute reconciliation", request)
+	}
+}
+
+func TestDSPBootReconcileFailureKeepsWAMPSession(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "microphone-state")
+	var logged string
+	privacy := newMicrophonePrivacyController(
+		true,
+		statePath,
+		filepath.Join(t.TempDir(), "missing.sock"),
+		nil,
+		func(format string, args ...interface{}) {
+			logged = fmt.Sprintf(format, args...)
+		},
+	)
+	service := wampService{privacy: privacy, logf: privacy.logf}
+
+	handled, err := service.handleDSPSessionEvent(
+		context.Background(),
+		nil,
+		44,
+		[]interface{}{
+			wampEvent,
+			uint64(44),
+			uint64(1),
+			map[string]interface{}{},
+			[]interface{}{"dsp"},
+		},
+	)
+	if err != nil || !handled {
+		t.Fatalf("handled=%t error=%v", handled, err)
+	}
+	if !strings.Contains(logged, "restore DSP microphone mute") {
+		t.Fatalf("log = %q, want reconciliation failure", logged)
+	}
+	select {
+	case <-privacy.reconcile:
+	default:
+		t.Fatal("reconciliation retry was not requested")
 	}
 }
 

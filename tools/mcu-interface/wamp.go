@@ -249,7 +249,9 @@ func (service *wampService) handleDSPSessionEvent(
 	}
 	if err := service.privacy.Reconcile(ctx); err != nil {
 		service.privacy.RequestReconcile()
-		return true, fmt.Errorf("restore DSP microphone mute: %w", err)
+		if service.logf != nil {
+			service.logf("restore DSP microphone mute: %v", err)
+		}
 	}
 	return true, nil
 }
