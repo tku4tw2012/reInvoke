@@ -1,13 +1,20 @@
 ---
 title: MCU boundary
-description: Recovered I2C behavior and evidence limits at the Invoke companion-MCU boundary
-ms.date: 2026-09-03
+description: Current MCU service ownership plus recovered donor I2C behavior and evidence limits
+ms.date: 2026-09-05
 ms.topic: concept
 ---
 
-What the companion-MCU boundary looks like from the preserved rootfs, emulation,
-and a later RAM-native hardware run: the host-side transport, startup
-transaction order, and limits of each evidence source.
+This document separates the current owned MCU boundary from the historical
+donor evidence used to recover it. The
+[current product and architecture contract](../current-product-contract.md) is
+normative. The 2017 retail and 2021 final Harman firmware are evidence sources;
+reInvoke does not run their `mcu-interface`.
+
+`reinvoke-mcu-interface` is the sole current owner of MCU I2C transactions,
+physical input decoding, rotary volume, LED transport, amplifier/DAC power and
+mute policy, and the public compatibility microphone API. It preserves the DSP
+reset bit whenever it updates the shared expander register.
 
 ## Evidence classification
 
@@ -40,14 +47,44 @@ Inference:
 * The Linux bus-to-SoC base-address mapping is transferred from sibling
   Berlin-family source and has not been confirmed on Invoke hardware.
 
-Current limits:
+Evidence limits:
 
 * The pass-through log is an on-device capture at the Linux ioctl boundary, not
   an electrical logic-analyzer capture.
 * Register meanings and exact MCU/device identities remain unresolved.
 * MCU framing after the DAC initialization remains only partly decoded.
 
-## Complete known WAMP API
+## Current owned boundary
+
+The current service registers the compatibility procedures needed by the RAM
+product. Most importantly, it registers `com.harman.dsp.micMute`; the owned DSP
+service does not. Both a physical `micmute` event and that compatibility call
+enter one process-lifetime privacy controller before any WAMP publication.
+
+The controller atomically retains mode-`0600` state in RAM, updates the
+protected red-ring indication only after confirmed DSP state, retries failed
+mute reconciliation without depending on Bonefish, and fails safe after an
+indeterminate unmute. It reaches DSP opcode `0x09` only through
+`/run/reinvoke/dsp-mic-control.sock`, a mode-`0600` Unix socket owned by the DSP
+service.
+
+Current product actions are deliberately narrower than the decoded MCU key
+vocabulary:
+
+| Physical input | Current local action |
+|---|---|
+| Rotary clockwise/counter-clockwise | Coalesced BlueALSA volume update plus compatibility publication |
+| Mic-Mute short press | Toggle DSP microphone privacy and confirmed red indication |
+| Bluetooth long press | Reopen the bounded allowlisted pairing window and show pairing indication |
+| Action short press | Play the reviewed one-shot action animation only |
+| Action long, Bluetooth short, Mic-Mute long, reset short/long | Compatibility publication only; product actions incomplete |
+
+Occasionally the companion MCU emits no frame for a physical Mic-Mute attempt.
+This was observed under both donor and owned services. Software behavior is
+validated when an event arrives, but software cannot manufacture a missing MCU
+event.
+
+## Historical donor WAMP API
 
 The physical RAM-native router trace proves that this build registered all 27
 procedures below. The final `12.2134.0` binary contains those URIs and adds
@@ -56,7 +93,7 @@ to 28, but that additional registration has not been observed live.
 
 | Procedures | Contract status |
 |---|---|
-| `com.harman.ledAnimate`, `ledSet`, `ledOff` | Registered; disassembly shows `ledAnimate` receives a pattern string and one byte, loads `/usr/share/lights/<pattern>.bin`, and sends animation chunks to MCU address `0x36`; `ledSet` and `ledOff` remain unresolved |
+| `com.harman.ledAnimate`, `ledSet`, `ledOff` | Registered; disassembly shows `ledAnimate` receives a pattern string and one byte, loads `/usr/share/lights/<pattern>.bin`, and sends animation chunks to MCU address `0x36`; direct `ledSet` remains unresolved; later owned-service validation recovered `ledOff` |
 | `com.harman.vui.setDeviceColor`, `getDeviceColor`, `SetRGBLEDBrightness` | Registered; arguments and results unknown |
 | `com.harman.vui.getmcustatus` | Registered; call is `[]`; verified live success is positional result `["000116"]` with no kwargs; returns `com.harman.error` with `["No MCU version :("]` when no MCU version is available |
 | `com.harman.vui.setmcupowermode` | Registered; handler logs one string argument; accepted values and result unknown |
@@ -73,7 +110,7 @@ The final-build-only string is
 `com.harman.vui.setFactoryResetMode`. A URI string proves vocabulary, not that
 the procedure is registered or safe.
 
-The service subscribes to `com.harman.volumeChanged` and
+The donor service subscribes to `com.harman.volumeChanged` and
 `com.harman.test.simulateKeyAction`. Their inbound payload contracts remain
 unknown. Its observed and candidate outbound topics are:
 
@@ -89,7 +126,7 @@ unknown. Its observed and candidate outbound topics are:
 `com.harman.error` is also used as a WAMP error URI. No authentication or
 authorization is visible in the observed MCU session.
 
-### Recovered physical key map
+### Historical donor physical key map
 
 The donor constructor builds two integer-keyed maps. The first maps raw MCU
 event codes to log descriptions; the second maps the same codes to WAMP names.
@@ -113,7 +150,7 @@ Codes `0x08` and `0x09` retain the observed second positional step string.
 Codes `0x00` through `0x07` publish their single canonical name on
 `com.harman.vui.keypress`.
 
-### Recovered LED animation transport
+### Recovered LED transport
 
 Each held `L_*.bin` animation is an exact multiple of 13 bytes, one intensity
 byte for each top-panel LED per animation frame. The donor player reads at most
@@ -124,13 +161,18 @@ byte for each top-panel LED per animation frame. The donor player reads at most
 ```
 
 The first-chunk flag is `01` and subsequent chunks use `00`. The player waits
-280 ms between chunks. This establishes the `ledAnimate` asset transport
-without assigning semantics to the unresolved direct `ledSet` or `ledOff`
-procedures.
+280 ms between chunks. This establishes the `ledAnimate` asset transport.
+
+The owned `ledOff` path is now resolved and physically verified: it cancels the
+ordinary animation and sends a 41-byte packet containing opcode `0x0e`,
+first-chunk flag `0x01`, and three zero 13-byte frames. It cleared the red ring
+after microphone unmute. Generic `ledOff` and animation calls are rejected while
+microphone mute requires the protected privacy indication. Direct `ledSet`
+semantics remain unresolved.
 
 ## Physical RAM-native validation
 
-A custom initramfs booted as PID 1 on `myInvoke-1` with the GCC 4.9
+A custom initramfs booted as PID 1 on the test unit with the GCC 4.9
 SPI-plus-GPIO kernel. It mounted a RAM copy of the installed
 `Barracuda_libre-12.2050.3` SquashFS read-only and started Bonefish,
 `mcu-interface`, and `dsp-client`.
@@ -149,14 +191,14 @@ The real adapter:
 * Handled the DSP boot event's DAC and amplifier unmute requests
 
 A later software-only pass-through capture verified the byte-level response
-behind those service messages. Evidence is held at
-`../reinvoke-archive/hardware/software-captures/20260903T191548Z-mcu-ioctl-record/`.
-As elsewhere in the archive, `SHA256SUMS` records each artifact by repository-
-relative archive path. In that manifest:
+behind those service messages. Evidence is held in
+`<archive>/hardware/software-captures/<timestamp>-mcu-ioctl-record/`. As
+elsewhere in the archive, `SHA256SUMS` records each artifact by archive-relative
+path. In that historical manifest:
 
 ```text
-daa68b35f3a3634e45e4073b71c2d075ac4fe2930afd8d68d11af32c1ec4b058  ../reinvoke-archive/hardware/software-captures/20260903T191548Z-mcu-ioctl-record/mcu-ioctl.log
-1e9f0453ad7c6444a75f1246376270d6252fa2e8beb3ed810e268aaa1240de8e  ../reinvoke-archive/hardware/software-captures/20260903T191548Z-mcu-ioctl-record/getmcustatus.json
+daa68b35f3a3634e45e4073b71c2d075ac4fe2930afd8d68d11af32c1ec4b058  <capture>/mcu-ioctl.log
+1e9f0453ad7c6444a75f1246376270d6252fa2e8beb3ed810e268aaa1240de8e  <capture>/getmcustatus.json
 ```
 
 The recorder logged requests before invoking the real ioctl and read buffers
@@ -445,10 +487,11 @@ provisioning-file or NAND change.
 
 ## Owned replacement validation
 
-The static reInvoke MCU service was run directly from the RAM platform. It
-reproduced the captured expander and DAC initialization with both outputs
-muted, exposed the minimum WAMP status and mute procedures, and rejected an
-unmute request under its default policy.
+The static reInvoke MCU service now runs directly in the accepted RAM platform.
+It reproduces the captured expander and DAC initialization with both outputs
+muted, preserves the shared DSP reset bit, exposes the required compatibility
+procedures, and rejects speaker unmute unless the active-PCM lease, ALSA owner,
+player executable, and `RUNNING` state agree.
 
 The first build omitted opcode `0x24`; the SoC later reset into the Marvell USB
 stage. The corrected service sends `24 00 00 00 00 00` immediately and every
@@ -460,9 +503,16 @@ com.harman.test.inputEvent ["volumedown", "2"]
 com.harman.test.inputEvent ["volumedown", "1"]
 ```
 
+Later validation added authoritative BlueALSA volume, pairing-window signaling,
+LED animation and clear behavior, and process-lifetime microphone privacy. DSP
+restart restores required microphone mute before readiness. Router loss does not
+disable the physical privacy controller.
+
 This validates the closed-unit software replacement path for MCU startup,
-mute safety, liveness, status, and rotary input. Artifact and test provenance
-is recorded in [P1-048](../../metadata/P1-048.json).
+speaker safety, liveness, status, rotary input, pairing control, LEDs, and the
+software microphone-privacy boundary. It does not resolve missing physical MCU
+events or prove an independent electrical microphone disconnect. Artifact and
+test provenance begins at [P1-048](../../metadata/P1-048.json).
 
 ## Refining this further
 
@@ -519,12 +569,12 @@ registers would be writing to unrelated hardware.
 ## Reproducing the capture
 
 The failing-bus capture script lives outside the repository at
-`reinvoke-archive/emulation/mcu-i2c-capture.py`, alongside the sandbox it
+`<archive>/emulation/mcu-i2c-capture.py`, alongside the sandbox it
 drives. It spawns the sandbox itself, because `ptrace_scope` restricts memory
 reads to descendant processes.
 
 ```bash
-python3 reinvoke-archive/emulation/mcu-i2c-capture.py
+python3 <archive>/emulation/mcu-i2c-capture.py
 ```
 
 The acknowledged-bus shim source and launcher are versioned under
@@ -533,7 +583,7 @@ the MCU service:
 
 ```bash
 arm-linux-gnueabihf-gcc -shared -fPIC -O2 -Wall -Wextra -Werror \
-  -o ../reinvoke-archive/emulation/invoke-ioctl-shim.so \
+  -o <archive>/emulation/invoke-ioctl-shim.so \
   tools/emulation/invoke-ioctl-shim.c
 
 unshare --user --map-root-user --net -- \

@@ -7,9 +7,10 @@ ms.topic: overview
 
 ## Status
 
-Implementation is 92 percent complete for this RPI cycle. The host-side v9
-candidate is complete, and the rebuilt MCU pinmux/rotary path passed an
-attended live test. Cold-boot, audible, and acoustic hardware acceptance
+Implementation is 99 percent complete for this RPI cycle. LED clearing,
+playback continuity, fail-closed microphone routing, service fault injection,
+and reproducible ARM artifacts are implemented and machine-tested in RAM.
+Booting the accepted image, repeated cold boots, and final attended playback
 remain.
 
 ## Completed in iteration 1
@@ -180,9 +181,134 @@ upstream sources that were previously missing.
 The next required operations are a clean cold boot, five-boot acceptance,
 attended audible output, and microphone correlation.
 
+## Completed in iteration 12
+
+* Multi-Device Disambiguation:
+  - Discovered and resolved Bluetooth cross-talk with nearby Invoke units.
+  - Read USB-attached Invoke Bluetooth BD_ADDR (`D8:F7:10:C1:46:E9`) via ADB sysfs.
+  - Locked `REINVOKE_TARGET_BDADDR='D8:F7:10:C1:46:E9'` in `tools/usb-boot/local.conf`.
+* Live A2DP Playback & Rotary Audio Evaluation:
+  - Streamed live audio over A2DP; confirmed audible tone/playback on the target unit.
+  - Verified low-latency in-memory rotary volume control with fast response.
+* Audio Stability & Mute Holdoff Debounce:
+  - Root-caused momentary playback clicks to amplifier mute toggling during transient ALSA buffer gaps.
+  - Added a 1.5s holdoff delay (`playbackPolicyHoldoff`) to `tools/mcu-interface/playback_policy.go` while keeping instant unmute on start.
+  - Added unit test `TestPlaybackPolicyHoldsActiveDuringBriefUnderrun` in `tools/mcu-interface/playback_policy_test.go`.
+* Mic-Mute Ring LED Clearing:
+  - Captured the donor `ledOff` procedure and recovered its exact 41-byte
+    packet: opcode `0x0e`, first-chunk flag `0x01`, and three zero frames.
+  - Updated `tools/mcu-interface/led.go` to send that packet from `clearLEDs`
+    and `Stop()`. The operator confirmed red-ring on/off behavior.
+* Toolchain Pinning:
+  - Pinned all Go compilation and testing strictly to `${archive_root}/toolchains/ubuntu-go-1.18.1/extracted/usr/lib/go-1.18` via `tools/mcu-interface/build.sh` and `test.sh`.
+  - All 40 unit tests pass.
+  - Rebuilt static ARM binary for `reinvoke-mcu-interface` (`2a9feb03...`) and updated `tools/usb-boot/build-native-runtime.sh` pin.
+  - Hot-deployed updated binary to running RAM target over ADB and verified automatic supervisor restart.
+
+## Completed in iteration 13
+
+* Proved attended stutters against kernel XRUN records and rejected
+  one-second ALSA state sampling as insufficient evidence.
+* Captured 4,030 incoming ACL packets and found periodic A2DP arrival stalls,
+  continuous packet sequence numbers, and advanced RTP timestamps.
+* Recovered HK's final `music` PCM contract, 512-frame periods, 8192-frame
+  buffer, complete-period writes, partial-write retry, and `snd_pcm_recover`.
+* Added reproducible BlueALSA patches for the donor write loop, a two-second
+  decoded PCM reservoir, and bounded timestamp-derived SBC gap concealment.
+* Passed one 96-second adaptive-source machine run and one five-minute
+  conservative-source soak with zero XRUNs, no mid-stream reopen, clean close,
+  and lease removal.
+* Added the missing MCU WAMP `caller` role and tracked DSP command completion.
+  Failed microphone commands now leave the privacy LED unchanged.
+* Built reproducible static ARM artifacts:
+  - `bluealsa-aplay` SHA-256 `59dd5985...`
+  - `bluealsa` SHA-256 `62a3c8c4...`
+  - `reinvoke-mcu-interface` SHA-256 `b5215a01...`
+  - `reinvoke-dsp-interface` SHA-256 `b5330be7...`
+* Built the final v12 runtime twice with byte-identical trees and manifest
+  SHA-256 `dc07e3c343c98a7353ab16afa8797e1664b68d8db76ed31758677727bd4ec70c`.
+* Built the final v12 initramfs twice with byte-identical 29,226,746-byte
+  outputs and SHA-256
+  `110376e026c28d1304227847365ac15beb53c12767de45e743358044d4db94e4`.
+
+## Completed in iteration 14
+
+* Captured repeated Mic-Mute trials from the owned and donor MCU services.
+  Both services missed occasional physical attempts because the companion MCU
+  emitted no event frame. Valid duplicate `04 04` frames are now debounced
+  before local control and WAMP publication.
+* Corrected the GPIO event path so each latched falling edge causes at least
+  one MCU read, even when the interrupt line returns high before userspace
+  samples it.
+* Moved microphone privacy control out of the WAMP lifecycle. The process-wide
+  controller handles physical Mic-Mute while the router is unavailable,
+  persists required mute state in `/run/reinvoke`, and retries unresolved mute
+  operations until the DSP confirms them.
+* Removed DSP Mic-Mute from the unauthenticated WAMP surface. The MCU owns the
+  public compatibility procedure and reaches DSP opcode `0x09` through a
+  mode-0600 Unix socket.
+* Made DSP boot re-read the RAM privacy state after `EVENT_DSP_BOOTUP`, restore
+  mute before socket and session readiness, preserve unrelated valid frames
+  encountered during command correlation, and terminate on pump failure
+  independently of router state.
+* Gave the DSP sole ownership of expander reset bit 0 and its direction. The
+  MCU preserves that bit while configuring amplifier, DAC, and DSP power-rail
+  outputs.
+* Restarted Bonefish, MCU, DSP, BlueALSA, and `bluealsa-aplay` independently.
+  Each supervisor recovered. Router, MCU, and DSP restarts re-confirmed the
+  persisted microphone mute.
+* Captured 786,688 stereo frames after the accepted restart sequence. All
+  1,573,376 32-bit samples were zero.
+* Reproduced the final static ARM binaries byte-for-byte:
+  * MCU SHA-256
+    `a6c75ad9937519f71c6570e29f0c32c843aefb3efd7f0089bc2e3f3adda9e744`
+  * DSP SHA-256
+    `ae31b0ca6a1dbd02a2993f6b26eac73030cb52d3ff0106b0b288426b6e1ede7a`
+  * BlueALSA SHA-256
+    `62a3c8c465437240b9c8f1fa41bddbbde8fd98796a51527636c70a5ede605348`
+  * `bluealsa-aplay` SHA-256
+    `edc3a6cccb01bf4ac5ab8ab2898fad29e7fbafbebc1e9053aeed8b4c5f006558`
+* Built two byte-identical accepted runtime trees with manifest SHA-256
+  `018e2038b34eaf14460c7187f9c932b66c08a69c5c872a015ac7fb3cd9020592`.
+* Built two byte-identical 29,251,747-byte accepted initramfs images with
+  SHA-256
+  `b728f242ded43423a3a5be33664905c27ec2703131f8b40be0995568535ae1d7`.
+
+## Completed in iteration 15
+
+* Ran the on-device acceptance suite against the live v12 boot: 22 of 23 checks
+  pass. The single genuine failure is the WAMP firewall, which v12 predates.
+* Recorded the pre-fix exposure baseline: `9998` and `9999` listening on
+  `0.0.0.0` with no INPUT filtering.
+* Injected router, MCU, and DSP faults. Bonefish restarted while the MCU and DSP
+  services kept their PIDs and re-registered, 10 and 8 registrations.
+* Found and fixed a DSP readiness race. Boot state was recorded only on the
+  best-effort WAMP delivery path, so a restart could leave
+  `/run/reinvoke/dsp-booted` absent. The pump now records it at link detection.
+  `TestPumpRecordsBootStateWithoutWAMPDelivery` fails without the fix.
+* Found and fixed kernel irreproducibility. `vmlinux` and `System.map` were
+  already identical; `piggy.lzo` differed only in the lzop header modification
+  time and its checksum. Patch `0004-reproducible-lzo-piggy.patch` compresses a
+  named file with mode and modification time pinned.
+* Cross-built a reproducible static `libdbus-1.a` and the previously unbuilt
+  `bluez-media-control`, and recorded the recipe in `tools/control/README.md`.
+* Re-pinned seven build gates, each confirmed by two byte-identical builds and
+  documented with its reason in the v13 build notes.
+* Built the v13 candidate. Two independent builds agree byte for byte:
+  * kernel SHA-256
+    `eaf31eb8e4a33709752579c097bb17f5136f3fd98598876b1df8af59581ab67c`
+  * modules SHA-256
+    `05a8bfadeccf846396721c21a7714a8c117a53eb9b80a8e8824e64f13edfc496`
+  * runtime manifest SHA-256
+    `51d304b34ebabac29c9b9dbf7eb28001135e743f032f46635733b028afcb9299`
+  * initramfs SHA-256, 32,381,114 bytes
+    `e28b17016fe38078af439cf27e80c212689265cc494366849422ab5fee0389d8`
+* Staged the pair through the checksum-gated loader. It is ready to inject at
+  the next yellow-mode window.
+
 ## Change log
 
-The current worktree contains all five implementation iterations, the
-iteration 6 host audit, and RPI tracking artifacts. Implementation work
-remains uncommitted because final hardware acceptance is still open. Repository hygiene work (MIT relicensing and
-identifier scrubbing) has been committed and pushed separately.
+Iterations land on the `feat/native-ram-platform` branch as they complete.
+Committing there records the work; it does not claim acceptance. The pull
+request remains gated on the repeated cold-boot campaign, which needs the
+operator because yellow mode requires the recovery button held at power-on.

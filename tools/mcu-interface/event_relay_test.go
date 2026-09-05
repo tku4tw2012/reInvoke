@@ -51,6 +51,47 @@ func TestEventRelayAppliesControlWithoutWAMPConsumer(t *testing.T) {
 	}
 }
 
+func TestEventRelayDebouncesMicMuteBeforeControlAndPublication(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	input := make(chan inputEvent, 2)
+	output := make(chan inputEvent, 2)
+	applied := make(chan inputEvent, 2)
+	go runEventRelay(
+		ctx,
+		input,
+		recordingInputController{events: applied},
+		output,
+		nil,
+	)
+
+	first := time.Unix(100, 0)
+	input <- inputEvent{Name: "micmute", OccurredAt: first}
+	select {
+	case <-applied:
+	case <-time.After(time.Second):
+		t.Fatal("Mic-Mute control was not applied")
+	}
+	input <- inputEvent{
+		Name:       "micmute",
+		OccurredAt: first.Add(100 * time.Millisecond),
+	}
+	close(input)
+	select {
+	case <-output:
+	case <-time.After(time.Second):
+		t.Fatal("Mic-Mute event was not published")
+	}
+	if _, ok := <-output; ok {
+		t.Fatal("duplicate Mic-Mute event was published")
+	}
+	select {
+	case duplicate := <-applied:
+		t.Fatalf("duplicate Mic-Mute control was applied: %#v", duplicate)
+	default:
+	}
+}
+
 func TestVolumeQueueCoalescesPendingDeltas(t *testing.T) {
 	deltas := make(chan int, 1)
 	if !queueVolumeDelta(deltas, 3) {

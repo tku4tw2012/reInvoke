@@ -7,11 +7,12 @@ ms.topic: concept
 
 ## Status
 
-Review is 90 percent complete. Three review rounds found lifecycle, safety,
-concurrency, and acceptance defects. Every source-level finding is fixed and
-the complete host and race suites pass. The live rotary gate now passes; final
-review waits for packaged v9 hardware acceptance, audible/acoustic evidence,
-and soak results.
+Review is 98 percent complete. No high-severity source-level blockers remain.
+The complete host and race suites pass, service fault injection preserves
+microphone privacy, and the final BlueALSA pair is reproducible. Final review
+waits for accepted-image cold-boot validation, the pairing-agent generation
+guard, and one attended playback run. WAMP setup interleaving remains tracked
+as medium-priority hardening.
 
 ## Required review areas
 
@@ -91,16 +92,35 @@ lifecycle, or acceptance collector.
 The rebuilt MCU service was tested on the v9 RAM runtime after the donor
 pinmux correction. GPIO3 read high, the pinmux register read
 `0x0038D249`, and a passive WAMP monitor captured repeated `volumeup` and
-`volumedown` publications during attended rotations. A temporary hot-swap
-acceptance run correctly reported one runtime-hash failure because the live
-binary differed from the packaged manifest; this is a packaging gate, not a
-functional acceptance result.
+`volumedown` publications during attended rotations.
 
-The same donor-backed monitor captured a physical `micmute` keypress and a
-`bluetooth-long` keypress. The latter reopened the bounded 300-second
-allowlisted pairing window, with the operator observing the top white pairing
-indicator. The Mic-Mute event was valid, but BlueALSA had no active PCM, so
-the software mute state could not be exercised in that subtest.
+### Live audio and controls acceptance
+
+1. Multi-device Bluetooth lock-in
+   * Target device Bluetooth BD_ADDR was anchored to `D8:F7:10:C1:46:E9`
+     directly in `tools/usb-boot/local.conf`. This strictly prevents host BlueZ
+     from accidentally connecting to nearby stock Invoke units.
+2. Rotary performance
+   * In-memory fast-path rotary volume was validated during live A2DP streaming.
+     Operator confirmed: "rotary feels much better!" with low latency and smooth
+     attenuation.
+3. Audio dropouts and clicks
+   * Root-caused momentary clicks to the DAC/amplifier mute policy flapping on
+     transient ALSA buffer underruns (`XRUN`).
+   * Implemented a 1.5-second holdoff delay in `tools/mcu-interface/playback_policy.go`
+     to keep the amplifier unmuted across transient buffer underruns while
+     maintaining instant unmute on stream start.
+4. Mic-Mute privacy and LED ring
+   * Verified the rear button is strictly the Microphone Privacy switch (DSP
+     opcode `0x09` on `com.harman.dsp.micMute`), not speaker mute.
+   * Captured the donor `com.harman.ledOff` implementation and recovered its
+     exact 41-byte packet: opcode `0x0e`, first-chunk flag `0x01`, and three
+     zero frames.
+   * The operator confirmed that Mic-Mute now turns the red ring on and off.
+5. Toolchain standards
+   * Standardized on the pinned repository Go toolchain at
+     `../reinvoke-archive/toolchains/ubuntu-go-1.18.1/extracted/usr/lib/go-1.18` via
+     `tools/mcu-interface/build.sh` and `test.sh`. All 40 unit tests pass.
 
 ## Iteration 6 findings (host audit, 2026-09-04)
 
@@ -457,3 +477,107 @@ Resolution:
 ### LED ring auto-clear
 
 - Updated `ledPlayer.Start` to automatically invoke `clearLEDs` when non-repeating animations finish, ensuring the ring does not remain stuck on the final frame after pairing or touch events.
+
+## Iteration 13: playback continuity and privacy fail-closed
+
+The first attended 45- and 90-second streams contained repeatable clicks,
+stutters, pauses, and occasional noise. The source was one continuous WAV from
+the Mac mini, not multiple playbacks. Kernel `XXXRUNN` records matched operator
+stopwatch reports, while one-second ALSA state sampling missed the short
+failures.
+
+An HCI capture found continuous sequence numbers but periodic arrival stalls up
+to 742 ms and 5.885 seconds of timestamp-confirmed missing PCM across one
+94-second transfer. The source later resumed with advanced RTP timestamps, so
+the sink could not recover the omitted audio by replaying packets.
+
+Offline disassembly of the final HK Bluetooth process recovered its ALSA
+contract:
+
+* Open the `music` PCM.
+* Accumulate complete 512-frame periods.
+* Use an 8192-frame hardware buffer.
+* Retry partial writes and call `snd_pcm_recover` without a 50 ms sleep.
+
+BlueALSA 4.0 additionally needed sink-side transport protection:
+
+* The player now maintains a two-second decoded PCM reservoir and closes a
+  drained stream after 100 ms.
+* The SBC decoder requests `missing_pcm_frames` from RTP synchronization and
+  inserts bounded silence for timestamp-confirmed gaps.
+* The player uses the donor-equivalent 170 ms buffer and 20 ms requested period,
+  which the hardware resolves to 8192 and 512 frames.
+
+The final static ARM binaries are reproducible:
+
+* `bluealsa-aplay`: SHA-256 `59dd5985...`
+* `bluealsa`: SHA-256 `62a3c8c4...`
+
+A 96-second adaptive-source machine run and a five-minute conservative-source
+soak each completed with one PCM open, zero XRUNs, no mid-stream reopen, a clean
+close, and lease removal. Attended listening remains required.
+
+The reviewed v12 package is deterministic. Two runtime builds have identical
+trees and manifest SHA-256 `dc07e3c3...`. Two 29,226,746-byte initramfs builds
+are byte-identical at SHA-256 `110376e0...`.
+
+Mic-Mute also exposed a separate privacy defect. The MCU WAMP session omitted
+the `caller` role, so Bonefish rejected every DSP call. After adding that role,
+the DSP service still acknowledged queueing before the hardware transaction
+failed. DSP commands now carry tracked completion back to WAMP, and the MCU
+changes its privacy LED only after success. Failed commands return an explicit
+error and leave the LED unchanged. The DSP response path still returns zero
+headers in the current heavily warm-reset state, so microphone privacy is not
+accepted until a clean power cycle and capture correlation pass.
+
+## Iteration 14: fault injection and privacy ownership
+
+Repeated physical trials separated touch-controller behavior from software
+latency. When a press produced an MCU frame, the DSP transition completed in
+the same second. Some attempts produced no frame under both the owned and stock
+Harman MCU services. The accepted software cannot synthesize an event that the
+companion MCU never reports.
+
+Functional review identified and corrected the following privacy failures:
+
+* Duplicate Mic-Mute frames were visible to WAMP subscribers
+* A router outage could delay or discard privacy input
+* A daemon restart lost the confirmed mute state
+* Indeterminate unmute outcomes could restore a false red indicator
+* The raw DSP Mic-Mute procedure allowed callers to bypass state and LED
+  ownership
+* DSP reset could invalidate mute before MCU reconciliation
+* LED I/O could delay the safety-critical DSP mute command
+* The DSP message pump could stall or fail without terminating the process
+* An unrelated boot frame could be consumed while correlating a command
+  response
+
+The accepted design has one process-wide microphone privacy owner in the MCU
+service. Physical events reach it before WAMP publication, required mute state
+is atomically stored in RAM, unresolved mute retries continue independently of
+the router, and unmute failures are immediately remuted. DSP opcode `0x09` is
+available only through a mode-0600 Unix socket. The public compatibility
+procedure is registered by the MCU service and therefore cannot bypass
+persistence or LED handling.
+
+DSP startup now accepts WAMP commands while withholding readiness. It preserves
+valid unrelated frames, waits for `EVENT_DSP_BOOTUP`, starts the private socket,
+re-reads privacy state under the socket dispatch mutex, restores mute, and only
+then publishes `com.reinvoke.dsp.session` readiness. Live logs proved the
+accepted order: boot event, restored mute, readiness publication, then MCU
+confirmation.
+
+The fault-injection sequence restarted Bonefish, MCU, DSP, BlueALSA, and the
+player. The RAM marker remained `muted`, the root-only socket returned, and MCU
+and DSP health calls succeeded. The final capture contained 1,573,376 samples,
+all zero. Unit tests, race tests, the complete native-platform suite, and
+reproducible builds passed.
+
+One medium-priority review item remains: WAMP registration helpers assume setup
+responses are not interleaved with invocations. The router behaved
+deterministically in every live run, but a future hardening iteration should
+use one correlated reader during registration.
+
+The accepted image is not yet cold-boot accepted. The new pairing-agent
+generation guard and complete startup order require validation from that image
+before the review phase can close.

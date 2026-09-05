@@ -228,11 +228,10 @@ function describeEvent(id, payload) {
 export function parseHexBytes(text) {
   const tokens = text.trim().split(/[\s,]+/).filter(Boolean);
   return tokens.map((token) => {
-    const value = Number.parseInt(token.replace(/^0x/i, ""), 16);
-    if (!Number.isInteger(value) || value < 0 || value > 0xff) {
+    if (!/^(?:0x)?[0-9a-fA-F]{1,2}$/.test(token)) {
       throw new Error(`not a byte: ${token}`);
     }
-    return value;
+    return Number.parseInt(token.replace(/^0x/i, ""), 16);
   });
 }
 

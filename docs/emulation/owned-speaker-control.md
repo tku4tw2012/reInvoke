@@ -1,13 +1,15 @@
 ---
 title: Owned Bluetooth speaker control boundary
-description: WAMP contract inventory and minimum replacement for music-source-manager and audio-ui
-ms.date: 2026-09-04
+description: Current MCU-owned BlueALSA authority and historical WAMP contract inventory
+ms.date: 2026-09-05
 ms.topic: concept
 ---
 
 The RAM-only BlueZ and BlueALSA path now delivers audible A2DP to the Invoke
 speakers. This changes the replacement boundary: neither donor
 `music-source-manager` nor donor `audio-ui` is in the media data path.
+The [current product and architecture contract](../current-product-contract.md)
+is normative.
 
 ## Minimum autonomous stack
 
@@ -17,20 +19,20 @@ volume and mute state, and `bluealsa-aplay` owns the ALSA playback lifetime. The
 existing owned pairing agent and lifecycle launcher are sufficient around those
 components.
 
-One owned bridge service is needed only to retain the Invoke rotary control or a
-legacy local WAMP API. That bridge should:
+The accepted image implements the bridge inside `reinvoke-mcu-interface`, so
+there is no second target-side volume authority. It:
 
-1. read BlueZ device/transport state and BlueALSA `org.bluealsa.PCM1` state;
-2. set BlueALSA `Volume` and mute bits rather than keep a second authoritative
+1. reads BlueZ device/transport state and BlueALSA `org.bluealsa.PCM1` state;
+2. sets BlueALSA `Volume` and mute bits rather than keeping a second authoritative
    value;
-3. subscribe to `com.harman.test.inputEvent` for the donor MCU adapter's rotary
-   events;
-4. expose the small audio/state WAMP subset below; and
-5. publish changes observed from either D-Bus or WAMP.
+3. handles physical rotary events at the MCU boundary before compatibility
+   publication;
+4. exposes the required audio/state WAMP subset; and
+5. publishes changes observed from either D-Bus or physical input.
 
 The physical amplifier and DAC mute gates remain a separate safety boundary.
-The compatibility bridge must not call MCU unmute procedures. The MCU policy
-owner may open the gates only for a verified active-PCM lease whose thread ID
+Compatibility volume calls do not directly unmute physical hardware. The MCU
+policy owner opens the gates only for a verified active-PCM lease whose thread ID
 matches ALSA and the expected playback executable.
 
 The bridge has one authority for each value:
@@ -46,7 +48,7 @@ The donor WAMP API uses 0-100. A bridge therefore needs one documented rounding
 rule and must update both channels together; it must not infer mute from volume
 zero because the two values are independent in both APIs.
 
-## Observed music-source-manager contract
+## Historical donor `music-source-manager` contract
 
 Previously preserved Bonefish logs and isolated execution of the unchanged
 donor binary show these registrations:
@@ -73,7 +75,7 @@ The source calls exercised in isolated emulation have these exact shapes:
 The donor Bluedroid service needed this registry. BlueZ and BlueALSA do not, so
 none of these procedures is required by the minimum replacement.
 
-## Observed audio-ui contract
+## Historical donor `audio-ui` contract
 
 `audio-ui` registers twelve procedures. Six form the volume/query compatibility
 surface:
@@ -103,10 +105,11 @@ and `com.harman.demoIntro`. They are not needed for Bluetooth-speaker
 operation. The service subscribes to
 `com.harman.test.inputEvent` and `com.harman.music.stateChanged`.
 
-## Implementation status and live adapter boundary
+## Host reference implementation and current target
 
 [`speaker-control-service.mjs`](../../tools/control/speaker-control-service.mjs)
-is the smallest independently testable owned service. One MsgPack WAMP session
+is the historical host-side reference used to recover and test the minimum
+contract. One MsgPack WAMP session
 registers the eleven relevant procedures and subscribes to the rotary-input
 topic. Its
 [`speaker-control-state.mjs`](../../tools/control/speaker-control-state.mjs)
@@ -114,37 +117,25 @@ core implements clamping, result shapes, event order, stream state, and source
 registration. The service and core have dependency-free unit and fake-router
 protocol tests.
 
-The service can therefore replace both donor processes for contract testing,
-but is not yet the complete closed-unit playback controller. Its
+The service can replace both donor processes for contract testing. Its
 `--bluetooth-active` option supplies the expected single-source registry state
 when a test does not have a BlueZ adapter. Rotary events currently apply one
 logical percent per event; this is an explicit software policy rather than a
 claim about the donor's acceleration curve.
 
 [`speaker-control-backend.mjs`](../../tools/control/speaker-control-backend.mjs)
-implements the playback adapter without guessing target state. It requires an
+implements the corresponding host-side playback adapter without guessing target
+state. It requires an
 explicit BlueALSA PCM path and injectable source and transport observers,
 serializes changes, synchronizes stereo gain and mute, handles a missing PCM,
 and projects authoritative snapshots back into the WAMP state model.
 
-Three details still need a closed-unit software integration test before the
-adapter can become the default:
+The target does not run Node.js or either reference module. The static ARM MCU
+service uses the packaged BlueALSA CLI against the explicit peer/PCM mapping,
+coalesces rotary updates, writes stereo volume and mute authoritatively, and
+projects compatibility state. Reconnect and no-PCM behavior are fail-closed.
 
-* the authoritative BlueALSA PCM object appears only after a peer connects, so
-  reconnect and no-PCM behavior must be specified; and
-* the 0-127 BlueALSA to 0-100 WAMP conversion and the exact BlueZ-to-legacy
-  transport-state vocabulary need a captured private-D-Bus trace; and
-* the validated `bluealsa-aplay -D plughw:1,0` path bypasses the donor `music`
-  soft-volume PCM. Switching it to that PCM, or disabling BlueALSA software
-  volume, would change the tested audio path.
-
-Until those are measured, enabling a second volume controller would risk state
-drift or unexpected gain. The remaining implementation is a static ARM version
-of this tested adapter with target-verified object and state mappings, not
-ports of both donor services.
-
-No physical probing is part of this work. The owned service was validated
-against a fake WAMP router and against Bonefish in an isolated user/network
-namespace. It is currently a host-side reference because the target rootfs does
-not provide Node.js; conversion to the static ARM bridge follows only after the
-D-Bus mapping above is fixed.
+The active-PCM lease remains a separate speaker-safety input, not a volume
+signal. Current physical validation covers rotary changes and earlier attended
+playback; the newest accepted image still needs the final attended
+playback-continuity run. No physical probing is part of this work.

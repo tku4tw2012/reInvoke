@@ -1,8 +1,10 @@
 # Project Journal
 
-A dated record of what was done, what it changed, and what was wrong along the
-way. `PLAN.md` describes the current state; this file describes how the project
-arrived there.
+A dated **historical** record of what was done, what it changed, and what was
+wrong along the way. [PLAN.md](../PLAN.md) describes current status, and the
+[current product and architecture contract](current-product-contract.md)
+defines normative behavior. This file describes how the project arrived there;
+claims remain scoped to their dated entries.
 
 Corrections are recorded deliberately. A preservation project whose governing
 rule is that claims must trace to evidence has to be equally honest about the

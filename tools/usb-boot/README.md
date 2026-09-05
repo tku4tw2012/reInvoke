@@ -1,14 +1,17 @@
 ---
-title: USB boot session tooling
-description: Host tools for observing the Invoke Marvell boot endpoint without known NAND writes
-ms.date: 2026-09-03
+title: USB boot and RAM-runtime tooling
+description: Host tools for verified yellow-mode U-Boot access and the owned reInvoke RAM lifecycle
+ms.date: 2026-09-05
 ms.topic: how-to
 ---
 
-Host-side tooling for observing the Marvell boot/download endpoint on the Harman
-Kardon Invoke over Micro-USB. Verified against hardware on 2026-09-01.
-Background and the
-service-mode entry sequence are in [../../docs/usb-service-mode.md](../../docs/usb-service-mode.md).
+Host-side tooling for reaching yellow-mode U-Boot and loading the owned reInvoke
+runtime over Micro-USB without writing NAND. The current entry sequence is in
+[U-Boot console access](../../docs/uboot-access.md). The older
+[service-mode investigation](../../docs/usb-service-mode.md) is historical
+failed-attempt evidence. The
+[current product contract](../../docs/current-product-contract.md) defines the
+runtime assembled here.
 
 No proprietary files are included here. The Marvell `usb_boot` binary and the
 boot-chain images come from the community flashing bundle and must be staged
@@ -26,7 +29,7 @@ separately.
 | `capture-descriptor.sh` | Dumps the full USB descriptor when the device appears. The boot window is only a few seconds, too short to run `lsusb -v` by hand |
 | `build-native-initramfs.sh` | Builds a sanitized RAM-only initramfs from reviewed held artifacts |
 | `monitor-descriptors.sh` | Polls sysfs during an attempt and captures every distinct Marvell enumeration |
-| `native-ram-init` | Replacement PID 1 for root ADB, read-only NAND access, and SD8887 Wi-Fi bring-up |
+| `native-ram-init` | Owned PID 1 for volatile filesystems, NAND isolation, USB, radio setup, networking, bounded logs, and supervised product services |
 | `uboot-console.py` | Console client for the `usb_boot` TCP relay. Strips telnet negotiation, logs the transcript, and forwards commands from a FIFO |
 | `start-session.sh` | Brings up either reviewed boot tool and refuses to run if flashable images or automatic commands are staged |
 
@@ -83,13 +86,13 @@ donor rootfs:
 
 ```bash
 tools/usb-boot/build-native-initramfs.sh \
-  --source-initramfs ../reinvoke-archive/extracted/ota2/OTA2/82_IMAGE \
-  --donor-rootfs ../reinvoke-archive/hardware/dumps/20260902T215700Z-native-ram/rootfs-extracted/primary \
-  --kernel-modules ../reinvoke-archive/build/artifacts/invoke-kernel-gcc49-audio-sd8887-20260903/modules \
-  --provisiond ../reinvoke-archive/build/artifacts/reinvoke-provisiond-20260903/reinvoke-provisiond \
-  --wifi-applyd ../reinvoke-archive/build/artifacts/reinvoke-wifi-applyd-20260903/reinvoke-wifi-applyd \
-  --networkd ../reinvoke-archive/build/artifacts/reinvoke-networkd-20260903/reinvoke-networkd \
-  --output ../reinvoke-archive/build/artifacts/invoke-native-ram-audio-sd8887-networkd-20260903/82_IMAGE.reinvoke-audio-sd8887-networkd
+  --source-initramfs "${REINVOKE_ARCHIVE}/extracted/ota2/OTA2/82_IMAGE" \
+  --donor-rootfs "${REINVOKE_ARCHIVE}/hardware/dumps/<snapshot>/rootfs-extracted/primary" \
+  --kernel-modules "${REINVOKE_ARCHIVE}/build/artifacts/<kernel>/modules" \
+  --provisiond "${REINVOKE_ARCHIVE}/build/artifacts/<provisiond>/reinvoke-provisiond" \
+  --wifi-applyd "${REINVOKE_ARCHIVE}/build/artifacts/<applyd>/reinvoke-wifi-applyd" \
+  --networkd "${REINVOKE_ARCHIVE}/build/artifacts/<networkd>/reinvoke-networkd" \
+  --output "${REINVOKE_ARCHIVE}/build/artifacts/<image>/82_IMAGE"
 ```
 
 The builder normalizes archive metadata so identical reviewed inputs produce
@@ -130,7 +133,7 @@ and all binaries remain outside Git:
 
 ```bash
 tools/usb-boot/build-native-runtime.sh \
-  --donor-rootfs ../reinvoke-archive/hardware/dumps/<dump>/rootfs-extracted/primary \
+  --donor-rootfs "${REINVOKE_ARCHIVE}/hardware/dumps/<snapshot>/rootfs-extracted/primary" \
   --mcu-interface <owned-mcu-binary> \
   --dsp-interface <owned-dsp-binary> \
   --dsp-image <dsp-img.ldr> \
@@ -141,7 +144,7 @@ tools/usb-boot/build-native-runtime.sh \
   --hci-init <owned-hci-init> \
   --pairing-agent <owned-pairing-agent> \
   --peer-address <allowlisted-peer> \
-  --output-dir ../reinvoke-archive/build/artifacts/reinvoke-native-runtime
+  --output-dir "${REINVOKE_ARCHIVE}/build/artifacts/reinvoke-native-runtime"
 ```
 
 ### Host-specific values
@@ -170,9 +173,9 @@ initramfs builder:
 ```bash
 tools/usb-boot/build-native-initramfs.sh \
   <existing-reviewed-inputs> \
-  --runtime-bundle ../reinvoke-archive/build/artifacts/reinvoke-native-runtime \
+  --runtime-bundle "${REINVOKE_ARCHIVE}/build/artifacts/reinvoke-native-runtime" \
   --runtime-manifest-sha256 <reviewed-manifest-sha256> \
-  --output ../reinvoke-archive/build/artifacts/reinvoke-native/82_IMAGE
+  --output "${REINVOKE_ARCHIVE}/build/artifacts/reinvoke-native/82_IMAGE"
 ```
 
 When the bundle is present, the builder removes unused recovery graphics/media
@@ -182,11 +185,21 @@ playback, and pairing services. Add `reinvoke.runtime=off`,
 `reinvoke.router=off`, `reinvoke.mcu=off`, `reinvoke.dsp=off`, or
 `reinvoke.bluetooth=off` to the volatile kernel command line for isolation.
 
-The playback service emits a RAM-only active-PCM lease. The MCU policy opens
+The DSP service exposes seven public WAMP procedures. Raw microphone opcode
+`0x09` is available only through `/run/reinvoke/dsp-mic-control.sock`, created
+with mode `0600`. The MCU service owns `com.harman.dsp.micMute`, physical
+Mic-Mute events, atomic RAM privacy state, retry, and the protected red
+indication. DSP restart restores required mute before readiness.
+
+The packaged BlueALSA build includes the six reviewed active-PCM lease, Invoke
+ALSA contract, decoded-jitter-buffer, SBC-gap-concealment, short-clip-drain, and
+closed-FIFO-drain patches. The playback service emits a RAM-only active-PCM
+lease. The MCU policy opens
 the physical DAC and amplifier only when the lease thread ID matches ALSA's
 `owner_pid`, ALSA reports `RUNNING`, and `/proc/<tid>/exe` identifies the
 packaged player. Silence, disconnect, process exit, and shutdown remove
-authorization and reassert mute.
+authorization and reassert mute; a 1.5-second holdoff covers brief transport
+gaps without flapping the hardware gates.
 
 Service output passes through BusyBox syslog with a 256 KiB active file and one
 rotated backup. If syslog is unavailable, services use the bounded kernel log.
@@ -200,7 +213,7 @@ bundle after each boot:
 
 ```bash
 tools/usb-boot/collect-native-acceptance.sh \
-  --output-dir ../reinvoke-archive/hardware/usb-attempts/<timestamp>/acceptance
+  --output-dir "${REINVOKE_ARCHIVE}/hardware/usb-attempts/<timestamp>/acceptance"
 ```
 
 The collector also calls the owned MCU and DSP WAMP surfaces and retains all
@@ -211,9 +224,9 @@ a reviewed native pair with elapsed progress and a bounded USB criterion:
 
 ```bash
 tools/usb-boot/boot-native-ram.sh \
-  --kernel ../reinvoke-archive/build/artifacts/invoke-native-audio/81_IMAGE.reinvoke-audio \
+  --kernel "${REINVOKE_ARCHIVE}/build/artifacts/<kernel>/81_IMAGE" \
   --kernel-sha256 <reviewed-kernel-sha256> \
-  --initramfs ../reinvoke-archive/build/artifacts/invoke-native-ram-audio/82_IMAGE.reinvoke-audio \
+  --initramfs "${REINVOKE_ARCHIVE}/build/artifacts/<image>/82_IMAGE" \
   --initramfs-sha256 <reviewed-initramfs-sha256> \
   --wait-for-prompt \
   --adb-server-port 5038
@@ -227,14 +240,15 @@ yellow-mode U-Boot appears, without imposing an operator timeout. Use
 `capture-attempt.sh` owns the USB interface, pass its isolated ADB server port
 to the loader. The default capture port is 5038.
 
-After ADB returns, start the minimum diagnostic service graph:
+For historical donor-comparison work only, ADB can start the old minimum
+diagnostic graph:
 
 ```bash
 tools/usb-boot/start-native-services.sh \
-  --rootfs ../reinvoke-archive/hardware/dumps/20260902T215700Z-native-ram/installed-rootfs-region.bin
+  --rootfs "${REINVOKE_ARCHIVE}/hardware/dumps/<snapshot>/installed-rootfs-region.bin"
 ```
 
-The launcher checksum-gates the block-aligned rootfs carve, mounts its host copy
+That historical launcher checksum-gates the block-aligned rootfs carve, mounts its host copy
 read-only from RAM, starts only Bonefish and the MCU, DSP, audio, source, and
 optional Bluetooth adapters, and initializes music volume at 20 percent. DSP
 startup is disabled by default because its normal boot event transiently
@@ -253,16 +267,16 @@ current Linux host:
 tools/usb-boot/build-arm-flasher.sh
 ```
 
-The resulting binary is x86-64 on this Mac mini despite its upstream
+The resulting binary is x86-64 on the test workstation despite its upstream
 `usb_boot_arm` name. It has not been run on Raspberry Pi hardware.
 
 ## Capture one attempt
 
-The previously used connector appears on USB bus 3. Capture only that bus to
+Identify the connector's host USB bus with `lsusb -t`. Capture only that bus to
 avoid recording unrelated traffic from other USB buses:
 
 ```bash
-INVOKE_USBMON_INTERFACE=usbmon3 \
+INVOKE_USBMON_INTERFACE=usbmonN \
   tools/usb-boot/capture-attempt.sh normal-boot passive
 ```
 
@@ -288,7 +302,7 @@ Available modes:
 | `arm-absent` | Run the pinned open-source implementation without `08_IMAGE` |
 
 Each run creates a private directory under
-`../reinvoke-archive/hardware/usb-attempts/`. It contains:
+`${REINVOKE_ARCHIVE}/hardware/usb-attempts/`. It contains:
 
 * Attempt metadata and hashes
 * USB topology
@@ -298,7 +312,7 @@ Each run creates a private directory under
 * Every observed Marvell descriptor
 * Boot-tool and console logs when applicable
 
-Use `usbmon2` instead when testing a connector that `lsusb -t` places on bus 2.
+Use the bus-specific `usbmonN` that matches `lsusb -t`.
 The script refuses `usbmon0` because it would capture every USB bus.
 
 ## Direct session startup

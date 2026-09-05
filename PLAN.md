@@ -1,15 +1,17 @@
 ---
 title: Project plan and handoff
 description: Current evidence, project status, and next steps for reInvoke
-ms.date: 2026-09-03
+ms.date: 2026-09-05
 ms.topic: overview
 ---
 
-Current state, established facts, and next steps. This file exists so work can
-resume in a fresh session or from GitHub on the web without the original
-conversation.
+Current state, established facts, and next steps. The normative behavior and
+service boundaries are defined by the
+[current product and architecture contract](docs/current-product-contract.md).
+Older plans and milestone records below are preserved as evidence and are
+explicitly labeled when they no longer describe the target.
 
-**Last updated:** 2026-09-03
+**Last updated:** 2026-09-05
 
 ---
 
@@ -25,13 +27,15 @@ conversation.
 | Analysis — unpack and understand the firmware | **Done** |
 | Control-plane emulation — device userland runs off-device | **Done** — see [control-plane-emulation.md](docs/emulation/control-plane-emulation.md) |
 | Evidence closure — FCC exhibits, OTA2, sibling cross-index | **Done** |
-| Hardware validation, donor device available | **In progress**: U-Boot and custom RAM Linux reached over USB; Wi-Fi, MCU, DSP, ALSA, audible output, rotary volume, native HCI, peer pairing, and the BlueZ/BlueALSA A2DP-to-PCM path are verified in RAM; see [native-ram-platform.md](docs/native-ram-platform.md) |
+| Hardware validation, closed device available | **In progress**: the owned RAM lifecycle, Wi-Fi, MCU, DSP, capture and playback ALSA paths, audible Bluetooth output, rotary volume, pairing, microphone privacy, and LED clear path are verified at least once; the current image still needs the final cold-boot and attended playback campaign |
+| Owned service replacement | **Accepted architecture**: owned PID 1 supervises the MCU, DSP, network, BlueZ/BlueALSA, Bonefish compatibility, logging, and bounded helper services |
+| Persistent installation | **Not approved or required**: the accepted target remains a reversible RAM boot |
 
 ### The finding that reframes the project
 
 Harman's final firmware, `Barracuda_libre-12.2134.0` in the OTA2 bundle, removes
 Cortana, the Cortana harness, Spotify, and the Skype call library. It adds
-`oobe-ui` and a `wifi-blocker` service. The physical unit carries the earlier
+`oobe-ui` and a `wifi-blocker` service. The examined physical sample carries the earlier
 `Barracuda_libre-12.2050.3` rootfs.
 
 Artifact-backed finding: Harman shipped a firmware line whose service set is
@@ -81,6 +85,9 @@ Verified facts:
 - The physical DSP reports `0.0.64.58`, packed as WAMP value `25688`.
 - ALSA card 1 accepts 48 kHz stereo `S32_LE`, and the speaker audibly reproduced
   a guarded -48 dBFS tone.
+- ALSA capture is resolved at stereo 48 kHz `S32_LE`, 256-frame periods, and
+  16 periods. Attended speech/tapping correlation passed while unmuted; muted
+  capture produced all-zero samples.
 - The physical rotary ring produced 120 matched MCU and WAMP direction events.
 - Native `bt8xxx.ko` enables `hci0`; Bluedroid enables A2DP Sink and both AVRCP
   roles and enters discoverable pairing mode.
@@ -89,6 +96,15 @@ Verified facts:
   the frames but does not wake its decoder/PCM client.
 - The checksum-gated service launcher rebuilds the complete RAM diagnostic
   graph from a clean service state and keeps amplifier, DAC, and NAND safe.
+- The owned MCU service is the process-lifetime microphone privacy controller.
+  It registers the public compatibility API, stores state atomically in RAM,
+  retries failures independently of WAMP, protects the red indication, and uses
+  the DSP service's root-only mode-`0600` Unix socket.
+- The owned DSP service exports seven public WAMP procedures. The donor
+  historically exported eight; raw microphone mutation is now private.
+- The patched BlueALSA path enforces active-PCM ownership and the donor ALSA
+  contract, buffers decoded PCM, conceals SBC RTP gaps, and drains short or
+  closed-FIFO streams.
 - Static ARM provisioning and station-apply daemons now provide ephemeral TLS,
   a 256-bit token, root-peer verification, derived WPA2 configuration, and
   bounded association. Live fail-closed and AP success-path tests pass.
@@ -107,10 +123,11 @@ Artifact-backed findings:
   active.
 - The MCU startup path issues the recorded raw I2C transactions under emulation.
 
-Inference:
+Historical inference:
 
-- Stock final firmware may satisfy part of repurposing completeness before any
-  replacement firmware work.
+- Before owned RAM boot was available, stock final firmware appeared capable of
+  satisfying part of repurposing completeness. This is retained as a historical
+  inference, not a current product direction.
 - Device-class readings for the I2C addresses and the likely utility of a
   virtual HCI adapter remain engineering hypotheses pending physical or
   transport-level tests.
@@ -136,11 +153,11 @@ location from its own path. Override with `--archive-root` or `$REINVOKE_ARCHIVE
 |---|---|---|
 | 1 | Docs, metadata, hashes, extracted text layer | This repository (~1.5 MB) |
 | 2 | Firmware bundles (569 MB) | [GitHub Releases](../../releases/tag/invoke-firmware-mirror) |
-| 3 | Full working set incl. Git mirrors (4.9 GB) | Private Azure Blob container, Cool, LRS |
+| 3 | Full working set including Git mirrors (4.9 GB) | Private operator-managed cold archive |
 
-Azure access is via Microsoft Entra ID; no keys are stored anywhere. Cost is
-approximately $0.58/year. Local, Azure, and the published release have been verified
-byte-identical by SHA-256.
+No archive credentials, signed URLs, account names, or container names belong
+in Git. The local archive, private cold copy, and published release were verified
+byte-identical by SHA-256 at the recorded preservation checkpoint.
 
 ---
 
@@ -237,7 +254,7 @@ The Phase 3 preservation and extraction baseline is complete. Targeted static
 analysis remains open for boot-stage identity, opaque USB records, factory-mode
 selection, and active-slot behavior.
 
-### Phase 4 — hardware validation (current phase)
+### Phase 4 — hardware validation and RAM-product acceptance
 
 A donor device is now physically in hand and will not be opened. The operator
 procedure is [no-disassembly-observation-procedure.md](docs/no-disassembly-observation-procedure.md),
@@ -263,11 +280,29 @@ this session those claims cited evidence the project did not possess.
    [uboot-access.md](docs/uboot-access.md) and
    [native-ram-platform.md](docs/native-ram-platform.md).
 
-Host preparation is complete for the next controls: ADB 1.0.41, libusb 1.0.25,
+Historical preparation record: ADB 1.0.41, libusb 1.0.25,
 bus-specific usbmon capture, timestamped attempt bundles, and a native x86-64
 build of the pinned open-source flasher at commit `63444e82`.
 
-**Remaining steps after native RAM bring-up:**
+**Current remaining gates:**
+
+1. Cold-boot the accepted image and complete boots 2 through 5.
+2. Validate complete startup order and the pairing-agent generation guard from
+   that image.
+3. Complete one attended playback-continuity run on that image.
+4. Harden WAMP setup-response correlation against interleaved messages.
+5. Complete physical-button orchestration for an isolated provisioning window.
+
+The occasional Mic-Mute press for which the companion MCU produces no event
+remains a hardware/firmware observation. Both the donor and owned service show
+this behavior; the owned privacy controller remains correct whenever an event is
+delivered.
+
+**Historical Phase 4 work plan (status recorded on 2026-09-03):**
+
+The list below preserves the bring-up sequence. Status statements in it describe
+that checkpoint, not the current target; the current gates above and the
+[canonical contract](docs/current-product-contract.md) take precedence.
 
 1. **Done:** establish reproducible rebuilt-kernel boot profiles using NDK r10e
    GCC 4.9, the verified `0x02008000` layout, and checksum-gated device trees.
@@ -287,10 +322,11 @@ build of the pinned open-source flasher at commit `63444e82`.
    initialization, default-deny unmute, five-second heartbeat, status, and
    bidirectional rotary tests on hardware. The owned DSP service passes
    exact-image download, physical boot-event, and `getVer` validation without
-   changing mute policy. The physical ALSA capture endpoint remains unresolved:
-   it enumerates but rejects the tested hardware parameters and captures zero
-   frames. Opening the enclosure or probing board-level buses is not part of
-   this project.
+   changing mute policy. At this checkpoint the physical ALSA capture endpoint
+   was unresolved. It was later resolved at stereo 48 kHz `S32_LE`,
+   256-frame periods, and 16 periods, with attended signal correlation and
+   all-zero muted capture. Opening the enclosure or probing board-level buses
+   is not part of this project.
 6. **In progress:** the physical-gated provisioning API and authenticated TLS
    parser, SD8887 `p2p0` radio adapter, isolated provisioning AP, real station
    application, and restart-safe owned DHCP/resolver lifecycle are implemented
@@ -308,11 +344,10 @@ build of the pinned open-source flasher at commit `63444e82`.
 8. **In progress:** recover the donor MCU, DSP, audio, source-manager, LED,
    button, and update contracts through static analysis, emulation, interposed
    system calls, WAMP capture, and live RAM-only diagnostics. MCU and DSP
-   control contracts have live RAM evidence; microphone capture is the
-   remaining audio-path gap.
-9. **Owned replacement:** implement each recovered contract behind a stable
-   reInvoke API, replacing donor processes incrementally while preserving
-   known-good RAM rollback.
+   control contracts have live RAM evidence. Microphone capture was the
+   remaining audio-path gap at that checkpoint and has since been resolved.
+9. **Owned replacement:** completed for the accepted service graph. Each required
+   contract is behind an owned reInvoke boundary while RAM rollback remains.
 10. **Persistence decision:** evaluate a NAND installation only after the owned
     boot and service graph passes repeated cold-boot, audio, networking, and
     recovery tests. A persistent install is optional, not the definition of
@@ -325,7 +360,7 @@ human-approved recovery and rollback plan.
 
 ### Smaller open items
 
-- **Azure restore runbook** — **documented:**
+- **Private cold-archive restore runbook** — **documented:**
   [azure-restore-runbook.md](docs/acquisition/azure-restore-runbook.md).
 - **`P0-002`** — Google/Nest Chromecast OSS Drive folder, still `DISCOVERY_ONLY`.
   The folder title is externally observable, but unauthenticated contents were
@@ -389,9 +424,10 @@ human-approved recovery and rollback plan.
   service start, so `dsp-img.ldr` is part of a replacement's payload, not a
   device property. Verified offline with
   `tools/emulation/spi-capture-label.mjs`.
-- **USB download-mode feasibility.** No BootROM, OTP, or secure-boot source
-  exists in the corpus, so this cannot be settled by analysis. It is a
-  measurement, gated by the observation procedure.
+- **USB download-mode feasibility.** **Resolved after this static-analysis
+  checkpoint:** yellow service mode reaches interactive RAM-loaded U-Boot and
+  boots the owned initramfs. The absence of BootROM, OTP, and secure-boot source
+  in the corpus remains a historical evidence limit, not an access blocker.
 
 ---
 
@@ -399,8 +435,9 @@ human-approved recovery and rollback plan.
 
 1. **Originals are never modified.** No repacking, no recompression. Recorded SHA-256
    values are the integrity anchor.
-2. **No physical device is modified or flashed.** ARM binaries run only from a
-   copied rootfs in a rootless sandbox. Preserved originals remain read-only.
+2. **No persistent device storage is modified or flashed.** Emulation uses a
+   copied rootfs. Hardware validation uses the reviewed yellow-mode RAM-boot
+   path, does not mount NAND, and retains the installed firmware as rollback.
 3. **Git holds what was written, not what was downloaded.** Analysis, notes, metadata,
    and small text artifacts belong here; bytes belong in Tier 2 or 3.
    Litmus test: *would I ever read this in a diff?*

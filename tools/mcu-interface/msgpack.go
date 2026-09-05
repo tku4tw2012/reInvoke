@@ -12,6 +12,12 @@ import (
 	"math"
 )
 
+const (
+	maxMessagePackStringBytes        = 1 << 20
+	maxMessagePackCollectionElements = 4096
+	maxMessagePackDepth              = 32
+)
+
 func encodeMessagePack(value interface{}) ([]byte, error) {
 	var buffer bytes.Buffer
 	if err := writeMessagePack(&buffer, value); err != nil {
@@ -148,7 +154,7 @@ type messagePackReader struct {
 
 func decodeMessagePack(payload []byte) (interface{}, error) {
 	decoder := messagePackReader{reader: bytes.NewReader(payload)}
-	value, err := decoder.read()
+	value, err := decoder.read(0)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +164,10 @@ func decodeMessagePack(payload []byte) (interface{}, error) {
 	return value, nil
 }
 
-func (decoder *messagePackReader) read() (interface{}, error) {
+func (decoder *messagePackReader) read(depth int) (interface{}, error) {
+	if depth > maxMessagePackDepth {
+		return nil, errors.New("MessagePack nesting exceeds limit")
+	}
 	marker, err := decoder.reader.ReadByte()
 	if err != nil {
 		return nil, err
@@ -169,9 +178,9 @@ func (decoder *messagePackReader) read() (interface{}, error) {
 	case marker >= 0xe0:
 		return int64(int8(marker)), nil
 	case marker&0xf0 == 0x80:
-		return decoder.readMap(uint32(marker & 0x0f))
+		return decoder.readMap(uint32(marker&0x0f), depth+1)
 	case marker&0xf0 == 0x90:
-		return decoder.readArray(uint32(marker & 0x0f))
+		return decoder.readArray(uint32(marker&0x0f), depth+1)
 	case marker&0xe0 == 0xa0:
 		return decoder.readString(uint32(marker & 0x1f))
 	}
@@ -236,25 +245,25 @@ func (decoder *messagePackReader) read() (interface{}, error) {
 		if err := binary.Read(decoder.reader, binary.BigEndian, &length); err != nil {
 			return nil, err
 		}
-		return decoder.readArray(uint32(length))
+		return decoder.readArray(uint32(length), depth+1)
 	case 0xdd:
 		var length uint32
 		if err := binary.Read(decoder.reader, binary.BigEndian, &length); err != nil {
 			return nil, err
 		}
-		return decoder.readArray(length)
+		return decoder.readArray(length, depth+1)
 	case 0xde:
 		var length uint16
 		if err := binary.Read(decoder.reader, binary.BigEndian, &length); err != nil {
 			return nil, err
 		}
-		return decoder.readMap(uint32(length))
+		return decoder.readMap(uint32(length), depth+1)
 	case 0xdf:
 		var length uint32
 		if err := binary.Read(decoder.reader, binary.BigEndian, &length); err != nil {
 			return nil, err
 		}
-		return decoder.readMap(length)
+		return decoder.readMap(length, depth+1)
 	default:
 		return nil, fmt.Errorf("unsupported MessagePack marker 0x%02x", marker)
 	}
@@ -263,7 +272,11 @@ func (decoder *messagePackReader) read() (interface{}, error) {
 func (decoder *messagePackReader) readString(
 	length uint32,
 ) (string, error) {
-	buffer := make([]byte, length)
+	if length > maxMessagePackStringBytes ||
+		uint64(length) > uint64(decoder.reader.Len()) {
+		return "", errors.New("MessagePack string length exceeds limit")
+	}
+	buffer := make([]byte, int(length))
 	if _, err := io.ReadFull(decoder.reader, buffer); err != nil {
 		return "", err
 	}
@@ -272,10 +285,15 @@ func (decoder *messagePackReader) readString(
 
 func (decoder *messagePackReader) readArray(
 	length uint32,
+	depth int,
 ) ([]interface{}, error) {
-	values := make([]interface{}, 0, length)
+	if length > maxMessagePackCollectionElements ||
+		uint64(length) > uint64(decoder.reader.Len()) {
+		return nil, errors.New("MessagePack array length exceeds limit")
+	}
+	values := make([]interface{}, 0, int(length))
 	for index := uint32(0); index < length; index++ {
-		value, err := decoder.read()
+		value, err := decoder.read(depth)
 		if err != nil {
 			return nil, err
 		}
@@ -286,10 +304,15 @@ func (decoder *messagePackReader) readArray(
 
 func (decoder *messagePackReader) readMap(
 	length uint32,
+	depth int,
 ) (map[string]interface{}, error) {
-	values := make(map[string]interface{}, length)
+	if length > maxMessagePackCollectionElements ||
+		uint64(length) > uint64(decoder.reader.Len()/2) {
+		return nil, errors.New("MessagePack map length exceeds limit")
+	}
+	values := make(map[string]interface{}, int(length))
 	for index := uint32(0); index < length; index++ {
-		key, err := decoder.read()
+		key, err := decoder.read(depth)
 		if err != nil {
 			return nil, err
 		}
@@ -297,7 +320,7 @@ func (decoder *messagePackReader) readMap(
 		if !ok {
 			return nil, errors.New("MessagePack map key is not a string")
 		}
-		value, err := decoder.read()
+		value, err := decoder.read(depth)
 		if err != nil {
 			return nil, err
 		}

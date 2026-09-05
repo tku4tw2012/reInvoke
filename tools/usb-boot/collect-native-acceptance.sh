@@ -35,6 +35,9 @@ main() {
   local acceptance_command_status=0
   local acceptance_status=0
   local mcu_status=0
+  local dsp_status=0
+  local dsp_version_status=0
+  local dsp_monitor_pid
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$(cd "${script_dir}/../.." && pwd)"
@@ -65,7 +68,7 @@ main() {
     err "--adb-server-port must be a positive integer"
   [[ ! -e "${output_dir}" ]] ||
     err "refusing to overwrite output directory: ${output_dir}"
-  for command_name in adb find grep mkdir node sha256sum sort tail xargs; do
+  for command_name in adb find grep mkdir node sha256sum sleep sort tail xargs; do
     command -v "${command_name}" >/dev/null ||
       err "'${command_name}' is required"
   done
@@ -118,6 +121,38 @@ main() {
     mcu_status=$?
   fi
   printf "%s\n" "${mcu_status}" >"${output_dir}/mcu-status.status"
+  if ((mcu_status == 0)) &&
+    ! grep -q '"type": "result"' "${output_dir}/mcu-status.json"; then
+    mcu_status=1
+    printf "%s\n" "${mcu_status}" >"${output_dir}/mcu-status.status"
+  fi
+
+  node "${repo_root}/tools/control/wamp-monitor.mjs" \
+    --topic com.harman.dsp.version --duration 10 --max-events 1 \
+    >"${output_dir}/dsp-version.jsonl" 2>&1 &
+  dsp_monitor_pid=$!
+  sleep 1
+  if node "${repo_root}/tools/control/wamp-call.mjs" \
+    com.harman.dsp.getVer --timeout 8000 \
+    >"${output_dir}/dsp-status.json" 2>&1; then
+    dsp_status=0
+  else
+    dsp_status=$?
+  fi
+  if ((dsp_status == 0)) &&
+    ! grep -q '"type": "result"' "${output_dir}/dsp-status.json"; then
+    dsp_status=1
+  fi
+  printf "%s\n" "${dsp_status}" >"${output_dir}/dsp-status.status"
+  if wait "${dsp_monitor_pid}" &&
+    grep -q '"type":"event"' "${output_dir}/dsp-version.jsonl" &&
+    grep -Fq '"args":[25688]' "${output_dir}/dsp-version.jsonl"; then
+    dsp_version_status=0
+  else
+    dsp_version_status=1
+  fi
+  printf "%s\n" "${dsp_version_status}" \
+    >"${output_dir}/dsp-version.status"
 
   (
     cd "${output_dir}"
@@ -129,6 +164,8 @@ main() {
   ((acceptance_status == 0)) ||
     err "on-device acceptance reported ${acceptance_status} failures"
   ((mcu_status == 0)) || err "MCU WAMP acceptance failed"
+  ((dsp_status == 0)) || err "DSP WAMP acceptance failed"
+  ((dsp_version_status == 0)) || err "DSP version event acceptance failed"
 }
 
 main "$@"

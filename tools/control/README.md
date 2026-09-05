@@ -1,13 +1,18 @@
 ---
 title: reInvoke control tools
-description: Host-side tools for calling the Invoke native control plane
-ms.date: 2026-09-04
+description: Host-side diagnostics, donor decoders, and reference adapters for the reInvoke control plane
+ms.date: 2026-09-05
 ms.topic: how-to
 ---
 
 `wamp-call.mjs` is a dependency-free MsgPack WAMP rawsocket client. It speaks
 directly to Bonefish and does not require Harman's test client, Python, or an
 external JavaScript package.
+
+These are host-side diagnostics and contract references. The accepted target
+runs static ARM `reinvoke-mcu-interface` and `reinvoke-dsp-interface` services;
+it does not run Node.js. See the
+[current product and architecture contract](../../docs/current-product-contract.md).
 
 `wamp-fixed-service.mjs` registers one procedure and returns a fixed JSON
 response. Use it for narrow RAM-only compatibility contracts instead of
@@ -18,8 +23,8 @@ node tools/control/wamp-fixed-service.mjs com.example.identity \
   --kwargs '{"product":"Invoke"}'
 ```
 
-`speaker-control-state.mjs` is the side-effect-free state core for the proposed
-owned Bluetooth speaker bridge. `speaker-control-service.mjs` exposes that core
+`speaker-control-state.mjs` is the side-effect-free state core used to design
+the owned Bluetooth speaker bridge. `speaker-control-service.mjs` exposes that core
 as one dependency-free MsgPack WAMP service, replacing the relevant
 `music-source-manager` and `audio-ui` registrations without starting either
 donor binary:
@@ -44,8 +49,8 @@ node --test \
   tools/control/speaker-control-service.test.mjs
 ```
 
-The WAMP inventory, minimum service boundary, and remaining live target mapping
-work are documented in
+The historical WAMP inventory, host reference, and current static target are
+documented in
 [Owned Bluetooth speaker control boundary](../../docs/emulation/owned-speaker-control.md).
 
 `wamp-monitor.mjs` is passive MCU instrumentation. It sends only WAMP
@@ -76,8 +81,11 @@ node tools/control/dsp-frame-decode.mjs --list
 `--readmsg` takes the tuple `dsp-client` prints, which is the header id
 followed by the payload. `--device` takes the raw wire frame, which carries
 the same five-byte header as the host direction. Decoding the donor's existing
-log is fully passive instrumentation of the live DSP link. Of the eight
-registered procedures only `com.harman.dsp.getVer` is side-effect free;
+log is fully passive instrumentation of the live DSP link. The donor registered
+eight procedures, of which only `com.harman.dsp.getVer` is side-effect free.
+The current DSP service registers seven: `com.harman.dsp.micMute` moved to the
+MCU privacy controller, and raw DSP microphone control is available only through
+the root-only mode-`0600` Unix socket. In both designs,
 `com.harman.stateChanged` is a subscribed topic rather than a registration.
 Run the decoder tests with:
 
@@ -98,7 +106,7 @@ Invoke without linking an unreviewed binary:
 ```bash
 arm-linux-gnueabihf-gcc -static -O2 -Wall -Wextra -Werror \
   tools/control/a2dp-data-probe.c \
-  -o ../reinvoke-archive/build/tools/a2dp-data-probe-armhf
+  -o "${REINVOKE_ARCHIVE}/build/tools/a2dp-data-probe-armhf"
 ```
 
 The controlled iPhone and Ubuntu tests connected successfully but received zero
@@ -140,25 +148,68 @@ earlier pin, `ae60d800...`, was superseded because it matched no archived
 artifact and its toolchain was never recorded; see
 [P1-049](../../metadata/P1-049.json) for the substitution record.
 
-`build-bluealsa-aplay.sh` applies the reviewed active-PCM lease patch to the
-pinned BlueALSA 4.0.0 source. It checksum-gates the source, patch, compiler,
-strip tool, and final static ARM binary:
+`bluez-media-control.c` is the owned Bluetooth transport helper. The MCU service
+runs it to send `Play` or `Pause` on the connected peer's BlueZ `MediaControl1`
+interface when the top Action key is tapped. Build it with
+`build-bluez-media-control.sh`, which checksum-gates the compiler, the strip
+tool, and the resulting static ARM binary:
+
+```bash
+tools/control/build-bluez-media-control.sh \
+  --dbus-source path/to/dbus-1.12.20 \
+  --sysroot path/to/armhf-sysroot \
+  --output "${REINVOKE_ARCHIVE}/build/artifacts/bluez-media-control"
+```
+
+Both this helper and the pairing agent need a static `libdbus-1.a` built for the
+target. Reproduce that tree from the pinned source under `sources/upstream/`:
+
+```bash
+tar -xzf path/to/dbus-1.12.20.tar.gz -C path/to/build-dir
+cd path/to/build-dir/dbus-1.12.20
+./configure --host=arm-linux-gnueabihf --enable-static --disable-shared \
+  --disable-selinux --disable-apparmor --disable-systemd --disable-tests \
+  --disable-doxygen-docs --disable-xml-docs --without-x \
+  --disable-launchd --disable-libaudit \
+  ac_cv_have_abstract_sockets=yes
+make -C dbus libdbus-1.la
+```
+
+The sysroot only needs `usr/include` and `usr/lib` pointing at the distribution
+`arm-linux-gnueabihf` cross headers and libraries. The static link warns about
+`getpwuid_r` and `getaddrinfo`; neither path is reached, because the helper
+speaks D-Bus over the private Unix socket and never resolves users or hostnames.
+
+Recording the configure flags matters. The media-control digest gated by
+`build-native-runtime.sh` was resubstituted once, because its first pin came
+from a D-Bus tree that was not preserved and therefore could not be rebuilt.
+Pin a digest only after two consecutive builds agree byte for byte.
+
+`build-bluealsa-aplay.sh` applies six reviewed patches to pinned BlueALSA 4.0.0:
+active-PCM lease, Invoke ALSA behavior and recovery, decoded PCM jitter
+buffering, SBC RTP-gap concealment, short-clip draining, and closed-FIFO
+draining. It checksum-gates the source, every patch, the compiler, the strip
+tool, and both static ARM binaries:
 
 ```bash
 tools/control/build-bluealsa-aplay.sh \
   --source-archive path/to/bluez-alsa-4.0.0.tar.gz \
   --sysroot path/to/armhf-sysroot \
-  --output ../reinvoke-archive/build/artifacts/bluealsa-aplay
+  --output "${REINVOKE_ARCHIVE}/build/artifacts/bluealsa-aplay" \
+  --daemon-output "${REINVOKE_ARCHIVE}/build/artifacts/bluealsa"
 ```
 
 The patched player writes its worker thread ID to the configured RAM lease only
-after receiving positive PCM data. It removes the lease after 500 ms of
-inactivity and during worker cleanup.
+after receiving positive PCM data. It buffers two seconds of decoded PCM,
+drains complete ALSA periods, recovers partial writes and underruns in place,
+and removes the lease after 100 ms of inactivity once the buffer drains. The
+patched SBC decoder inserts bounded silence for timestamp-confirmed missing PCM
+frames so transport gaps do not starve the hardware ring.
 
 Forward the RAM-native device's private WAMP port over USB:
 
 ```bash
-adb -s 0123456789ABCDEF forward tcp:19999 tcp:9999
+adb -s "$REINVOKE_ADB_SERIAL" forward tcp:19999 tcp:9999
 ```
 
 Call a procedure:
