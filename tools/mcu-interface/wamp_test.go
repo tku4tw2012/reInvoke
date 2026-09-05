@@ -58,6 +58,7 @@ func TestMinimumWAMPSurface(t *testing.T) {
 		"com.harman.musicMuteSet",
 		"com.harman.musicMuteToggle",
 		"com.harman.ledAnimate",
+		"com.harman.ledSet",
 		"com.harman.ledOff",
 		"com.harman.dsp.micMute",
 	}
@@ -605,6 +606,128 @@ func TestWAMPMicrophoneMuteUsesPrivacyOwner(t *testing.T) {
 	}
 }
 
+func TestIndicatorLEDArgumentsMatchRecoveredContract(t *testing.T) {
+	target, mode, color, err := indicatorLEDArguments(
+		[]interface{}{"front", "ignored", uint64(7)},
+		map[string]interface{}{
+			"mode":    "slow-blink",
+			"color":   "amber",
+			"unknown": true,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != "front" || mode != "slow-blink" || color != "amber" {
+		t.Fatalf(
+			"arguments = (%q, %q, %q)",
+			target,
+			mode,
+			color,
+		)
+	}
+
+	for _, test := range []struct {
+		name   string
+		args   []interface{}
+		kwargs map[string]interface{}
+	}{
+		{name: "missing target", args: nil},
+		{name: "target type", args: []interface{}{uint64(1)}},
+		{
+			name:   "mode type",
+			args:   []interface{}{"front"},
+			kwargs: map[string]interface{}{"mode": uint64(1)},
+		},
+		{
+			name:   "color type",
+			args:   []interface{}{"front"},
+			kwargs: map[string]interface{}{"color": false},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, _, err := indicatorLEDArguments(
+				test.args,
+				test.kwargs,
+			); err == nil {
+				t.Fatal("invalid arguments accepted")
+			}
+		})
+	}
+}
+
+func TestWAMPLedSetUsesKeywordArguments(t *testing.T) {
+	writer := &recordingIndicatorLEDWriter{}
+	service := wampService{
+		indicatorLEDs: newIndicatorLEDController(writer),
+	}
+	response := invokeWithKwargsForTest(
+		t,
+		&service,
+		"com.harman.ledSet",
+		[]interface{}{"front", "ignored", uint64(7)},
+		map[string]interface{}{
+			"mode":    "slow-blink",
+			"color":   "amber",
+			"unknown": true,
+		},
+	)
+	if messageType(response) != wampYield {
+		t.Fatalf("response = %#v", response)
+	}
+	want := [][6]byte{{indicatorLEDCode, 3, 0, 0, 0, 0}}
+	if frames := writer.recorded(); !reflect.DeepEqual(frames, want) {
+		t.Fatalf("frames = %x, want %x", frames, want)
+	}
+}
+
+func TestWAMPLedSetRequiresStringTarget(t *testing.T) {
+	for _, args := range [][]interface{}{
+		nil,
+		{uint64(1)},
+	} {
+		writer := &recordingIndicatorLEDWriter{}
+		service := wampService{
+			indicatorLEDs: newIndicatorLEDController(writer),
+		}
+		response := invokeForTest(
+			t,
+			&service,
+			"com.harman.ledSet",
+			args,
+		)
+		if messageType(response) != wampError {
+			t.Fatalf("args = %#v, response = %#v", args, response)
+		}
+		if frames := writer.recorded(); len(frames) != 0 {
+			t.Fatalf("invalid args wrote frames: %x", frames)
+		}
+	}
+}
+
+func TestWAMPLedSetPropagatesWriteFailure(t *testing.T) {
+	writer := &recordingIndicatorLEDWriter{
+		errs: []error{errors.New("injected LED failure")},
+	}
+	service := wampService{
+		indicatorLEDs: newIndicatorLEDController(writer),
+	}
+	response := invokeWithKwargsForTest(
+		t,
+		&service,
+		"com.harman.ledSet",
+		[]interface{}{"back"},
+		map[string]interface{}{"mode": "on", "color": "ignored"},
+	)
+	if messageType(response) != wampError {
+		t.Fatalf("response = %#v", response)
+	}
+	want := []interface{}{"set indicator LEDs: injected LED failure"}
+	if !reflect.DeepEqual(response[5], want) {
+		t.Fatalf("error args = %#v, want %#v", response[5], want)
+	}
+}
+
 type unexpectedMessage struct {
 	message interface{}
 }
@@ -620,6 +743,17 @@ func invokeForTest(
 	args []interface{},
 ) []interface{} {
 	t.Helper()
+	return invokeWithKwargsForTest(t, service, procedure, args, nil)
+}
+
+func invokeWithKwargsForTest(
+	t *testing.T,
+	service *wampService,
+	procedure string,
+	args []interface{},
+	kwargs map[string]interface{},
+) []interface{} {
+	t.Helper()
 	serviceConnection, peerConnection := net.Pipe()
 	defer serviceConnection.Close()
 	defer peerConnection.Close()
@@ -627,17 +761,21 @@ func invokeForTest(
 	peer := &wampConnection{connection: peerConnection}
 	done := make(chan error, 1)
 	go func() {
+		message := []interface{}{
+			uint64(wampInvocation),
+			uint64(9),
+			uint64(77),
+			map[string]interface{}{},
+			args,
+		}
+		if kwargs != nil {
+			message = append(message, kwargs)
+		}
 		done <- service.handleInvocation(
 			context.Background(),
 			client,
 			map[uint64]string{77: procedure},
-			[]interface{}{
-				uint64(wampInvocation),
-				uint64(9),
-				uint64(77),
-				map[string]interface{}{},
-				args,
-			},
+			message,
 		)
 	}()
 
