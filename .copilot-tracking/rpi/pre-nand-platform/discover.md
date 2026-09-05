@@ -72,6 +72,13 @@ work continued while host builds ran.
 * Service fault injection: the MCU and DSP services each restarted cleanly under
   supervision.
 
+### Soak result on boot 1
+
+The v12 boot stayed up 1 hour 10 minutes and survived three injected service
+kills. Every supervised service was alive at the end, load average was steady
+near 0.4, and `/run/reinvoke/dsp-booted` was present after the final DSP
+restart. No supervisor entered a restart loop.
+
 ### Defect found on hardware: DSP readiness could be lost on restart
 
 Restarting the DSP service intermittently left `/run/reinvoke/dsp-booted`
