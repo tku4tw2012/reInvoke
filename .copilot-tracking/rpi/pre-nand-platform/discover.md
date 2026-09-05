@@ -177,3 +177,76 @@ pairing state on the wrong physical part.
 
 Cold boots 2 through 5 need the operator, because yellow mode requires the
 button held at power-on and cannot be entered from software.
+
+## Iteration 16: cold boot 2 on v13, and the regression it exposed
+
+The operator power-cycled into yellow mode and the armed loader injected v13
+automatically: prompt caught, kernel and initramfs loaded, ADB back in five
+seconds.
+
+### What v13 proved
+
+* `network.wamp_firewall` passes. The INPUT chain accepts ports 9998 and 9999
+  from loopback and from the single configured allowlist entry, then drops the
+  rest. Bonefish still binds every interface, which is why the chain, not the
+  bind address, is the control.
+* The microphone privacy boundary is in place. `com.harman.dsp.micMute` is
+  registered by the MCU service, one of its eleven procedures. The DSP no longer
+  exposes it, so the raw opcode cannot be reached from the unauthenticated bus.
+* PID 1 reported `hardware initialized muted; WAMP unmute policy=false`.
+* The correlated setup reader works against the real router. Five MCU restarts
+  each re-registered exactly eleven procedures, 36 through 80 cumulatively, with
+  no registration, subscription, or bound errors.
+* Nine of ten supervised services came up and stayed up.
+
+### Regression exposed: the DSP could not boot
+
+`reinvoke-dsp-interface` restart-looped, failing every attempt identically:
+
+```
+boot DSP: stream image at offset 20468: SPI_IOC_MESSAGE: connection timed out
+```
+
+Always the same offset, roughly 12 percent into a 40,121-transfer download.
+
+The cause was the SPI GPIO-ready patch, not any owned service. The version v13
+carried had replaced the donor's endless spin with a single instantaneous
+sample:
+
+```c
+if ((*gpioreg & 0x2000) == 0) {
+        message->status = -ETIMEDOUT;
+        goto early_exit;
+}
+```
+
+That fails the transfer if the DSP has not already asserted ready at the moment
+it is first sampled. The DSP legitimately needs a short interval mid-download,
+so the transfer aborts at the first such point every time.
+
+The earlier bounded version, which v12 booted successfully with, polls with a
+100 ms jiffies deadline and `cpu_relax()`. It keeps the property the change was
+made for, that a caller can no longer wedge forever in `spidev_sync`, without
+demanding that the device be instantly ready. That version is restored and the
+source and patch gates are re-pinned.
+
+The lesson is narrow and worth keeping: bounding an unbounded wait is a
+correctness fix, but reducing the bound to zero is a different change, and only
+hardware distinguishes them. Nothing in the host suite could have caught this.
+
+### v14 candidate
+
+Kernel `d29a007535794d74d8ed900da366f02631a9a981356caea707e6b163f6d07746`, built
+twice byte-identically. The module tree is unchanged from v13, so the v13
+initramfs `27d052e7cfa2fba18188ee698712bb3612ab235fc897e60993bfef0a3d4043a2`
+is still correct and both are staged.
+
+Testing the fix needs another yellow-mode window, because the DesignWare SPI
+driver is built into the kernel rather than loadable.
+
+### Open observation
+
+One MCU log line appeared during the DSP restart storm and has not been
+explained: `rotary input: MCU interrupt remained low after 1024 pending reads`.
+It may be a consequence of the DSP crash-loop contending for the shared IO
+expander. Re-check it on the v14 boot, when the DSP is healthy.
