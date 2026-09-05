@@ -122,12 +122,25 @@ confirmed by two consecutive byte-identical builds.
 
 ### v13 candidate
 
-Runtime manifest `51d304b34ebabac29c9b9dbf7eb28001135e743f032f46635733b028afcb9299`
-and initramfs `e28b17016fe38078af439cf27e80c212689265cc494366849422ab5fee0389d8`
-at 32,381,114 bytes. Two independent builds of both are byte-identical. v13 is
+Runtime manifest `a3f2ab500af7d34bec553de56525c5d2a028fc3b1a7e933024a8104a3c2dbf20`,
+initramfs `27d052e7cfa2fba18188ee698712bb3612ab235fc897e60993bfef0a3d4043a2` at
+32,384,776 bytes, and kernel
+`eaf31eb8e4a33709752579c097bb17f5136f3fd98598876b1df8af59581ab67c`. Two independent builds of both are byte-identical. v13 is
 the first image carrying the WAMP allowlist and `iptables`, the private DSP
 microphone socket, the MCU privacy controller, top-tap media control, and the
 provisioning window daemon.
+
+### WAMP setup-response correlation closed
+
+Both clients wrote a REGISTER or SUBSCRIBE and then read exactly one frame,
+assuming it was the reply. A router is free to deliver an event or an invocation
+in between, which would have failed the session or silently consumed a message.
+
+Both now use one correlated reader that matches the reply by request id, fails
+on a matching ERROR, and queues everything else for the session loop, bounded at
+256 messages. The MCU registers eleven procedures and two subscriptions and the
+DSP seven and one, so both had a wide window. Tests cover interleaved traffic on
+both clients and an ERROR reply on the MCU.
 
 ### Remaining
 

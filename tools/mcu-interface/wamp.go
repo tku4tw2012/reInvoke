@@ -27,8 +27,12 @@ const (
 	wampYield      = 70
 
 	wampReconnectDelay = 5 * time.Second
-	dspSessionTopic    = "com.reinvoke.dsp.session"
-	dspBootTopic       = "com.harman.dsp.bootup"
+
+	// maxDeferredSetupMessages bounds what one setup step will queue before
+	// treating the router as unresponsive.
+	maxDeferredSetupMessages = 256
+	dspSessionTopic          = "com.reinvoke.dsp.session"
+	dspBootTopic             = "com.harman.dsp.bootup"
 )
 
 var procedures = []string{
@@ -87,17 +91,21 @@ func (service *wampService) run(ctx context.Context) error {
 		stopSession()
 		return err
 	}
-	registrations, err := client.register(procedures)
+	var deferredSetup [][]interface{}
+	registrations, err := client.register(procedures, &deferredSetup)
 	if err != nil {
 		stopSession()
 		return err
 	}
-	dspSessionSubscription, err := client.subscribe(dspSessionTopic)
+	dspSessionSubscription, err := client.subscribe(
+		dspSessionTopic,
+		&deferredSetup,
+	)
 	if err != nil {
 		stopSession()
 		return err
 	}
-	dspBootSubscription, err := client.subscribe(dspBootTopic)
+	dspBootSubscription, err := client.subscribe(dspBootTopic, &deferredSetup)
 	if err != nil {
 		stopSession()
 		return err
@@ -109,6 +117,13 @@ func (service *wampService) run(ctx context.Context) error {
 	go func() {
 		defer close(readerDone)
 		defer close(messages)
+		for _, message := range deferredSetup {
+			select {
+			case messages <- message:
+			case <-sessionContext.Done():
+				return
+			}
+		}
 		for {
 			message, err := client.readFrame()
 			if err != nil {
@@ -597,8 +612,53 @@ func (client *wampConnection) negotiate(realm string) error {
 	return nil
 }
 
+// awaitSetupResponse reads until the reply to requestID arrives. A router may
+// deliver an event or an invocation between a setup request and its reply, so
+// anything else is queued for the session loop instead of being mistaken for
+// the reply or dropped.
+func (client *wampConnection) awaitSetupResponse(
+	expected uint64,
+	requestID uint64,
+	label string,
+	deferred *[][]interface{},
+) ([]interface{}, error) {
+	for {
+		message, err := client.readFrame()
+		if err != nil {
+			return nil, err
+		}
+		responseRequestID, hasRequestID := uint64(0), false
+		if len(message) > 1 {
+			responseRequestID, hasRequestID = unsigned(message[1])
+		}
+		switch messageType(message) {
+		case expected:
+			if hasRequestID && responseRequestID == requestID {
+				return message, nil
+			}
+		case wampError:
+			// An ERROR carries the failing request type then its id.
+			if len(message) > 2 {
+				if failed, ok := unsigned(message[2]); ok &&
+					failed == requestID {
+					return nil, fmt.Errorf("%s failed: %v", label, message)
+				}
+			}
+		}
+		*deferred = append(*deferred, message)
+		if len(*deferred) > maxDeferredSetupMessages {
+			return nil, fmt.Errorf(
+				"%s: router sent %d messages without replying",
+				label,
+				len(*deferred),
+			)
+		}
+	}
+}
+
 func (client *wampConnection) register(
 	names []string,
+	deferred *[][]interface{},
 ) (map[uint64]string, error) {
 	registrations := make(map[uint64]string, len(names))
 	for _, name := range names {
@@ -611,20 +671,24 @@ func (client *wampConnection) register(
 		}); err != nil {
 			return nil, err
 		}
-		response, err := client.readFrame()
+		response, err := client.awaitSetupResponse(
+			wampRegistered,
+			requestID,
+			fmt.Sprintf("registration of %s", name),
+			deferred,
+		)
 		if err != nil {
 			return nil, err
 		}
-		if messageType(response) != wampRegistered || len(response) < 3 {
+		if len(response) < 3 {
 			return nil, fmt.Errorf(
 				"registration failed for %s: %v",
 				name,
 				response,
 			)
 		}
-		responseRequestID, requestOK := unsigned(response[1])
 		registrationID, registrationOK := unsigned(response[2])
-		if !requestOK || !registrationOK || responseRequestID != requestID {
+		if !registrationOK {
 			return nil, fmt.Errorf(
 				"invalid registration response for %s",
 				name,
@@ -635,7 +699,10 @@ func (client *wampConnection) register(
 	return registrations, nil
 }
 
-func (client *wampConnection) subscribe(topic string) (uint64, error) {
+func (client *wampConnection) subscribe(
+	topic string,
+	deferred *[][]interface{},
+) (uint64, error) {
 	requestID := client.requestID()
 	if err := client.writeFrame([]interface{}{
 		wampSubscribe,
@@ -645,11 +712,16 @@ func (client *wampConnection) subscribe(topic string) (uint64, error) {
 	}); err != nil {
 		return 0, err
 	}
-	response, err := client.readFrame()
+	response, err := client.awaitSetupResponse(
+		wampSubscribed,
+		requestID,
+		fmt.Sprintf("subscription to %s", topic),
+		deferred,
+	)
 	if err != nil {
 		return 0, err
 	}
-	if messageType(response) != wampSubscribed || len(response) < 3 {
+	if len(response) < 3 {
 		return 0, fmt.Errorf("subscription failed for %s: %v", topic, response)
 	}
 	subscriptionID, ok := unsigned(response[2])

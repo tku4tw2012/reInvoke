@@ -187,6 +187,35 @@ opcode `0x0e`, first-chunk flag `0x01`, and three zero 13-byte frames. Generic
 LED calls cannot extinguish the red privacy indication while microphone mute is
 required.
 
+## Factory reset
+
+The stock behavior is recorded here so it is not lost, and is deliberately not
+implemented.
+
+On the retail unit, holding the recessed Reset pinhole beside Mic-Mute for five
+seconds with the unit booted and USB disconnected, then releasing it, restarts
+the speaker and deletes pairings and other writable user state. Holding Reset
+while applying power is a different, early-boot action and is not this feature.
+
+reInvoke does not implement it, for a reason that is structural rather than
+incidental. A factory reset is only meaningful against persistent state, and
+this target mounts no NAND: every pairing, bond, key, and configuration value
+already lives in RAM and disappears on power loss. A reset control here would
+either do nothing or would have to reach past the storage boundary the platform
+exists to enforce.
+
+Implementing it therefore belongs to the NAND discussion, not before it, and
+depends on decisions that discussion has to make first:
+
+* which partitions hold user data and may be erased;
+* which system and recovery assets must stay immutable so a reset cannot brick
+  the unit;
+* what the unit does if power is lost mid-erase; and
+* how a failed reset rolls back.
+
+Until then the pinhole remains an operator-facing recovery path on the stock
+firmware, not a reInvoke product control.
+
 ## Build reproducibility
 
 Every artifact the image carries is built from a checksum-gated input and is
@@ -219,9 +248,8 @@ Remaining gates are:
    that image;
 3. confirm the WAMP allowlist closes ports 9998 and 9999 to non-allowlisted
    sources on a live network;
-4. complete one attended playback-continuity run on that image;
-5. harden WAMP setup-response correlation against interleaved messages; and
-6. finish physical-button orchestration for an isolated provisioning window.
+4. complete one attended playback-continuity run on that image; and
+5. finish physical-button orchestration for an isolated provisioning window.
 
 Entering yellow mode requires the recovery button held at power-on, so cold-boot
 gates cannot be driven from software and need the operator present.
