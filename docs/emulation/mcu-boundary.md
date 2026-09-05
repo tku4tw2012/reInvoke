@@ -215,11 +215,12 @@ transport rather than the top-ring animation transport.
 Brightness is a separate procedure, `com.harman.vui.SetRGBLEDBrightness`, which
 rejects out-of-range input with `brightness value error. need to be 0-100`.
 
-The contract and packet above are static donor recovery plus owned host tests.
-The front and rear indicators have not yet been exercised under reInvoke on
-physical hardware. Existing observations of amber/white Wi-Fi states and rear
-Bluetooth pairing behavior establish hardware context, not validation of this
-new owned path.
+The contract and packet above started as static donor recovery plus owned host
+tests and were physically exercised under v17. The lower-front diffuser switched
+between steady amber and white, slow amber blink, fast white blink, and off. The
+rear light is visible beside the Bluetooth button; steady on, slow blink, fast
+blink, dim, and off all produced output. The dim state was steady, but the
+observer could not distinguish whether it was dimmer than `on`.
 
 ### Recovered donor Bluetooth indicator policy
 

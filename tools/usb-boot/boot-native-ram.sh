@@ -11,6 +11,7 @@ readonly INITRAMFS_ADDRESS="0x08000000"
 readonly MAX_INITRAMFS_BYTES=$((0x04400000))
 # The open-source console relay can split the prompt suffix after reconnecting.
 readonly UBOOT_PROMPT_PREFIX=$'\rMV88D'
+readonly UBOOT_BANNER="U-Boot 2013.04"
 
 usage() {
   local exit_code="${1:-0}"
@@ -77,6 +78,19 @@ console_contains_since() {
     grep -a -qF "${pattern}"
 }
 
+console_pattern_offset_since() {
+  local log_path="$1"
+  local offset="$2"
+  local pattern="$3"
+  local match
+
+  match="$(
+    tail -c "+$((offset + 1))" "${log_path}" 2>/dev/null |
+      grep -a -b -m1 -oF "${pattern}"
+  )" || return 1
+  printf "%s\n" "${match%%:*}"
+}
+
 wait_for_console_text() {
   local log_path="$1"
   local offset="$2"
@@ -113,6 +127,16 @@ wait_for_uboot_prompt() {
   local console_log="$1"
   local console_fifo="$2"
   local log_offset=0
+  local require_new_banner=0
+  local banner_relative
+  local banner_end
+
+  # When armed against a running Linux gadget, an old prompt can be appended
+  # late while the device disconnects. Do not treat that stale prompt as the
+  # next yellow-mode window; require the new U-Boot banner first.
+  if usb_gadget_present; then
+    require_new_banner=1
+  fi
 
   if [[ -f "${console_log}" ]]; then
     log_offset="$(stat --format="%s" "${console_log}")"
@@ -127,11 +151,25 @@ wait_for_uboot_prompt() {
   while true; do
     if [[ -f "${console_log}" &&
           -p "${console_fifo}" ]] &&
-      console_contains_since \
-        "${console_log}" "${log_offset}" "${UBOOT_PROMPT_PREFIX}" &&
       ! usb_gadget_present; then
-      printf "U-Boot prompt is ready\n"
-      return
+      if ((require_new_banner == 0)) &&
+        console_contains_since \
+          "${console_log}" "${log_offset}" "${UBOOT_PROMPT_PREFIX}"; then
+        printf "U-Boot prompt is ready\n"
+        return
+      fi
+      if ((require_new_banner == 1)) &&
+        banner_relative="$(
+          console_pattern_offset_since \
+            "${console_log}" "${log_offset}" "${UBOOT_BANNER}"
+        )"; then
+        banner_end=$((log_offset + banner_relative + ${#UBOOT_BANNER}))
+        if console_contains_since \
+          "${console_log}" "${banner_end}" "${UBOOT_PROMPT_PREFIX}"; then
+          printf "U-Boot prompt is ready\n"
+          return
+        fi
+      fi
     fi
     sleep 0.2
   done
