@@ -76,8 +76,9 @@ vocabulary:
 | Rotary clockwise/counter-clockwise | Coalesced BlueALSA volume update plus compatibility publication |
 | Mic-Mute short press | Toggle DSP microphone privacy and confirmed red indication |
 | Bluetooth long press | Reopen the bounded allowlisted pairing window and show pairing indication |
-| Action short press | Play the reviewed one-shot action animation only |
-| Action long, Bluetooth short, Mic-Mute long, reset short/long | Compatibility publication only; product actions incomplete |
+| Action short press | Toggle Bluetooth play/pause and play the reviewed one-shot action animation |
+| Mic-Mute long press | Request the bounded provisioning window when booted in STA/uAP mode |
+| Action long, Bluetooth short, reset short/long | Compatibility publication only; product actions incomplete |
 
 Occasionally the companion MCU emits no frame for a physical Mic-Mute attempt.
 This was observed under both donor and owned services. Software behavior is
@@ -219,6 +220,36 @@ The front and rear indicators have not yet been exercised under reInvoke on
 physical hardware. Existing observations of amber/white Wi-Fi states and rear
 Bluetooth pairing behavior establish hardware context, not validation of this
 new owned path.
+
+### Recovered donor Bluetooth indicator policy
+
+`audio-ui` is the only runtime caller of `com.harman.ledSet`; the donor
+`bluetooth` service does not contain that URI. Its effective rear calls are:
+
+| Logical Bluetooth state | Call |
+|---|---|
+| `pairing` | `ledSet("back", mode="slow-blink")` |
+| `connected` | `ledSet("back", mode="on")` |
+| other or disconnected | `ledSet("back", mode="")` |
+
+No rear call supplies `color`.
+
+`AudioUI::handle_input_event` prepends `btn-` to the logical input. The base
+system map resolves `btn-bluetooth` to `bluetooth-pair`; the pairing overlay
+resolves it to `bluetooth-cancel`. The first calls
+`com.harman.bluetoothPairing(true)` and the second calls it with `false`.
+Connected state has no override and falls through to the base pairing action.
+The binary contains neither `bluetooth-long` nor `btn-bluetooth-long`.
+
+The Bluetooth service publishes `com.harman.extStateUpdate("bluetooth",
+state=...)`: pairing mode wins, then the A2DP-connected flag produces
+`connected`, otherwise the state is empty. That state drives the rear LED calls.
+
+One boundary remains ambiguous in the final donor rootfs. The MCU publishes
+physical keys on `com.harman.vui.keypress`, while `audio-ui` subscribes only to
+`com.harman.test.inputEvent`; no local binary references both topics. The
+short-press pairing/cancel policy is clear, but the missing physical-topic
+bridge was external or absent from this image.
 
 ## Physical RAM-native validation
 
