@@ -219,8 +219,8 @@ The contract and packet above started as static donor recovery plus owned host
 tests and were physically exercised under v17. The lower-front diffuser switched
 between steady amber and white, slow amber blink, fast white blink, and off. The
 rear light is visible beside the Bluetooth button; steady on, slow blink, fast
-blink, dim, and off all produced output. The dim state was steady, but the
-observer could not distinguish whether it was dimmer than `on`.
+blink, and off all produced output. Repeated isolated ten-second `dim` tests on
+front white and rear, with room lights off, produced no visible output.
 
 ### Recovered donor Bluetooth indicator policy
 

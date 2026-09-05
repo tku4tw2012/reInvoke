@@ -37,11 +37,17 @@ const (
 	frameDelayUsecs    = uint16(1)
 	downloadDelayUsecs = uint16(0)
 
-	resetHoldDelay     = 20 * time.Millisecond
-	resetSettleDelay   = 10 * time.Millisecond
-	downloadStageWait  = 10 * time.Millisecond
-	handshakeDelay     = 10 * time.Millisecond
-	releaseDelay       = 10 * time.Millisecond
+	resetHoldDelay    = 20 * time.Millisecond
+	resetSettleDelay  = 10 * time.Millisecond
+	downloadStageWait = 10 * time.Millisecond
+
+	// The donor requests one microsecond, but its syscall trace sleeps about
+	// nine milliseconds on this kernel. Ten-millisecond owned waits still
+	// clocked an all-zero response; tracing stretched them to 18-19 ms and
+	// made both getVer and Mic-Mute reliable. Twenty milliseconds is the
+	// verified untraced compatibility envelope.
+	handshakeDelay     = 20 * time.Millisecond
+	releaseDelay       = 20 * time.Millisecond
 	readyPollInterval  = 100 * time.Millisecond
 	maxDevicePayload   = 64
 	maxHeaderShifts    = 4

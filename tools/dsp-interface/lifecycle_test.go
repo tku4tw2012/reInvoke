@@ -73,3 +73,18 @@ func TestRunWithReconnectReturnsNonRetryableError(t *testing.T) {
 		t.Fatalf("error = %v, want %v", err, want)
 	}
 }
+
+func TestWaitForDSPSettleHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if waitForDSPSettle(ctx, time.Hour) {
+		t.Fatal("settle wait completed after context cancellation")
+	}
+}
+
+func TestWaitForDSPSettleCompletes(t *testing.T) {
+	if !waitForDSPSettle(context.Background(), time.Millisecond) {
+		t.Fatal("settle wait did not complete")
+	}
+}
