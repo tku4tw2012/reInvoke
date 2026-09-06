@@ -521,3 +521,46 @@ the runtime manifest is
 and the 32,389,139-byte initramfs is
 `ca9d5ce4b3cd11881a97a72c02d17a35981f6e7cfdc76f2dbf72e3537070a72d`.
 Each was reproduced independently.
+
+## Iteration 21: separating timing from scheduling
+
+The v19 package disproved the first timing conclusion: PID 1 execution still
+failed while the same 20 ms binary succeeded when attached. Controlled sweeps
+then changed one phase at a time under `start-stop-daemon`:
+
+| Experiment | Result |
+|---|---|
+| Handshake/release 60, 80, 100 ms | Boot event, then all-zero command response |
+| Handshake/release 120 ms | Could miss boot event |
+| Post-Active-low turnaround 1, 5, 10, 20 ms | All-zero command response |
+| Sleep after pump claim 50, 100, 200 ms | All-zero command response |
+| One complete idle pump cycle before claim | `getVer` and Mic-Mute pass |
+
+The distinction is GPIO phase. Sleeping after claim leaves the command in a
+partially entered pump iteration. Deferring before claim returns no work, takes
+the normal 200 ms idle sleep, and starts the next iteration from its first GPIO
+operation. Each queued message carries a one-use deferral flag and is requeued
+at the front, so order is preserved and cancellation is checked again.
+
+With deferral, all minimized variants passed. The selected configuration is the
+donor-compatible 10 ms handshake/release with no invented turnaround delay.
+
+The DMA sequence also refined the privacy boundary:
+
+1. startup mute was acknowledged;
+2. a later first raw ALSA open/configuration carried audio;
+3. mute reasserted after `hw_params` produced the byte-identical all-zero WAV.
+
+Therefore DSP mute controls an active/configured path; it cannot prevent trusted
+root from reconfiguring raw PCM later. The current speaker image starts no
+capture consumer. A future voice service must own that raw node contract: do not
+open/read while muted, or configure first, reassert mute, wait for
+confirmation, and discard all pre-confirmation samples.
+
+The final v21 DSP binary is
+`667beeee278ee3692855e60a039de89d8d1e9b168f16e3609e55952a7ab44901`,
+the runtime manifest is
+`aca3a532ea971482d88442669637e99dea3097a43e8fdf49cafbb572dd79c9de`,
+and the 32,388,952-byte initramfs is
+`9b88112e5425c4095098d492d3e3b4bbc4319804d8ee786e079616d38c167c94`.
+Each was reproduced independently.

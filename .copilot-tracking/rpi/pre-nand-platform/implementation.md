@@ -406,6 +406,34 @@ attended audible output, and microphone correlation.
 * Built two byte-identical 32,389,139-byte v19 initramfs images at SHA-256
   `ca9d5ce4b3cd11881a97a72c02d17a35981f6e7cfdc76f2dbf72e3537070a72d`.
 
+## Completed in iteration 21
+
+* Rejected the apparent 20 ms timing conclusion after the packaged v19 process
+  still failed while an attached process passed.
+* Proved the donor has the same launch-context behavior: clean donor `getVer`
+  succeeds attached and fails under the detached launcher.
+* Ran detached timing sweeps:
+  * handshake/release 60, 80, and 100 ms still failed;
+  * 120 ms could miss `EVENT_DSP_BOOTUP`;
+  * response-turnaround 1, 5, 10, and 20 ms still failed; and
+  * sleeping 50, 100, or 200 ms after the pump claimed a command still failed.
+* Identified the scheduling contract. Deferring a newly observed command for one
+  complete idle pump cycle, before claiming it or entering any GPIO phase, made
+  detached `getVer` and Mic-Mute pass at the donor-compatible 10 ms waits.
+* Validated the minimal configuration across 10/20 ms and with/without a
+  turnaround delay. All passed once one-cycle deferral was present; 10 ms with
+  no extra turnaround was selected.
+* Corrected the capture privacy claim. A raw ALSA `hw_params` after startup can
+  overwrite an earlier DSP mute route. Reasserting mute after configuration
+  produced 244,736 zero samples. A future capture owner must not consume raw
+  samples while muted and must wait for post-configuration mute confirmation.
+* Built the final DSP binary twice at SHA-256
+  `667beeee278ee3692855e60a039de89d8d1e9b168f16e3609e55952a7ab44901`.
+* Built two byte-identical v21 runtime manifests at SHA-256
+  `aca3a532ea971482d88442669637e99dea3097a43e8fdf49cafbb572dd79c9de`.
+* Built two byte-identical 32,388,952-byte v21 initramfs images at SHA-256
+  `9b88112e5425c4095098d492d3e3b4bbc4319804d8ee786e079616d38c167c94`.
+
 ## Change log
 
 Iterations land on the `feat/native-ram-platform` branch as they complete.
