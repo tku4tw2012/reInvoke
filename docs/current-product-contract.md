@@ -296,9 +296,19 @@ firmware, not a reInvoke product control.
 
 ## Build reproducibility
 
-Every artifact the image carries is built from a checksum-gated input and is
-byte-reproducible. Two independent builds of the kernel, the module tree, the
-runtime bundle, and the initramfs each agree byte for byte.
+Every artifact the image carries is checksum-gated, and the deployable kernel,
+module tree, runtime composition, and initramfs each agree byte for byte across
+two builds. The owned Go services reproduce from the archived Go 1.18.1
+toolchain and checked-in builders. The kernel image and installed module tree
+reproduce with the archived Android NDK r10e GCC 4.9 toolchain.
+
+That is not yet a complete clean-room rebuild claim for every C binary. The
+current BlueZ, BlueALSA, iptables, and helper artifacts are pinned and unchanged
+across the accepted candidates, but some builders still depend on an
+unarchived host ARM sysroot, built static libraries, or unpinned host tools.
+Candidate composition is therefore reproducible and its inputs are
+content-addressed; complete reconstruction of every C input solely from
+retained material remains open.
 
 Reproducibility is a safety property here, not a convenience. It is what makes a
 pinned digest meaningful: a gate that no preserved artifact can reproduce cannot
