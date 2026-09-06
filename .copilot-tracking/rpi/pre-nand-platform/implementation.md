@@ -1192,6 +1192,55 @@ binary, and omitting `-trimpath` embeds absolute build paths, so either one
 silently breaks reproduction. `pre-nand-rc1` was re-derived byte for byte from
 its commit this way, which confirms the artifact's provenance.
 
+## RC7 boot and the sta-uAP provisioning-window defect
+
+RC7 booted from a cold yellow-mode reset and passed the full acceptance
+collector: every status zero, DSP version event `25688`, Mic-Mute asserted and
+restored, and no NAND mount. GPIO3 read `1` with pinmux `0x0138D249`, `p2p0`
+existed, and `/proc/cmdline` carried `reinvoke.wifi_mode=sta-uap`.
+
+That boot was the first time the uAP branch of the runtime ever ran, and it
+exposed a latent defect. `reinvoke-provision-windowd` crash-looped every five
+seconds from uptime 5 with `hostapd library path is not root-controlled`, so no
+control socket was ever created. The provisioning gate would have failed on the
+operator's very first Mic-Mute press for a reason unrelated to the press.
+
+The cause is a permission predicate, not a hardware fault. Runtime directories
+under `/opt/reinvoke` ship `root:root 0775` because `cp -a` carries the staging
+host's umask into the image. `validateRootDirectory` masked a flat `0022`, so
+group write was rejected outright. Group write is only reachable by root when
+the group is root, so `root:root 0775` is root-controlled and the rejection was
+wrong. Files were unaffected because `install -m 0755` sets their modes
+explicitly; only directories inherited the umask.
+
+Two independent fixes ship together:
+
+* `windowd` computes the untrusted write mask from the group owner. Group write
+  is trusted only when the gid is `0`; world write is always rejected.
+* `build-native-initramfs.sh` normalizes staged `/opt/reinvoke` directories to
+  `0755`. This also removes a host-umask dependency from the image hash, which
+  was a latent reproducibility hole: two hosts with different umasks would have
+  produced different initramfs digests from identical inputs.
+
+Either fix alone unblocks the boot. The predicate fix was validated live by
+pushing the rebuilt `windowd` onto the running RC7 rootfs, which is RAM-backed,
+so no NAND was touched. The supervisor's next restart logged `control socket
+ready` at uptime 412.75 and created both the socket and the pid file. The
+on-device directories are still `0775`, which isolates the predicate as the
+cause and rules out any other difference. `collect-provisioning-window.sh` then
+recorded `ready=yes` and advanced to the press prompt, failing only on the
+absent physical press.
+
+Rebuilding all four provisioning binaries reproduced the RC7 pinned hashes for
+`provisiond`, `wifi-applyd`, and `networkd` exactly, so only `windowd` changed
+and the toolchain has not drifted. RC8 pairs the unchanged accepted kernel with
+a rebuilt initramfs, built twice independently to the same digest
+`1fb6ab0a...`, and reuses the RC7 runtime bundle unchanged because `windowd`
+lives in the initramfs rather than the runtime.
+
+RC8's purpose is narrow and its destination is explicit: boot it, then run
+`collect-provisioning-window.sh` to close the final pre-NAND gate.
+
 ## Change log
 
 Iterations land on the `feat/native-ram-platform` branch as they complete.
