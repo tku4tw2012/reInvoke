@@ -113,8 +113,11 @@ Mic-Mute compatibility API. It preserves the DSP reset bit when updating the
 shared expander register.
 
 `reinvoke-dsp-interface` is the sole owner of the DSP SPI link, handshake GPIOs,
-DSP reset bit, boot-image download, command correlation, and private microphone
-socket. It never calls the amplifier or DAC unmute procedures on DSP boot.
+GPIO5 pin-function transition, DSP reset bit, boot-image download, command
+correlation, and private microphone socket. Before every download it selects
+GPIO5 manual chip-select mode; afterward it restores message mode with a
+read-modify-write that preserves MCU GPIO3. It never calls the amplifier or DAC
+unmute procedures on DSP boot.
 
 ### Front and rear indicator contract
 
@@ -303,9 +306,9 @@ accepted image is not a released persistent firmware.
 
 Remaining gates are:
 
-1. cold-boot the v23 candidate and confirm its donor-compatible 10 ms DSP
-   handshake, one-idle-poll command deferral, one-second post-boot settle, and
-   readiness-gated dispatch under PID 1;
+1. cold-boot `pre-nand-rc1` and confirm download-mode selection,
+   message-mode restoration, `getVer`, and persisted Mic-Mute across a
+   supervised DSP restart under PID 1;
 2. confirm Bluetooth short-press pair/cancel, retained long-press reopen, the
    replacement-`bluetoothd` generation guard, and authoritative rear
    pairing/connected/off transitions;

@@ -52,6 +52,11 @@ func main() {
 	spiPath := flag.String("spi", "/dev/spidev0.0", "SPI device node")
 	i2cPath := flag.String("i2c", "/dev/i2c-0", "I2C bus carrying the expander")
 	gpioRoot := flag.String("gpio-root", "/sys/class/gpio", "GPIO sysfs root")
+	devmemPath := flag.String(
+		"devmem",
+		"/bin/busybox",
+		"BusyBox path used to restore the DSP message pinmux",
+	)
 	routerHost := flag.String("router-host", "127.0.0.1", "WAMP router host")
 	routerPort := flag.Int("router-port", 9999, "WAMP RawSocket port")
 	realm := flag.String("realm", "default", "WAMP realm")
@@ -150,9 +155,47 @@ func main() {
 		Pins:         defaultPinout(),
 		ReadyTimeout: *readyTimeout,
 	})
-	if err := dsp.BootContext(ctx, image); err != nil {
+	if !*dryRun {
+		if _, err := configureDSPPinmux(
+			ctx,
+			*devmemPath,
+			dspPinmuxLockPath,
+			false,
+			nil,
+		); err != nil {
+			_ = dsp.Close()
+			log.Fatalf("select DSP download pinmux: %v", err)
+		}
+	}
+	bootErr := dsp.BootContext(ctx, image)
+	var pinmuxErr error
+	if !*dryRun {
+		var value uint32
+		value, pinmuxErr = configureDSPPinmux(
+			ctx,
+			*devmemPath,
+			dspPinmuxLockPath,
+			true,
+			nil,
+		)
+		if pinmuxErr == nil {
+			log.Printf("restored DSP message pinmux 0x%08X", value)
+		}
+	}
+	if bootErr != nil {
 		_ = dsp.Close()
-		log.Fatalf("boot DSP: %v", err)
+		if pinmuxErr != nil {
+			log.Fatalf(
+				"boot DSP: %v; restore message pinmux: %v",
+				bootErr,
+				pinmuxErr,
+			)
+		}
+		log.Fatalf("boot DSP: %v", bootErr)
+	}
+	if pinmuxErr != nil {
+		_ = dsp.Close()
+		log.Fatalf("restore DSP message pinmux: %v", pinmuxErr)
 	}
 	stats := dsp.Stats()
 	log.Printf(

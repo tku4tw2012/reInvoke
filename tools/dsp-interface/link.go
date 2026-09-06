@@ -97,7 +97,6 @@ type queuedMessage struct {
 	frame      []byte
 	completion chan error
 	context    context.Context
-	deferOnce  bool
 }
 
 type linkOptions struct {
@@ -350,7 +349,6 @@ func (l *link) enqueue(
 		frame:      message,
 		completion: completion,
 		context:    ctx,
-		deferOnce:  true,
 	})
 	return completion, nil
 }
@@ -414,15 +412,6 @@ func (l *link) Poll() (*frame, bool, error) {
 		if err := message.context.Err(); err != nil {
 			message.complete(err)
 			return nil, true, nil
-		}
-		// The donor's independent message loop naturally leaves a complete
-		// idle iteration between WAMP queue publication and GPIO transfer.
-		// Claiming a newly queued command in the current iteration clocks a
-		// silent response on the physical DSP.
-		if message.deferOnce {
-			message.deferOnce = false
-			l.requeue(message)
-			return nil, false, nil
 		}
 		busy, err := l.gpio.Read(l.pins.Busy)
 		if err != nil {

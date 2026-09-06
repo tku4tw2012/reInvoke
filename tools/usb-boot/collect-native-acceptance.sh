@@ -37,6 +37,10 @@ main() {
   local mcu_status=0
   local dsp_status=0
   local dsp_version_status=0
+  local mic_mute_status=0
+  local mic_restore_status=0
+  local initial_mic_state
+  local confirmed_mic_state
   local dsp_monitor_pid
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -68,7 +72,8 @@ main() {
     err "--adb-server-port must be a positive integer"
   [[ ! -e "${output_dir}" ]] ||
     err "refusing to overwrite output directory: ${output_dir}"
-  for command_name in adb find grep mkdir node sha256sum sleep sort tail xargs; do
+  for command_name in \
+    adb find grep mkdir node sha256sum sleep sort tail tr xargs; do
     command -v "${command_name}" >/dev/null ||
       err "'${command_name}' is required"
   done
@@ -108,9 +113,6 @@ main() {
     >"${output_dir}/alsa.txt"
   adb -P "${adb_server_port}" -s "${adb_serial}" shell \
     'busybox ifconfig -a' >"${output_dir}/interfaces.txt"
-  adb -P "${adb_server_port}" -s "${adb_serial}" pull \
-    /run/reinvoke/logs "${output_dir}/logs" >/dev/null
-
   adb -P "${adb_server_port}" -s "${adb_serial}" forward \
     tcp:19999 tcp:9999 >/dev/null
   if node "${repo_root}/tools/control/wamp-call.mjs" \
@@ -154,6 +156,60 @@ main() {
   printf "%s\n" "${dsp_version_status}" \
     >"${output_dir}/dsp-version.status"
 
+  initial_mic_state="$(
+    adb -P "${adb_server_port}" -s "${adb_serial}" shell \
+      '/bin/busybox cat /run/reinvoke/microphone-state' |
+      tr -d '\r' |
+      tail -1
+  )"
+  printf "%s\n" "${initial_mic_state}" \
+    >"${output_dir}/microphone-state.initial"
+  if [[ "${initial_mic_state}" != "muted" &&
+        "${initial_mic_state}" != "unmuted" ]]; then
+    mic_mute_status=1
+  elif node "${repo_root}/tools/control/wamp-call.mjs" \
+    com.harman.dsp.micMute --args '[1]' --timeout 8000 \
+    >"${output_dir}/microphone-mute.json" 2>&1 &&
+    grep -q '"type": "result"' "${output_dir}/microphone-mute.json"; then
+    confirmed_mic_state="$(
+      adb -P "${adb_server_port}" -s "${adb_serial}" shell \
+        '/bin/busybox cat /run/reinvoke/microphone-state' |
+        tr -d '\r' |
+        tail -1
+    )"
+    [[ "${confirmed_mic_state}" == "muted" ]] || mic_mute_status=1
+  else
+    mic_mute_status=1
+  fi
+  printf "%s\n" "${mic_mute_status}" \
+    >"${output_dir}/microphone-mute.status"
+
+  mic_restore_status="${mic_mute_status}"
+  if ((mic_mute_status == 0)) &&
+    [[ "${initial_mic_state}" == "unmuted" ]]; then
+    if node "${repo_root}/tools/control/wamp-call.mjs" \
+      com.harman.dsp.micMute --args '[0]' --timeout 8000 \
+      >"${output_dir}/microphone-restore.json" 2>&1 &&
+      grep -q '"type": "result"' \
+        "${output_dir}/microphone-restore.json"; then
+      confirmed_mic_state="$(
+        adb -P "${adb_server_port}" -s "${adb_serial}" shell \
+          '/bin/busybox cat /run/reinvoke/microphone-state' |
+          tr -d '\r' |
+          tail -1
+      )"
+      [[ "${confirmed_mic_state}" == "unmuted" ]] ||
+        mic_restore_status=1
+    else
+      mic_restore_status=1
+    fi
+  fi
+  printf "%s\n" "${mic_restore_status}" \
+    >"${output_dir}/microphone-restore.status"
+
+  adb -P "${adb_server_port}" -s "${adb_serial}" pull \
+    /run/reinvoke/logs "${output_dir}/logs" >/dev/null
+
   (
     cd "${output_dir}"
     find . -type f ! -name SHA256SUMS -print0 |
@@ -166,6 +222,9 @@ main() {
   ((mcu_status == 0)) || err "MCU WAMP acceptance failed"
   ((dsp_status == 0)) || err "DSP WAMP acceptance failed"
   ((dsp_version_status == 0)) || err "DSP version event acceptance failed"
+  ((mic_mute_status == 0)) || err "microphone mute acceptance failed"
+  ((mic_restore_status == 0)) ||
+    err "microphone state restoration acceptance failed"
 }
 
 main "$@"
