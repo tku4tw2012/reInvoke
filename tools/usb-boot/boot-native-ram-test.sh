@@ -8,8 +8,14 @@ set -euo pipefail
 
 TEST_WORK_DIR=""
 TEST_WAIT_PID=""
+TEST_RELAY_PID=""
 
 cleanup() {
+  if [[ -n "${TEST_RELAY_PID}" ]] &&
+    kill -0 "${TEST_RELAY_PID}" 2>/dev/null; then
+    kill "${TEST_RELAY_PID}" 2>/dev/null || true
+    wait "${TEST_RELAY_PID}" 2>/dev/null || true
+  fi
   if [[ -n "${TEST_WAIT_PID}" ]] &&
     kill -0 "${TEST_WAIT_PID}" 2>/dev/null; then
     kill "${TEST_WAIT_PID}" 2>/dev/null || true
@@ -56,6 +62,12 @@ main() {
   mkfifo "${console_fifo}"
   touch "${gadget_state}"
 
+  # Stand in for the console relay so the catcher sees a live capture session.
+  # Open read-write, because a read-only open on a FIFO blocks until a writer
+  # arrives and would not install a descriptor to observe.
+  sleep 120 <>"${console_fifo}" &
+  TEST_RELAY_PID="$!"
+
   wait_for_uboot_prompt \
     "${console_log}" "${console_fifo}" >"${output}" &
   wait_pid="$!"
@@ -96,6 +108,40 @@ main() {
   test_status_transitions "${work_dir}" "${output}"
   test_stale_lock_detection
   test_lock_is_not_inherited "${work_dir}"
+  test_console_session_liveness "${work_dir}"
+}
+
+# A dead capture session leaves the FIFO and console log behind, so an armed
+# loader would wait forever while a yellow-mode reset went uncaught.
+test_console_session_liveness() {
+  local work_dir="$1"
+  local fifo="${work_dir}/liveness_fifo"
+  local holder_pid
+
+  mkfifo "${fifo}"
+  console_session_alive "${fifo}" &&
+    err "an unopened FIFO was reported as a live capture session"
+
+  sleep 30 <>"${fifo}" &
+  holder_pid="$!"
+  local attempt
+  for ((attempt = 0; attempt < 50; attempt++)); do
+    console_session_alive "${fifo}" && break
+    sleep 0.1
+  done
+  console_session_alive "${fifo}" ||
+    err "a FIFO held open by a reader was reported as a dead session"
+
+  kill "${holder_pid}" 2>/dev/null || true
+  wait "${holder_pid}" 2>/dev/null || true
+  for ((attempt = 0; attempt < 50; attempt++)); do
+    console_session_alive "${fifo}" || break
+    sleep 0.1
+  done
+  console_session_alive "${fifo}" &&
+    err "a FIFO whose reader exited was still reported as a live session"
+
+  printf "PASS boot-native-ram console session liveness\n"
 }
 
 # The operator relies on the status file to know whether the yellow-mode window

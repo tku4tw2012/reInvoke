@@ -13,13 +13,27 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 const (
 	dspPinmuxRegister = uint32(0xF7EA8008)
 	dspPinmuxGPIO5Bit = uint32(0x01000000)
 	dspPinmuxLockPath = "/run/reinvoke/pinmux.lock"
+	// Restoring message mode must survive the signal that cancels the boot, so
+	// it runs on its own deadline instead of the process context.
+	dspPinmuxRestoreTimeout = 10 * time.Second
 )
+
+// detachedPinmuxContext returns a bounded context that no shutdown signal can
+// cancel, so a cleanup write is never skipped by the condition that caused it.
+// The caller must call the returned cancel function.
+func detachedPinmuxContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(
+		context.Background(),
+		dspPinmuxRestoreTimeout,
+	)
+}
 
 type pinmuxCommandRunner func(
 	context.Context,

@@ -483,6 +483,45 @@ attended audible output, and microphone correlation.
   * 32,440,707-byte initramfs SHA-256
     `11fed5e1e625dffc242f8e5f2b2dbb6294ec2fa93830d8d129b07e284078a831`.
 
+## `pre-nand-rc1` cold-boot results
+
+The candidate was cold-booted from power-off and validated without any manual
+register writes or attached debugger.
+
+* The full `collect-native-acceptance.sh` gate passed twice with zero failures.
+  Both runs reported MCU status `000116`, the `com.harman.dsp.version` event
+  `25688`, a confirmed Mic-Mute, and restoration of the initial state.
+* PID 1 restored `0x0138D249` on every DSP generation. Killing the DSP service
+  produced a replacement that restored the pin function, reapplied the retained
+  mute before announcing readiness, and round-tripped `getVer` and both
+  microphone directions. The second gate run executed against that generation.
+* The MCU's `0x00200000` bit survived three DSP generations, so the shared lock
+  and the single-bit read-modify-write hold on hardware.
+* Killing `bluetoothd` produced a replacement that re-registered both A2DP
+  endpoints. The generation guard restarted the pairing agent, which opened its
+  bounded startup window and returned to `off` on expiry.
+
+Two host-side defects were found and fixed during the run.
+
+* The `adb` fork-server inherited the loader's singleton lock descriptor and
+  held it for the life of the host session, so every later loader run failed
+  with a false concurrent-loader error. Children are now spawned with that
+  descriptor closed, and a held lock with no live loader is reported as the
+  stale-descriptor case.
+* The loader gave no machine-readable progress, so an operator could not tell a
+  caught yellow-mode window from a missed one. It now writes one timestamped
+  state line and refreshes an armed heartbeat every fifteen seconds.
+
+Gates that remain need the operator or a second host: physical button and
+indicator validation, attended playback, and the live-network drop rule. Button
+presses arrive as MCU publications and cannot be injected over WAMP, and this
+kernel exposes only a mount namespace, so neither can be simulated on-box.
+
+The image ships no microphone capture consumer, which was reconfirmed on the
+running candidate. Re-measuring capture privacy would require adding one and
+opening raw PCM while muted, which the capture-owner contract forbids, so the
+existing attended measurement stands rather than being weakened.
+
 ## Change log
 
 Iterations land on the `feat/native-ram-platform` branch as they complete.
