@@ -234,8 +234,7 @@ or a persistent NAND modification.
 ## Physical controls and indications
 
 | Input | Current local action | Evidence limit |
-|---|---|---|
-| Rotary clockwise/counter-clockwise | Coalesced BlueALSA volume change and compatibility publication | Live in both directions during A2DP playback |
+|---|---|---|| Rotary clockwise/counter-clockwise | Coalesced BlueALSA volume change and compatibility publication | Live in both directions during A2DP playback |
 | Mic-Mute short press | Toggle DSP microphone privacy; red ring follows confirmed state | Occasional presses produce no MCU frame under both donor and owned services; software cannot synthesize a missing hardware event |
 | Bluetooth long press | Reopen the bounded allowlisted pairing window | Validated compatibility fallback; donor `audio-ui` defines no long-press action |
 | Action short press | Toggle Bluetooth play/pause and play the reviewed one-shot action animation | Owned reinterpretation; no assistant action is assigned |
@@ -249,6 +248,15 @@ cancels an ordinary animation and sends the recovered 41-byte clear packet:
 opcode `0x0e`, first-chunk flag `0x01`, and three zero 13-byte frames. Generic
 LED calls cannot extinguish the red privacy indication while microphone mute is
 required.
+
+Every row in this table is currently unobservable on the bench unit. The MCU
+holds its GPIO3 interrupt low from a few seconds into every boot, so no button
+or rotary event reaches the services, and no indicator lights even though
+`com.harman.ledSet` accepts the write. This is not a platform regression: the
+preserved v16 image, whose indicator behaviour was physically validated, fails
+identically with a different MCU binary and a different pinmux register value,
+and the behaviour survives a full power cycle. Until that clears, the physical
+control and indicator gates cannot be exercised on this unit at all.
 
 ## Factory reset
 
