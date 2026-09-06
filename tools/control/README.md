@@ -144,9 +144,13 @@ Two consecutive builds produced byte-identical static ARM binaries. The builder
 pins the compiler driver, cc1, collect2, assembler, linker, and strip tool. It
 also gates the D-Bus static archive, D-Bus header manifest, and full resolved
 ARM sysroot manifest. A deliberately altered sysroot is rejected before
-compilation. The sysroot still resolves into host `/usr/arm-linux-gnueabihf`
-packages rather than a retained archive, so this is environment-locked but not
-yet a complete clean-room build claim.
+compilation. The resolved sysroot is retained twice under
+`toolchains/armhf-sysroot-gcc11/`; both normalized archives have SHA-256
+`f1f13d539bc70049d77dbf6583ca0819bb90d5f0800c0397ae9145bea3b7e2c1`, and
+extract to the gated manifest
+`bd39640b96ef4adc6ef4bff1870a5bef2ddacb63b06f6f623816136565124012`.
+The GCC/binutils Debian packages are identified but not yet retained, so this
+is not a complete clean-room build claim.
 
 The signal/state precedence seam has a host-only test:
 
