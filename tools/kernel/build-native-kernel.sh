@@ -9,6 +9,11 @@ set -euo pipefail
 readonly SOURCE_ARCHIVE_SHA256="bd19dff0f8ef8879b82d4cdeec9f127a105905ea0aa47e76de31192a79a79126"
 readonly NDK_ARCHIVE_SHA256="ee5f405f3b57c4f5c3b3b8b5d495ae12b660e03d2112e4ed5c728d349f1e520c"
 readonly COMPILER_SHA256="a838490fd49184f1f104027239f0a46671c743c29c17a33f6d5daad3c2a379a6"
+readonly LINKER_SHA256="a46bcacc5b9a240452305a16d10642f25e9edbed6be5912adfd1aede5d256f25"
+readonly LZOP_SHA256="fbcad458eee62c728e8b5695c82805ef5c8640706b45169d509239b9fe0d1a86"
+readonly MKIMAGE_SHA256="b77cea9537d5432123de6ca42cf88f07b259f815cd16266d9883b57ed27f057e"
+readonly COMPATIBILITY_PATCH_SHA256="13be51ff027e427b5696a502aa603ccdaedd3eced7ad293d7d7ca416a00e66ab"
+readonly SOURCE_TREE_MANIFEST_SHA256="6ae65ab02757536de83e489b4db967bd39e0969d40ae5bcce7fb478cadd1b42f"
 readonly SPI_SOURCE_SHA256="684795ce44de9d10133260c3195dfb42b454478bba7e5406decabda3f4edbe9f"
 readonly SPI_PATCHED_SOURCE_SHA256="e02935b6f6d5c715a856d735f7274b3aab1214749686668db75059e659e108e7"
 readonly SPI_PATCH_SHA256="a92b98acb2272575c0497770172d79b104a1377d0083d67943b62681eecb738d"
@@ -54,6 +59,19 @@ require_command() {
   command -v "$1" >/dev/null || err "'$1' is required"
 }
 
+tree_manifest_sha256() {
+  local root="$1"
+
+  (
+    cd "${root}"
+    find . -type f -print0 |
+      sort -z |
+      xargs -0 sha256sum
+  ) |
+    sha256sum |
+    cut -d " " -f 1
+}
+
 main() {
   local repo_root
   local archive_root
@@ -77,6 +95,8 @@ main() {
   local cross_prefix
   local compiler
   local linker
+  local compatibility_patch
+  local actual_source_manifest
   local spi_patch
   local spi_source
   local spi_source_sha256
@@ -197,7 +217,8 @@ main() {
   [[ ! -e "${partial_output}" ]] ||
     err "stale partial output exists: ${partial_output}"
 
-  for command_name in find make mkimage patch realpath sha256sum; do
+  for command_name in \
+    cut find lzop make mkimage patch realpath sha256sum sort xargs; do
     require_command "${command_name}"
   done
 
@@ -221,6 +242,23 @@ main() {
   printf "%s  %s\n" "${COMPILER_SHA256}" "${compiler}" |
     sha256sum --check --status ||
     err "Android NDK r10e compiler checksum mismatch"
+  printf "%s  %s\n" "${LINKER_SHA256}" "${linker}" |
+    sha256sum --check --status ||
+    err "Android NDK r10e linker checksum mismatch"
+  printf "%s  %s\n" "${LZOP_SHA256}" "$(command -v lzop)" |
+    sha256sum --check --status ||
+    err "lzop checksum mismatch"
+  printf "%s  %s\n" "${MKIMAGE_SHA256}" "$(command -v mkimage)" |
+    sha256sum --check --status ||
+    err "mkimage checksum mismatch"
+
+  compatibility_patch="${repo_root}/patches/invoke-kernel/0001-modern-host-toolchain.patch"
+  [[ -f "${compatibility_patch}" ]] ||
+    err "compatibility patch not found: ${compatibility_patch}"
+  printf "%s  %s\n" \
+    "${COMPATIBILITY_PATCH_SHA256}" "${compatibility_patch}" |
+    sha256sum --check --status ||
+    err "compatibility patch checksum mismatch"
 
   spi_patch="${repo_root}/patches/invoke-kernel/0002-bound-spi-gpio-ready-wait.patch"
   spi_source="${source_dir}/drivers/spi/spi-dw.c"
@@ -292,6 +330,10 @@ main() {
   printf "%s  %s\n" "${LZO_PATCHED_SOURCE_SHA256}" "${lzo_source}" |
     sha256sum --check --status ||
     err "failed to apply the LZO reproducibility patch"
+
+  actual_source_manifest="$(tree_manifest_sha256 "${source_dir}")"
+  [[ "${actual_source_manifest}" == "${SOURCE_TREE_MANIFEST_SHA256}" ]] ||
+    err "kernel source-tree manifest mismatch"
 
   actual_dtb_sha256="$(sha256sum "${dtb_path}" | cut -d " " -f 1)"
   [[ "${actual_dtb_sha256}" == "${dtb_sha256}" ]] ||
