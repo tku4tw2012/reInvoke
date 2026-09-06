@@ -434,6 +434,26 @@ attended audible output, and microphone correlation.
 * Built two byte-identical 32,388,952-byte v21 initramfs images at SHA-256
   `9b88112e5425c4095098d492d3e3b4bbc4319804d8ee786e079616d38c167c94`.
 
+## Completed in iteration 22
+
+* Implemented donor-compatible Bluetooth short-press pairing toggle/cancel
+  while retaining the validated long-press reopen fallback.
+* Added exact-device BlueZ connection tracking and atomic mode-0600 publication
+  of authoritative `pairing`, `connected`, or `off` runtime state.
+* Added a bounded MCU watcher that drives rear slow-blink/on/off through the
+  serialized `ledSet` command controller, deduplicates confirmed writes, retries
+  failures, and chooses safe off if the producer disappears.
+* Built the final pairing agent and MCU interface twice each with byte-identical
+  outputs. Their SHA-256 digests are
+  `7e9cb4c8d4047d3151e9ac2ed5ee34759af3a19a1dd2e014c3c3f134f33a20bd`
+  and
+  `53ffe4c017dc5f1ef08c5a422d70aeb8b0a11e3002263d9ecef466fbdf45afee`.
+* Built two byte-identical v23 runtime manifests at SHA-256
+  `1789b3af2714f3f3402b32b9ef9bb4bfe78602de6d9f1c7fb3cb053b342577f3`.
+* Built two byte-identical 32,393,417-byte v23 initramfs images at SHA-256
+  `77a3d9ee37d6f16e6fad2b3f016d7290da85e83606cf8005505eff3eafefd45e`.
+  Physical short/cancel and rear-state validation remain.
+
 ## Change log
 
 Iterations land on the `feat/native-ram-platform` branch as they complete.

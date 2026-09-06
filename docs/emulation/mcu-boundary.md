@@ -75,10 +75,11 @@ vocabulary:
 |---|---|
 | Rotary clockwise/counter-clockwise | Coalesced BlueALSA volume update plus compatibility publication |
 | Mic-Mute short press | Toggle DSP microphone privacy and confirmed red indication |
-| Bluetooth long press | Reopen the bounded allowlisted pairing window and show pairing indication |
+| Bluetooth short press | Open the bounded pairing window while idle; cancel it while active |
+| Bluetooth long press | Reopen the bounded allowlisted pairing window as a compatibility fallback |
 | Action short press | Toggle Bluetooth play/pause and play the reviewed one-shot action animation |
 | Mic-Mute long press | Request the bounded provisioning window when booted in STA/uAP mode |
-| Action long, Bluetooth short, reset short/long | Compatibility publication only; product actions incomplete |
+| Action long, reset short/long | Compatibility publication only; product actions incomplete |
 
 Occasionally the companion MCU emits no frame for a physical Mic-Mute attempt.
 This was observed under both donor and owned services. Software behavior is
@@ -215,12 +216,9 @@ transport rather than the top-ring animation transport.
 Brightness is a separate procedure, `com.harman.vui.SetRGBLEDBrightness`, which
 rejects out-of-range input with `brightness value error. need to be 0-100`.
 
-The contract and packet above started as static donor recovery plus owned host
-tests and were physically exercised under v17. The lower-front diffuser switched
-between steady amber and white, slow amber blink, fast white blink, and off. The
-rear light is visible beside the Bluetooth button; steady on, slow blink, fast
-blink, and off all produced output. Repeated isolated ten-second `dim` tests on
-front white and rear, with room lights off, produced no visible output.
+The contract and packet above are supported by static donor recovery and owned
+host tests. Front/rear physical behavior under reInvoke remains a hardware
+validation item.
 
 ### Recovered donor Bluetooth indicator policy
 
@@ -251,6 +249,30 @@ physical keys on `com.harman.vui.keypress`, while `audio-ui` subscribes only to
 `com.harman.test.inputEvent`; no local binary references both topics. The
 short-press pairing/cancel policy is clear, but the missing physical-topic
 bridge was external or absent from this image.
+
+The owned replacement implements the recovered policy without recreating that
+missing donor topic bridge. A short `bluetooth` event sends `SIGUSR2` to the
+generation-checked pairing agent: idle opens its configured window and active
+cancels it. `bluetooth-long` still sends `SIGUSR1` to reopen the window as a
+reInvoke compatibility fallback. The agent's handlers only set
+`sig_atomic_t` flags; adapter changes run in the bounded D-Bus loop.
+
+The agent reads the allowlisted BlueZ `Device1.Connected` property initially
+and tracks exact-path `PropertiesChanged` signals. It publishes one of
+`pairing`, `connected`, or `off` to `/run/reinvoke/bluetooth-state` with mode
+`0600` via write/fsync/atomic rename. Pairing wins while a window is active.
+Normal shutdown, Agent1 release, D-Bus loss, and generation replacement attempt
+to publish `off`; the generation guard also removes stale state after the agent
+process disappears.
+
+The MCU service polls at 250 ms with a 32-byte read limit and maps the state to
+rear `slow-blink`, `on`, or `off`. Missing, oversized, or invalid state is
+logged and maps to safe `off`; unchanged confirmed state does not repeat the
+I2C write, while failures remain eligible for retry. The watcher shares the
+serialized `ledSet` controller so a WAMP rear write is corrected on the next
+poll. It does not call the animation transport and cannot alter microphone
+privacy precedence. This path is statically recovered and host-tested; physical
+short/cancel, connection transitions, and rear indication remain unvalidated.
 
 ## Physical RAM-native validation
 

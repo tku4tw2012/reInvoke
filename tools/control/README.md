@@ -114,7 +114,7 @@ decoded bytes. `CHECK_READY` returned failure acknowledgement `1`; this is an
 evidence probe, not a working media bridge.
 
 `hci-init.c` and `bluez-pairing-agent.c` are the owned control components for
-the RAM-only BlueZ replacement. No prebuilt copy is committed. Build both as
+the RAM-only BlueZ replacement. No prebuilt copy is committed. Build them as
 static ARM binaries against the pinned BlueZ and D-Bus build trees:
 
 ```bash
@@ -125,28 +125,32 @@ arm-linux-gnueabihf-gcc -std=c11 -O2 -Wall -Wextra -Werror -static \
   path/to/bluez-5.55/lib/.libs/libbluetooth-internal.a \
   -o path/to/hci-init
 
-arm-linux-gnueabihf-gcc -std=c11 -O2 -Wall -Wextra -Werror -static \
-  -Ipath/to/dbus-1.12.20 \
-  -Ipath/to/dbus-1.12.20/dbus \
-  -Ipath/to/armhf-sysroot/usr/include \
-  tools/control/bluez-pairing-agent.c \
-  path/to/dbus-1.12.20/dbus/.libs/libdbus-1.a \
-  -lpthread \
-  -o path/to/bluez-pairing-agent
+tools/control/build-bluez-pairing-agent.sh \
+  --dbus-source path/to/dbus-1.12.20 \
+  --sysroot path/to/armhf-sysroot \
+  --output path/to/bluez-pairing-agent
 ```
 
 The pairing agent limits BlueZ authorization to one supplied peer address and
-the A2DP/AVRCP UUID set. The HCI initializer resets the controller and removes
-volatile keys before a clean reconstruction. Artifact hashes for the validated
-build are recorded in [P1-045](../../metadata/P1-045.json).
+the A2DP/AVRCP UUID set. `SIGUSR2` toggles/cancels the bounded pairing window;
+`SIGUSR1` always reopens it. It tracks that peer's `Device1.Connected` property
+and atomically publishes `pairing`, `connected`, or `off` to the optional fourth
+argument, which defaults to `/run/reinvoke/bluetooth-state`. The HCI initializer
+resets the controller and removes volatile keys before a clean reconstruction.
 
 The pairing-agent digest gated by `build-native-runtime.sh` is
-`faaba0eb1d350ee6210cc629c956a63ca313e65fe91441bfbf5093fbb2dfdbdc`, produced by
-`arm-linux-gnueabihf-gcc` 11.4.0 with the flags above. Reproduce it by building
-against the pinned dbus-1.12.20 source archived under `sources/upstream/`. An
-earlier pin, `ae60d800...`, was superseded because it matched no archived
-artifact and its toolchain was never recorded; see
-[P1-049](../../metadata/P1-049.json) for the substitution record.
+`88bb19e5b088f88c1835cb85654060c765d847039ca5f472f75af8a6fabf2934`.
+Two consecutive builds with the checksum-gated script and the pinned
+dbus-1.12.20 tree produced byte-identical static ARM binaries.
+
+The signal/state precedence seam has a host-only test:
+
+```bash
+cc -std=c11 -O2 -Wall -Wextra -Werror \
+  tools/control/bluez-pairing-policy_test.c \
+  -o "${REINVOKE_ARCHIVE}/build/tools/bluez-pairing-policy-test"
+"${REINVOKE_ARCHIVE}/build/tools/bluez-pairing-policy-test"
+```
 
 `bluez-media-control.c` is the owned Bluetooth transport helper. The MCU service
 runs it to send `Play` or `Pause` on the connected peer's BlueZ `MediaControl1`

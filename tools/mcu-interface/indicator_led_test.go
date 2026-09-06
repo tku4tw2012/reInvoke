@@ -142,6 +142,65 @@ func TestIndicatorLEDWriteFailureRollsBackState(t *testing.T) {
 	}
 }
 
+func TestIndicatorLEDBackDeduplicatesConfirmedState(t *testing.T) {
+	writer := &recordingIndicatorLEDWriter{}
+	controller := newIndicatorLEDController(writer)
+	if err := controller.SetBackIfChanged("off"); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.SetBackIfChanged("off"); err != nil {
+		t.Fatal(err)
+	}
+	if frames := writer.recorded(); !reflect.DeepEqual(
+		frames,
+		[][6]byte{{indicatorLEDCode, 0, 0, 0, 0, 0}},
+	) {
+		t.Fatalf("frames = %x", frames)
+	}
+}
+
+func TestIndicatorLEDBackRetriesFailedState(t *testing.T) {
+	writer := &recordingIndicatorLEDWriter{
+		errs: []error{errors.New("injected failure"), nil},
+	}
+	controller := newIndicatorLEDController(writer)
+	if err := controller.SetBackIfChanged("on"); err == nil {
+		t.Fatal("failed write succeeded")
+	}
+	if err := controller.SetBackIfChanged("on"); err != nil {
+		t.Fatal(err)
+	}
+	want := [6]byte{indicatorLEDCode, 0, 0, 1, 0, 0}
+	if frames := writer.recorded(); !reflect.DeepEqual(
+		frames,
+		[][6]byte{want, want},
+	) {
+		t.Fatalf("frames = %x", frames)
+	}
+}
+
+func TestIndicatorLEDBackWatcherReassertsAfterWAMPSet(t *testing.T) {
+	writer := &recordingIndicatorLEDWriter{}
+	controller := newIndicatorLEDController(writer)
+	if err := controller.SetBackIfChanged("on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.Set("back", "off", "ignored"); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.SetBackIfChanged("on"); err != nil {
+		t.Fatal(err)
+	}
+	want := [][6]byte{
+		{indicatorLEDCode, 0, 0, 1, 0, 0},
+		{indicatorLEDCode, 0, 0, 0, 0, 0},
+		{indicatorLEDCode, 0, 0, 1, 0, 0},
+	}
+	if frames := writer.recorded(); !reflect.DeepEqual(frames, want) {
+		t.Fatalf("frames = %x, want %x", frames, want)
+	}
+}
+
 type blockingIndicatorLEDWriter struct {
 	entered chan [6]byte
 	release chan error
@@ -174,7 +233,7 @@ func TestIndicatorLEDCallsSerializeStateAndWrites(t *testing.T) {
 	secondDone := make(chan error, 1)
 	go func() {
 		close(secondStarted)
-		secondDone <- controller.Set("back", "fast-blink", "ignored")
+		secondDone <- controller.SetBackIfChanged("fast-blink")
 	}()
 	<-secondStarted
 	select {

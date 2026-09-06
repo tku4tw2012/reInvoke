@@ -85,12 +85,17 @@ func main() {
 	pairingAgentPID := flag.String(
 		"pairing-agent-pid",
 		"",
-		"PID file for the pairing agent controlled by Bluetooth long press",
+		"PID file for the pairing agent controlled by Bluetooth presses",
 	)
 	pairingAgentExecutable := flag.String(
 		"pairing-agent-executable",
 		"",
 		"expected pairing agent executable path",
+	)
+	bluetoothState := flag.String(
+		"bluetooth-state",
+		"",
+		"authoritative pairing-agent state used for the rear indicator",
 	)
 	provisioningSocket := flag.String(
 		"provisioning-socket",
@@ -253,6 +258,24 @@ func main() {
 	if microphoneMuted {
 		privacy.RequestReconcile()
 	}
+	indicatorLEDs := newIndicatorLEDController(bus)
+	bluetoothDone := make(chan error, 1)
+	if *bluetoothState != "" {
+		watcher := &bluetoothStateWatcher{
+			path:      *bluetoothState,
+			indicator: indicatorLEDs,
+			logf:      log.Printf,
+		}
+		go func() {
+			err := watcher.Run(ctx)
+			if err != nil {
+				cancel()
+			}
+			bluetoothDone <- err
+		}()
+	} else {
+		bluetoothDone <- nil
+	}
 	var relayDone chan struct{}
 	if source != nil {
 		publications := make(chan inputEvent, 32)
@@ -277,7 +300,7 @@ func main() {
 		controller:    control,
 		media:         media,
 		lights:        lights,
-		indicatorLEDs: newIndicatorLEDController(bus),
+		indicatorLEDs: indicatorLEDs,
 		events:        source,
 		version:       recoveredMCUVersion,
 		privacy:       privacy,
@@ -329,9 +352,14 @@ func main() {
 	if relayDone != nil {
 		<-relayDone
 	}
+	bluetoothErr, bluetoothClearErr := finalizeBluetoothIndicator(
+		bluetoothDone,
+		indicatorLEDs,
+	)
 	muteErr := control.muteAll()
 	if runErr != nil || heartbeatErr != nil ||
-		playbackErr != nil || muteErr != nil {
+		playbackErr != nil || bluetoothErr != nil ||
+		bluetoothClearErr != nil || muteErr != nil {
 		if runErr != nil {
 			fmt.Fprintf(os.Stderr, "mcu-interface: %v\n", runErr)
 		}
@@ -340,6 +368,12 @@ func main() {
 		}
 		if playbackErr != nil {
 			fmt.Fprintf(os.Stderr, "mcu-interface: %v\n", playbackErr)
+		}
+		if bluetoothErr != nil {
+			fmt.Fprintf(os.Stderr, "mcu-interface: %v\n", bluetoothErr)
+		}
+		if bluetoothClearErr != nil {
+			fmt.Fprintf(os.Stderr, "mcu-interface: %v\n", bluetoothClearErr)
 		}
 		if muteErr != nil {
 			fmt.Fprintf(os.Stderr, "mcu-interface: shutdown: %v\n", muteErr)
