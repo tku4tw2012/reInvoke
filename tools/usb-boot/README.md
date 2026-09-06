@@ -273,6 +273,19 @@ loader was running. When the lock is held but no loader process exists, the
 loader now reports that stale-descriptor case explicitly instead of claiming a
 concurrent run.
 
+The lock file lives beside the staged images, as `.reinvoke-native-loader.lock`
+inside the firmware directory. The resources it protects are host-global: the
+shared console FIFO, the shared `81_IMAGE` and `82_IMAGE`, and the single USB
+device. Keying the lock on the invoking user or on `XDG_RUNTIME_DIR` would let a
+`sudo` run and an unprivileged run lock different inodes and interleave
+`usbload` commands, which is the exact corruption the singleton exists to stop.
+
+Before it arms, the loader also confirms a console relay still holds the command
+FIFO open. The FIFO and the console log both survive as files after a capture
+session exits, so their presence alone cannot prove the loader would catch
+anything. Without that check an operator could reset into yellow mode against a
+dead session while the loader waited forever.
+
 For historical donor-comparison work only, ADB can start the old minimum
 diagnostic graph:
 

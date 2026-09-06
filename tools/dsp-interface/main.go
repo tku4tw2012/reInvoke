@@ -164,6 +164,25 @@ func main() {
 			nil,
 		); err != nil {
 			_ = dsp.Close()
+			// The download-mode write may already have landed before the
+			// verification read failed, so try to leave the shared register in
+			// message mode rather than exiting with GPIO5 still switched away.
+			restoreCtx, cancelRestore := detachedPinmuxContext()
+			_, restoreErr := configureDSPPinmux(
+				restoreCtx,
+				*devmemPath,
+				dspPinmuxLockPath,
+				true,
+				nil,
+			)
+			cancelRestore()
+			if restoreErr != nil {
+				log.Fatalf(
+					"select DSP download pinmux: %v; restore message pinmux: %v",
+					err,
+					restoreErr,
+				)
+			}
 			log.Fatalf("select DSP download pinmux: %v", err)
 		}
 	}
@@ -171,13 +190,19 @@ func main() {
 	var pinmuxErr error
 	if !*dryRun {
 		var value uint32
+		// Deliberately detached from ctx. A signal during download cancels ctx
+		// and fails the boot, and reusing it here would make exec.CommandContext
+		// refuse to run, stranding GPIO5 in download mode for the rest of the
+		// boot with no supervisor restart to repair it.
+		restoreCtx, cancelRestore := detachedPinmuxContext()
 		value, pinmuxErr = configureDSPPinmux(
-			ctx,
+			restoreCtx,
 			*devmemPath,
 			dspPinmuxLockPath,
 			true,
 			nil,
 		)
+		cancelRestore()
 		if pinmuxErr == nil {
 			log.Printf("restored DSP message pinmux 0x%08X", value)
 		}

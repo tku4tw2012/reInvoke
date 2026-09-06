@@ -66,6 +66,25 @@ err() {
   exit 1
 }
 
+# True when a console relay still holds the command FIFO open. The FIFO and the
+# console log both survive as files after the capture session dies, so their
+# presence alone cannot prove the loader is actually armed.
+console_session_alive() {
+  local fifo="$1"
+  local resolved
+  local candidate
+  local target
+
+  resolved="$(readlink -f "${fifo}" 2>/dev/null || printf "%s" "${fifo}")"
+  for candidate in /proc/[0-9]*/fd; do
+    for target in "${candidate}"/*; do
+      [[ "$(readlink "${target}" 2>/dev/null)" == "${resolved}" ]] || continue
+      return 0
+    done
+  done
+  return 1
+}
+
 # True when a loader other than this process is alive. Used to tell a genuine
 # concurrent run apart from a lock descriptor leaked into a daemonized child.
 other_loader_running() {
@@ -185,6 +204,8 @@ wait_for_uboot_prompt() {
     fi
   fi
 
+  console_session_alive "${console_fifo}" ||
+    err "no console relay holds ${console_fifo}; the capture session is not running, so a yellow-mode reset would not be caught. Start it with start-session.sh before arming the loader"
   printf "Waiting for yellow-mode U-Boot; no timeout is applied\n"
   set_status waiting-for-uboot "reset into yellow mode now"
   local wait_start="${SECONDS}"
@@ -217,8 +238,13 @@ wait_for_uboot_prompt() {
       fi
     fi
     if ((SECONDS - wait_start >= next_heartbeat)); then
-      set_status waiting-for-uboot \
-        "still armed after $((SECONDS - wait_start)) seconds"
+      if console_session_alive "${console_fifo}"; then
+        set_status waiting-for-uboot \
+          "still armed after $((SECONDS - wait_start)) seconds"
+      else
+        set_status waiting-for-uboot \
+          "CAPTURE SESSION DIED after $((SECONDS - wait_start)) seconds; a yellow-mode reset will not be caught until start-session.sh is restarted"
+      fi
       next_heartbeat=$((SECONDS - wait_start + PROMPT_HEARTBEAT_SECONDS))
     fi
     sleep 0.2
@@ -366,6 +392,8 @@ main() {
   done
 
   : "${STATUS_FILE:=${XDG_RUNTIME_DIR:-/tmp}/reinvoke-loader-status}"
+  # set -e aborts bypass err(), so record a terminal state for those too.
+  trap 'set_status failed "loader exited unexpectedly" >/dev/null 2>&1 || true' ERR
 
   [[ -f "${kernel_path}" ]] || err "kernel not found: ${kernel_path}"
   [[ -n "${kernel_sha256}" ]] || err "--kernel-sha256 is required"
@@ -387,7 +415,12 @@ main() {
     adb flock grep id install lsusb mkimage mv sha256sum stat tail timeout; do
     require_command "${command_name}"
   done
-  loader_lock="${XDG_RUNTIME_DIR:-/tmp}/reinvoke-native-loader-$(id -u).lock"
+  # The protected resources are host-global: the shared console FIFO, the shared
+  # 81_IMAGE/82_IMAGE staging files, and the single USB device. Keying the lock
+  # on the uid or XDG_RUNTIME_DIR would let a sudo run and a user run take
+  # flocks on different inodes and interleave usbload commands, so the lock
+  # lives beside the staging files that both runs share by definition.
+  loader_lock="${firmware_dir}/.reinvoke-native-loader.lock"
   exec 8>>"${loader_lock}"
   if ! flock -n 8; then
     local holder=""
@@ -467,10 +500,14 @@ main() {
   # The adb fork-server daemonizes and would otherwise inherit the singleton
   # lock descriptor, holding it for the life of the host session and blocking
   # every later loader run. Close it explicitly for each adb child.
+  #
+  # Both invocations are guarded, because set -e would otherwise abort the
+  # loader without an error line and leave the status file reading "booting".
   timeout "${usb_timeout}" \
-    adb -P "${adb_server_port}" -s "${adb_serial}" wait-for-device 8>&-
+    adb -P "${adb_server_port}" -s "${adb_serial}" wait-for-device 8>&- ||
+    err "ADB device ${adb_serial} did not appear within ${usb_timeout} seconds"
   adb_state="$(
-    adb -P "${adb_server_port}" -s "${adb_serial}" get-state 8>&-
+    adb -P "${adb_server_port}" -s "${adb_serial}" get-state 8>&- || true
   )"
   [[ "${adb_state}" == "device" ]] ||
     err "expected ADB device did not become ready"
