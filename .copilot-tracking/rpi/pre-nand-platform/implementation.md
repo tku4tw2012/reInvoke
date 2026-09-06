@@ -1113,6 +1113,34 @@ RC6 is retained as a bound kernel/initramfs pair. Its `CANDIDATE` manifest now
 marks the hardware gate passed and links the cold-boot, live-component, and
 packaged-BlueZ evidence directories.
 
+## `pre-nand-rc7` candidate
+
+RC7 has one purpose and one destination: close the full-branch review findings,
+then run the final STA/uAP provisioning-window gate. It is not a new DSP timing
+experiment.
+
+Affected deployables were built twice from the final reviewed source:
+
+* DSP SHA-256
+  `81d8057194710976c43404b47fff6b849a890ffa50c57b699a596095d0301c94`;
+* MCU SHA-256
+  `60c3a5a1ce417bdb3bdf58472a23e55017ab2502c05d527093aa40d94968ce9b`;
+* HCI initializer SHA-256
+  `72a2a2f188e56213f226794e58ee9f0666ce91e6b7db8d0432841ee41c2a50fe`;
+* network daemon SHA-256
+  `27a9af2eb94a857eeb72551512a67dd6782405bd9a0cfb51b3d09aa14cfba6b7`;
+* provisioning-window daemon SHA-256
+  `3c42df1ef35b4013389515266c0febb490940ed1f95442877f76cfae23c3c2e9`;
+* runtime manifest SHA-256
+  `bc99e4a3637d1c8bf3204d593df464c2afe9131be513febafb774b8d77b082ca`;
+* 32,448,089-byte initramfs SHA-256
+  `54ef234e17d5d0b5c660987365eea9c9657e3258c813dcf191c6daaff931d1b0`;
+* kernel unchanged at
+  `d29a007535794d74d8ed900da366f02631a9a981356caea707e6b163f6d07746`.
+
+The expanded host gate passes 61 Node tests plus all Go/race, C policy, and
+shell checks. A final focused code review reported no findings.
+
 ### Kernel source reconstruction audit
 
 The hardware kernel's extracted source was rebuilt independently from the
