@@ -640,7 +640,62 @@ from a router fault costs a reconnect, not a DSP reboot.
 `runWithReconnect` in `tools/dsp-interface/lifecycle.go` is the mechanism, and
 the supervisor restarts the router itself.
 
+### Physical controls are dead on this boot
+
+An operator session pressed Bluetooth short, Bluetooth short again, and
+Bluetooth long, then Mic-Mute twice. The capture recorded zero button
+publications and zero Bluetooth state transitions, and the operator reported no
+indicator light of any kind for the whole boot apart from the yellow U-Boot
+light. Both symptoms have one grounded cause.
+
+`/sys/class/gpio/gpio3` is configured `direction=in edge=falling` and its value
+has been stuck at `0` for the entire boot. The MCU asserts that line and is
+expected to release it once the host reads the queued event. The service logged
+`MCU interrupt remained low after 1024 pending reads` at 36 seconds of uptime
+and three more times at 12 and 13 minutes, which correspond to the MCU service
+restarts driven during fault injection. Each fresh process drains up to 1024
+events, never sees the line released, and gives up.
+
+The first failure at 36 seconds predates every fault injection in this session,
+so the testing did not cause it. The boot handshake itself succeeded: the
+protocol marker exists and the service would have exited on failure.
+
+Two software defects follow from this, independent of why the MCU holds the
+line.
+
+* Once `drainPendingEvents` returns `errMCUDrainLimit`, `recoverySuppressed` is
+  set and the poll-timeout branch stops draining. It clears only when the line
+  reads high, which a wedged MCU never does. Physical input is therefore
+  permanently dead for the rest of the boot with no retry and no escalation. A
+  service that cannot see its only input source should not fail silently.
+* `startupDiscardPending` stays true until a drain completes without error. With
+  the drain always failing, every decoded event would be discarded even if one
+  arrived.
+
+Indicator writes are consistent with a wedged MCU rather than a broken LED path.
+`com.harman.ledSet` was called directly for front white on, back on, and front
+amber fast-blink. All three returned results, so the I2C write was accepted, yet
+nothing lit. The controller records success from `WriteMCUCommand` alone and
+never confirms the device acted.
+
+One hypothesis was tested and rejected rather than assumed. The donor writes
+`0x0118D249` for message mode, which leaves the MCU's GPIO3 bit clear, while
+this platform runs `0x0138D249` with it set. Clearing that bit live and sampling
+the line for eight seconds left it at `0` throughout, and the register was
+restored. The GPIO3 pin function is not what holds the interrupt low.
+
+### `getmcustatus` is not a health check
+
+`com.harman.vui.getmcustatus` returns the compile-time constant
+`recoveredMCUVersion`, which is `"000116"`. It performs no bus traffic. It was
+used repeatedly in this session as evidence that the MCU survived a fault
+injection, and it cannot support that claim. Those checks show only that the MCU
+service process is running and answering WAMP. Every earlier statement in this
+session that the MCU "still works" after a restart should be read with that
+limit in mind, and a genuine MCU health probe is still missing.
+
 ### D-Bus restart recovery
+
 
 Killing the session bus cycled the whole BlueZ stack rather than stranding it.
 The bus, `bluetoothd`, `bluealsa`, and the pairing agent all came back with new
