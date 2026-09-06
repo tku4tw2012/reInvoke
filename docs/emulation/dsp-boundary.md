@@ -440,6 +440,14 @@ Deliberately not required: the Breakpad minidump writer that targets
 `/data/crash` and the memory-dump path. GPIO5 pinmux switching is required and
 is implemented without a shell.
 
+That requirement was confirmed by a controlled A/B on the bench unit rather than
+by inference. Booting a preserved pre-pinmux image leaves the register at
+`0x0038D249` with the GPIO5 bit clear, and `com.harman.dsp.getVer` then fails
+with `synchronization failed: header=0000000000`, the all-zero response header
+this boundary work started from. The same unit in the same session answers with
+`EVENT_DSP_VERSION=0.0.64.58` whenever the register holds `0x0138D249`. One
+variable, both directions, so the pin function is causal rather than correlated.
+
 The owned service intentionally does not copy `call_mcu_unmute`. DSP startup
 restores required microphone mute before readiness but never opens the speaker
 path. PID 1 can therefore supervise it as a normal service rather than an
