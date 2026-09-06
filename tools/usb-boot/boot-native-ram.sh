@@ -139,7 +139,7 @@ wait_for_uboot_prompt() {
   fi
 
   if [[ -f "${console_log}" ]]; then
-    log_offset="$(stat --format="%s" "${console_log}")"
+    log_offset="$(stat --dereference --format="%s" "${console_log}")"
     if [[ -p "${console_fifo}" ]] &&
       grep -a -qF "${UBOOT_PROMPT_PREFIX}" "${console_log}" &&
       ! usb_gadget_present; then
@@ -366,7 +366,7 @@ main() {
   ! usb_gadget_present ||
     err "18d1:0d02 is already present; enter U-Boot before loading"
 
-  console_offset="$(stat --format="%s" "${console_log}")"
+  console_offset="$(stat --dereference --format="%s" "${console_log}")"
   printf "usbload 0x81 %s\r" "${KERNEL_STAGING_ADDRESS}" >"${console_fifo}"
   wait_for_console_text \
     "${console_log}" "${console_offset}" "do_usbload, loading image 81" \
