@@ -724,6 +724,46 @@ service is also not talking to the wrong I2C bus or address: the boot handshake
 requires frames whose leading byte matches opcodes `0x01` and `0x23`, and it
 completed, which a wrong device would not satisfy.
 
+### v16 comparison result: the platform software is exonerated
+
+The preserved v16 image was booted unchanged on the current kernel. It carries a
+different MCU binary,
+`c3db4b9e650588f7261f5967a4137a62f543a24bfca704e2b88ea44d16cbd36f`, and predates
+the pinmux work, so its register read `0x0038D249` with the DSP's GPIO5 bit
+clear. It is the image whose indicator behaviour was physically validated.
+
+It failed identically. GPIO3 read `0` across ten consecutive samples, and the
+service logged `MCU interrupt remained low after 1024 pending reads` at
+seventeen seconds of uptime, matching `pre-nand-rc3` to the second.
+
+That result rules out the platform software. The fault reproduces on a known-good
+build with a different MCU binary and a different pinmux register value, so no
+change made in this effort introduced it. Bisecting our own history would be
+wasted work.
+
+What remains is the MCU or the board. The behaviour also survives a full power
+cycle, which points at a latched or persistent condition rather than a transient
+one. Worth trying before further software work: a long mains-off interval rather
+than a quick cycle, since a microcontroller held up by bulk capacitance or a
+standby rail may not have actually reset during the short power cycles used so
+far.
+
+With the search narrowed, the frame diagnostic is now worth a boot and was
+released as `pre-nand-rc4`.
+
+* MCU SHA-256
+  `74d9a19d3f6c67e46c8020127b5b0876879c8fdcf97c0e120c1cd20da195c802`;
+* DSP SHA-256 unchanged at
+  `4a7882d4f463b6a6adf84f38e868faf1b2e17a0a0303d0c6c2246ecf07ef4c95`;
+* runtime manifest SHA-256
+  `5401422332258b2543c92ae4aeb024cca8316a24e95c8b15b4b4f9d27e29237a`;
+* initramfs SHA-256
+  `beb27b480b4c8e51604f9c3ff2f57d513698154e67e537502f5e09a7c7d9e005`.
+
+It reports whether the 1024 drained frames are one repeated status frame, which
+would mean the read never consumes anything, or a varied queue that the decoder
+does not recognise.
+
 ### D-Bus restart recovery
 
 
