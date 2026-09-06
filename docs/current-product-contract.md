@@ -364,7 +364,16 @@ standing between the router and the wider network rather than a second layer.
 That places the fail-closed ordering above and the pinned allowlist on the
 critical path for this boundary.
 
-The live-network half of that gate cannot be closed on-box. This kernel exposes
+The drop target itself is now known to work rather than merely present. A DROP
+rule for port 9999 inserted ahead of the accept rules made a previously working
+WAMP call time out, and removing it restored the call, with the original six
+rules left intact. That exercises the hand-symlinked `xtables` modules, the
+chain ordering, and the drop target on this kernel, which structural inspection
+alone could not establish.
+
+What remains unproven is only the source matching: that a non-allowlisted remote
+address is dropped while the allowlisted one is accepted. The live-network half
+of that gate cannot be closed on-box. This kernel exposes
 only a mount namespace, so no network namespace can be created to originate
 genuine non-allowlisted traffic, and packets addressed to a local address
 traverse loopback and would match the accept rule instead. Confirming the drop
