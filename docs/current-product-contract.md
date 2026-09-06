@@ -332,10 +332,21 @@ Remaining gates are:
 2. complete one attended playback-continuity run; and
 3. finish physical-button orchestration for an isolated provisioning window.
 
-`pre-nand-rc6` is the current fully gated candidate. `pre-nand-rc7` is the
-current experimental candidate and contains only the final full-branch review
-remediations. Its destination is the remaining STA/uAP provisioning-window
-gate, not another exploratory boot. RC6 retains RC5's MCU, kernel, DSP, and
+`pre-nand-rc6` is the current fully gated candidate. `pre-nand-rc8` is the
+current experimental candidate. Its destination is the remaining STA/uAP
+provisioning-window gate, not another exploratory boot. RC7 booted and passed
+cold-boot acceptance, but its first-ever `sta-uap` boot exposed a latent defect:
+`reinvoke-provision-windowd` crash-looped on `hostapd library path is not
+root-controlled`, because `/opt/reinvoke` directories ship `root:root 0775` and
+the path check masked `0022`, misreading root-group write as untrusted access.
+Every earlier boot was station-only, so the uAP branch had never executed. RC8
+carries RC7 unchanged apart from two independent fixes: `windowd` now trusts
+group write only when the group is root, and packaging normalizes staged
+`/opt/reinvoke` directories to `0755`, which also removes a host-umask
+dependency from the image hash. Either fix alone unblocks the boot. The
+predicate fix was validated live on the running RC7 rootfs, whose directories
+remain `0775`, so the repair is causally isolated. RC6 retains RC5's MCU,
+kernel, DSP, and
 physical-control fix and adds the reviewed BlueZ ObjectManager connected-state
 fix. RC5's first cold boot
 restored GPIO3 high and recovered rotary input, Mic-Mute privacy, Bluetooth
