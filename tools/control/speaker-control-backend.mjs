@@ -172,7 +172,7 @@ export class BlueAlsaCliBackend {
   /** @param {BlueAlsaCliBackendOptions} options */
   constructor({
     pcmPath,
-    command = "bluealsactl",
+    command = "bluealsa-cli",
     dbusSuffix,
     run = runBlueAlsaCommand,
     observe,
@@ -254,7 +254,7 @@ export class BlueAlsaCliBackend {
     if (result.code !== 0) {
       throw new BackendUnavailableError(
         String(result.stderr ?? "").trim() ||
-          `bluealsactl exited with status ${result.code}`,
+          `bluealsa-cli exited with status ${result.code}`,
       );
     }
   }

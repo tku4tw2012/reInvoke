@@ -625,6 +625,64 @@ func TestRemoveLeaseNetworkIsRepeatableWhenAlreadyAbsent(t *testing.T) {
 	}
 }
 
+func TestFailedLeaseRollbackRetainsJournalForRecovery(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0700); err != nil {
+		t.Fatalf("restrict test directory: %v", err)
+	}
+	networkPaths := paths{
+		lease:    filepath.Join(directory, "lease.json"),
+		resolver: filepath.Join(directory, "resolver"),
+	}
+	resolverLink := filepath.Join(directory, "resolv.conf")
+	current := testLease()
+	current.LeaseTime = 60
+	current.DNS = []string{"192.0.2.53"}
+	runner := &cleanupRunner{
+		failRouteAdd:    true,
+		failRouteDelete: true,
+		routeOutput: []byte(
+			"default via 192.0.2.1 dev mlan0\n",
+		),
+	}
+
+	if err := configureLeaseTransactional(
+		runner,
+		current,
+		networkPaths,
+		resolverLink,
+	); err == nil {
+		t.Fatal("configuration and rollback failures were suppressed")
+	}
+	uid := uint32(os.Geteuid())
+	if err := validateResolverLinkParent(resolverLink, uid, false); err != nil {
+		t.Fatalf("test resolver parent is invalid: %v", err)
+	}
+	if _, err := loadStoredLeaseForUID(
+		networkPaths.lease,
+		"mlan0",
+		uid,
+	); err != nil {
+		t.Fatalf("rollback failure did not retain lease journal: %v", err)
+	}
+
+	recoveryRunner := &cleanupRunner{}
+	if err := clearLeaseStateForUID(
+		recoveryRunner,
+		networkPaths,
+		"mlan0",
+		resolverLink,
+		uid,
+		false,
+	); err != nil {
+		t.Fatalf("subsequent recovery failed: %v", err)
+	}
+	if _, err := os.Stat(networkPaths.lease); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("recovered lease journal still exists: %v", err)
+	}
+}
+
 func TestClearUntrackedInterfaceNetworkState(t *testing.T) {
 	t.Parallel()
 	runner := &cleanupRunner{

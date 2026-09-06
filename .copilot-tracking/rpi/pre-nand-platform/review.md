@@ -622,3 +622,39 @@ not a larger context window.
 The remaining review gate is one immutable pre-NAND RC passing the full
 collector, two DSP generations, Bluetooth physical state transitions, attended
 playback, and soak without code changes.
+
+## Full branch review after RC6
+
+A complete `origin/main..HEAD` functional review found ten medium-severity
+defects. All were reproduced by code-path analysis and remediated:
+
+1. DSP pinmux lock acquisition now obeys the bounded restore context.
+2. WAMP invocation work uses the per-session context, with post-mutex
+   cancellation before media hardware operations.
+3. Repeating privacy animation retries after post-start chunk failures.
+4. Network lease state is journaled before mutation and retained through failed
+   rollback.
+5. Provisioning apply-socket readiness requires a live listener and recovers a
+   verified stale inode.
+6. Native `volumeSet` accepts signed values, clamps 0–100, and returns the
+   effective snapshot.
+7. Extreme volume deltas use saturating arithmetic without ARM integer
+   overflow.
+8. The host backend defaults to packaged `bluealsa-cli`.
+9. Standalone `hci-init --unpair` performs the advertised MGMT unpair.
+10. The top-level host gate includes all 11 provisioning-client Node tests.
+
+A focused review of those remediations found four follow-up issues:
+
+1. Privacy animation lifetime is now process-scoped rather than WAMP-session
+   scoped, while the DSP command remains session-scoped.
+2. DAC/amp, privacy, ring-animation, and indicator RPCs re-check session
+   cancellation after acquiring their mutexes.
+3. A root-owned lifecycle flock now covers stale apply-socket recovery, child
+   launch, and verified live readiness.
+4. The new reproducible `hci-init` builder passes the retained sysroot to GCC
+   rather than merely hashing it.
+
+The final focused review reported no findings. The expanded host gate passes
+61 Node tests, all Go tests and race suites, C policy tests, and shell syntax
+checks.
