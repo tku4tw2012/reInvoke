@@ -105,6 +105,7 @@ main() {
   local yaffs_source
   local yaffs_source_sha256
   local module_count
+  local lzop_version
   local mkimage_version
   local bt_module_dir="arch/arm/mach-berlin/modules/bt_sd8887"
   local bt_module_built_separately=0
@@ -506,21 +507,28 @@ main() {
 
   module_count="$(find "${partial_output}/modules" -type f -name "*.ko" |
     wc -l)"
+  lzop_version="$(lzop --version | sed -n '1p')"
   mkimage_version="$(mkimage -V)"
   {
     printf "purpose=native RAM kernel profile %s\n" "${profile}"
     printf "source_archive_sha256=%s\n" "${SOURCE_ARCHIVE_SHA256}"
+    printf "source_tree_manifest_sha256=%s\n" \
+      "${SOURCE_TREE_MANIFEST_SHA256}"
     printf "ndk_archive_sha256=%s\n" "${NDK_ARCHIVE_SHA256}"
     printf "device_tree_sha256=%s\n" "${actual_dtb_sha256}"
     printf "kernel_release=%s\n" "${kernel_release}"
     printf "kernel_load_address=%s\n" "${LOAD_ADDRESS}"
     printf "compiler=%s\n" "$("${compiler}" --version | sed -n '1p')"
     printf "compiler_sha256=%s\n" "${COMPILER_SHA256}"
+    printf "linker_sha256=%s\n" "${LINKER_SHA256}"
     printf "spi_timeout_patch_sha256=%s\n" "${SPI_PATCH_SHA256}"
     printf "yaffs_reproducibility_patch_sha256=%s\n" "${YAFFS_PATCH_SHA256}"
     printf "lzo_reproducibility_patch_sha256=%s\n" "${LZO_PATCH_SHA256}"
     printf "linker=%s\n" "$("${linker}" --version | sed -n '1p')"
+    printf "lzop=%s\n" "${lzop_version}"
+    printf "lzop_sha256=%s\n" "${LZOP_SHA256}"
     printf "mkimage=%s\n" "${mkimage_version}"
+    printf "mkimage_sha256=%s\n" "${MKIMAGE_SHA256}"
     printf "module_count=%s\n" "${module_count}"
   } >"${partial_output}/build-manifest.txt"
 
