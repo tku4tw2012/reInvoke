@@ -640,6 +640,28 @@ from a router fault costs a reconnect, not a DSP reboot.
 `runWithReconnect` in `tools/dsp-interface/lifecycle.go` is the mechanism, and
 the supervisor restarts the router itself.
 
+### D-Bus restart recovery
+
+Killing the session bus cycled the whole BlueZ stack rather than stranding it.
+The bus, `bluetoothd`, `bluealsa`, and the pairing agent all came back with new
+process IDs, `bluetoothd` re-registered both A2DP endpoints, the playback
+process stayed supervised, and the pairing agent reopened its bounded window.
+The MCU and DSP services were unaffected, since neither uses the session bus,
+and both still answered `getmcustatus` and `getVer` afterwards.
+
+Two checks in that pass needed correcting before they meant anything. A probe
+for a powered adapter reported zero because `hciconfig` is absent from this
+image, not because the adapter was down; sysfs shows `hci0` present with its
+address and rfkill unblocked. `bluetoothd` also logs `Loading LTKs timed out`
+and `Load Connection Parameters failed`, which look alarming next to a fault
+injection. The rotated log carries the identical messages from the first
+`bluetoothd` at nine seconds of uptime, so they belong to this controller and
+BlueZ pairing rather than to the restart.
+
+Supervised recovery has now been exercised for the DSP service, the MCU service,
+`bluetoothd`, the WAMP router, and the session bus. Every one produced a new
+process and a working service.
+
 ### Log growth is bounded
 
 The runtime log is written by `syslogd -s 256 -b 1`. Rotation was exercised
