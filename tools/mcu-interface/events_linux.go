@@ -22,6 +22,9 @@ const (
 	gpioPollTimeoutMilliseconds = 500
 	mcuDrainInterval            = 5 * time.Millisecond
 	maxMCUPendingReads          = 1024
+	// A wedged MCU never releases its interrupt, so suppression must expire
+	// instead of disabling physical input for the rest of the boot.
+	mcuRecoveryRetryInterval = 30 * time.Second
 )
 
 var errMCUDrainLimit = errors.New(
@@ -51,6 +54,16 @@ type gpioEventSource struct {
 		ReadMCUEvent() ([6]byte, error)
 	}
 	logError func(error)
+	// now is injectable so suppression expiry can be tested without waiting.
+	now func() time.Time
+}
+
+// suppressionDeadline reports when a drain-limit suppression should expire.
+func (source *gpioEventSource) currentTime() time.Time {
+	if source.now != nil {
+		return source.now()
+	}
+	return time.Now()
 }
 
 func prepareGPIO(root string, number int) (*os.File, error) {
@@ -163,7 +176,7 @@ func (source *gpioEventSource) Events(
 	go func() {
 		defer close(events)
 		buffer := make([]byte, 8)
-		recoverySuppressed := false
+		var suppressedUntil time.Time
 		startupDiscardPending := true
 		lineHigh, err := readGPIOLevel(source.value, buffer)
 		if err != nil {
@@ -176,7 +189,12 @@ func (source *gpioEventSource) Events(
 				false,
 			); err != nil {
 				source.logError(err)
-				recoverySuppressed = errors.Is(err, errMCUDrainLimit)
+				if errors.Is(err, errMCUDrainLimit) {
+					suppressedUntil = source.suppressRecovery()
+					// 1024 events were already consumed, so anything that
+					// arrives later is a new press rather than startup backlog.
+					startupDiscardPending = false
+				}
 			} else {
 				startupDiscardPending = false
 			}
@@ -212,9 +230,9 @@ func (source *gpioEventSource) Events(
 					continue
 				}
 				if lineHigh {
-					recoverySuppressed = false
+					suppressedUntil = time.Time{}
 					startupDiscardPending = false
-				} else if !recoverySuppressed {
+				} else if !source.currentTime().Before(suppressedUntil) {
 					publish := events
 					if startupDiscardPending {
 						publish = nil
@@ -226,10 +244,10 @@ func (source *gpioEventSource) Events(
 						false,
 					); err != nil && ctx.Err() == nil {
 						source.logError(err)
-						recoverySuppressed = errors.Is(
-							err,
-							errMCUDrainLimit,
-						)
+						if errors.Is(err, errMCUDrainLimit) {
+							suppressedUntil = source.suppressRecovery()
+							startupDiscardPending = false
+						}
 					} else if err == nil {
 						startupDiscardPending = false
 					}
@@ -244,7 +262,7 @@ func (source *gpioEventSource) Events(
 			if !hasEdge {
 				continue
 			}
-			recoverySuppressed = false
+			suppressedUntil = time.Time{}
 			if _, err := readGPIOLevel(source.value, buffer); err != nil {
 				source.logError(err)
 				continue
@@ -260,13 +278,27 @@ func (source *gpioEventSource) Events(
 				true,
 			); err != nil && ctx.Err() == nil {
 				source.logError(err)
-				recoverySuppressed = errors.Is(err, errMCUDrainLimit)
+				if errors.Is(err, errMCUDrainLimit) {
+					suppressedUntil = source.suppressRecovery()
+					startupDiscardPending = false
+				}
 			} else if err == nil {
 				startupDiscardPending = false
 			}
 		}
 	}()
 	return events
+}
+
+// suppressRecovery backs off after a drain limit and records that physical
+// input is degraded. The deadline expires so a recovered MCU is picked up again
+// without restarting the service.
+func (source *gpioEventSource) suppressRecovery() time.Time {
+	source.logError(fmt.Errorf(
+		"physical input degraded: retrying MCU interrupt recovery in %s",
+		mcuRecoveryRetryInterval,
+	))
+	return source.currentTime().Add(mcuRecoveryRetryInterval)
 }
 
 func decodeMCUEvent(frame [6]byte) (inputEvent, bool) {

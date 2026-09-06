@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 )
 
 type recordingMCUEventBus struct {
@@ -164,5 +165,45 @@ func TestDecodeRecoveredButtonEvents(t *testing.T) {
 func TestDisabledCombinedButtonEventIsIgnored(t *testing.T) {
 	if event, valid := decodeMCUEvent([6]byte{0x04, 0x0a}); valid {
 		t.Fatalf("disabled combined event was decoded as %#v", event)
+	}
+}
+
+// A wedged MCU never releases its interrupt. Suppression after a drain limit
+// must therefore expire, or physical input stays dead for the whole boot.
+func TestRecoverySuppressionExpires(t *testing.T) {
+	base := time.Unix(1700000000, 0)
+	current := base
+	logged := 0
+	source := &gpioEventSource{
+		logError: func(error) { logged++ },
+		now:      func() time.Time { return current },
+	}
+
+	deadline := source.suppressRecovery()
+	if logged != 1 {
+		t.Fatalf("suppression must report degraded input, logged = %d", logged)
+	}
+	if !deadline.After(current) {
+		t.Fatal("suppression deadline must be in the future")
+	}
+	if current.Before(deadline) != true {
+		t.Fatal("recovery must be suppressed immediately after the limit")
+	}
+
+	current = base.Add(mcuRecoveryRetryInterval - time.Second)
+	if !current.Before(deadline) {
+		t.Fatal("recovery must stay suppressed before the retry interval")
+	}
+
+	current = base.Add(mcuRecoveryRetryInterval)
+	if current.Before(deadline) {
+		t.Fatal("recovery must resume once the retry interval has elapsed")
+	}
+}
+
+func TestCurrentTimeFallsBackToWallClock(t *testing.T) {
+	source := &gpioEventSource{}
+	if source.currentTime().IsZero() {
+		t.Fatal("current time must fall back to the wall clock")
 	}
 }
