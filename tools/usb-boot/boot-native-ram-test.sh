@@ -170,8 +170,37 @@ test_status_transitions() {
 }
 
 test_stale_lock_detection() {
+  local marker="reinvoke-loader-detection-probe-$$"
+  local probe_pid
+
+  # Scan for a controlled marker so the result does not depend on whether a
+  # real loader is armed on this host.
+  LOADER_PROCESS_PATTERN="${marker}"
   other_loader_running &&
-    err "no other loader is running, but detection reported one"
+    err "detection reported a loader before the probe existed"
+
+  # Keep the marker in the child's command line by passing it as $0. The
+  # command must be compound, because bash exec-optimizes a lone simple command
+  # and the replacement process would not carry the marker.
+  setsid bash -c 'sleep 30; :' "${marker}" &
+  probe_pid="$!"
+  local attempt
+  for ((attempt = 0; attempt < 50; attempt++)); do
+    other_loader_running && break
+    sleep 0.1
+  done
+  other_loader_running ||
+    err "detection missed a live process matching the loader pattern"
+
+  kill "${probe_pid}" 2>/dev/null || true
+  wait "${probe_pid}" 2>/dev/null || true
+  for ((attempt = 0; attempt < 50; attempt++)); do
+    other_loader_running || break
+    sleep 0.1
+  done
+  other_loader_running &&
+    err "detection still reported a loader after the probe exited"
+  unset LOADER_PROCESS_PATTERN
 
   printf "PASS boot-native-ram stale lock detection\n"
 }
