@@ -828,6 +828,65 @@ drain reads therefore fails to decode, which is consistent with the MCU
 repeating a non-event frame such as a status or version reply. `pre-nand-rc4`
 reports the distinct frames so that guess can be replaced with the actual bytes.
 
+### Correction: the MCU is alive, and the earlier reading was wrong
+
+`pre-nand-rc4` reported the drained frames, and the answer was unambiguous:
+
+```text
+drained 1024 undecodable MCU frames of 1024 reads; distinct frames 000000000000
+```
+
+Every one of the 1024 reads succeeded at the bus level and returned six zero
+bytes. There is exactly one distinct frame, so this is not a varied queue being
+mis-decoded.
+
+A liveness test then contradicted the working theory. Deleting the RAM handshake
+marker and restarting the MCU service forces `initializeMCUProtocolOnce` to run
+again, and that routine only records its marker after reading frames whose
+leading bytes are `0x01` and `0x23`; otherwise it exits and the supervisor loops.
+The marker came back and the service stayed up. The MCU answered a real
+request/response exchange while in this state, seconds before the same service
+drained a thousand zero frames.
+
+So the MCU firmware is running and its I2C is healthy. The earlier description
+of a wedged MCU was wrong, and every statement resting on it should be read with
+that correction. What the evidence actually supports is narrower: the MCU
+answers a write-then-read exchange, returns zeros to a bare read because nothing
+is queued, and holds its interrupt low for a reason unrelated to a pending
+event.
+
+The interrupt is not held low by our polling either. Freezing the MCU service
+with `SIGSTOP` silenced the I2C bus for eight seconds, and the line stayed low
+throughout, with `EXT_PORTA` unchanged. That rules out the read flood as a
+self-sustaining cause, which was worth checking because an earlier iteration of
+this project did cause sustained I2C arbitration loss with exactly such a flood.
+
+The long mains-off interval did not change the behaviour either.
+
+### The donor register writes are verified equivalent, not assumed
+
+The claim that the two unimplemented donor `/dev/mem` writes already hold correct
+values was previously an assumption. It has now been checked against the donor
+binary itself. Disassembling `usr/bin/mcu-interface` shows it shells out to
+`/system/bin/toolbox devmem`, reads each register into `/tmp/regNN.conf`, and
+writes back a computed value:
+
+| Register | Purpose | Donor operation | Live value | Equivalent |
+|---|---|---|---|---|
+| `0xF7EA8008` | pin function | `bic 0xE00000` then `orr 0x200000` | `0x0138D249` | yes |
+| `0xF7E80408` | `SWPORTA_CTL` | `bic 0x8`, software mode | `0x00000000` | yes |
+| `0xF7E80404` | `SWPORTA_DDR` | `bic 0x8`, pin 3 input | `0x00006B34` | yes |
+
+The kernel's GPIO driver already produces donor-equivalent values, so the two
+missing writes are not the difference. The donor does retry each I2C transfer up
+to three times with twenty millisecond gaps, which the owned service does not.
+
+Project history also settles whether the owned service ever worked here. On the
+v8 image it recorded rotary events in both directions, two distinct
+microphone-mute events, and a Bluetooth long press. Physical input is therefore
+not an unimplemented protocol in the owned code; it worked on this unit and
+stopped.
+
 ### D-Bus restart recovery
 
 

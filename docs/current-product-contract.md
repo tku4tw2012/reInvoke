@@ -255,8 +255,15 @@ or rotary event reaches the services, and no indicator lights even though
 `com.harman.ledSet` accepts the write. This is not a platform regression: the
 preserved v16 image, whose indicator behaviour was physically validated, fails
 identically with a different MCU binary and a different pinmux register value,
-and the behaviour survives a full power cycle. Until that clears, the physical
-control and indicator gates cannot be exercised on this unit at all.
+and the behaviour survives a full power cycle including a long mains-off
+interval.
+
+The MCU itself is alive. It still completes the write-then-read startup
+exchange on demand in this state, and it returns six zero bytes to a bare read
+because nothing is queued. Silencing the bus does not release the line either.
+The three pin and port registers the donor writes hold donor-equivalent values,
+confirmed against the donor binary rather than assumed. Until the line clears,
+the physical control and indicator gates cannot be exercised on this unit.
 
 ## Factory reset
 
