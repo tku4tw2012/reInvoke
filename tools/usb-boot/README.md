@@ -222,6 +222,22 @@ The collector also calls MCU status, requires DSP `getVer` and version event
 post-probe service logs. It exits nonzero after evidence collection if any check
 fails.
 
+Button presses reach the services as MCU publications, so they cannot be
+injected over WAMP and the control and indicator gates need a person at the
+speaker. Run the capture harness for that session and simply press the buttons:
+
+```bash
+tools/usb-boot/collect-physical-controls.sh \
+  --duration 180 \
+  --output-dir "${REINVOKE_ARCHIVE}/hardware/usb-attempts/<timestamp>/controls"
+```
+
+It records button publications, every Bluetooth state the file reports during
+the window, indicator and pairing log lines, and the runtime log for that window
+only. It presses nothing and calls no state-changing procedure. Its summary
+counts published events rather than subscription confirmations, so a window with
+no presses reports `button_publications=0` instead of appearing to observe one.
+
 After a capture session reports the live `MV88DE3100|>` prompt, stage and boot
 a reviewed native pair with elapsed progress and a bounded USB criterion:
 
