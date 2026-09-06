@@ -764,6 +764,41 @@ It reports whether the 1024 drained frames are one repeated status frame, which
 would mean the read never consumes anything, or a varied queue that the decoder
 does not recognise.
 
+### The v16 boot also proved the pinmux root cause causally
+
+The comparison boot produced a second result worth more than the first. Running
+v16 puts the register at `0x0038D249`, with the DSP's GPIO5 bit clear, because
+that image predates the pinmux work. Calling `com.harman.dsp.getVer` on it
+failed and the service logged:
+
+```text
+DSP command response failed: device frame rejected by header check:
+synchronization failed: header=0000000000
+```
+
+That all-zero response header is the original symptom this entire effort began
+from. The log holds zero `EVENT_DSP_VERSION` lines for the whole v16 boot, and
+the link failure restarted the service.
+
+The same hardware, in the same session, answers `getVer` with
+`EVENT_DSP_VERSION=0.0.64.58` whenever the register holds `0x0138D249`. That is
+a controlled A/B with a single variable, run on demand rather than reconstructed
+from history, and it settles the pinmux root cause beyond the earlier evidence.
+The fix is causal, not correlated.
+
+### Kernel view of the stuck interrupt
+
+The GPIO interrupt line has never fired. `/proc/interrupts` shows
+`gpio-dwapb gpiolib` at zero on both cores while the i2c-0 controller shows
+thousands of interrupts from the drain loop, and `gpio3/active_low` is `0`, so
+the polarity is not inverted. The kernel is not losing edges; none are being
+produced.
+
+`decodeMCUEvent` accepts only frames whose first byte is `0x04`. Everything the
+drain reads therefore fails to decode, which is consistent with the MCU
+repeating a non-event frame such as a status or version reply. `pre-nand-rc4`
+reports the distinct frames so that guess can be replaced with the actual bytes.
+
 ### D-Bus restart recovery
 
 
