@@ -141,9 +141,12 @@ resets the controller and removes volatile keys before a clean reconstruction.
 The pairing-agent digest gated by `build-native-runtime.sh` is
 `0e2e17763fb9f9212aee30226d2399f2ca7a4a93f7fb275c0fd6e7af6fe54a57`.
 Two consecutive builds produced byte-identical static ARM binaries. The builder
-pins the compiler and strip tool, but the built D-Bus static library and ARM
-sysroot are not yet independently checksum-gated, so this is not a complete
-clean-room build claim.
+pins the compiler driver, cc1, collect2, assembler, linker, and strip tool. It
+also gates the D-Bus static archive, D-Bus header manifest, and full resolved
+ARM sysroot manifest. A deliberately altered sysroot is rejected before
+compilation. The sysroot still resolves into host `/usr/arm-linux-gnueabihf`
+packages rather than a retained archive, so this is environment-locked but not
+yet a complete clean-room build claim.
 
 The signal/state precedence seam has a host-only test:
 
