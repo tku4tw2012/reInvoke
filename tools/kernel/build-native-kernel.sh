@@ -12,7 +12,6 @@ readonly COMPILER_SHA256="a838490fd49184f1f104027239f0a46671c743c29c17a33f6d5daa
 readonly LINKER_SHA256="a46bcacc5b9a240452305a16d10642f25e9edbed6be5912adfd1aede5d256f25"
 readonly LZOP_SHA256="fbcad458eee62c728e8b5695c82805ef5c8640706b45169d509239b9fe0d1a86"
 readonly MKIMAGE_SHA256="b77cea9537d5432123de6ca42cf88f07b259f815cd16266d9883b57ed27f057e"
-readonly COMPATIBILITY_PATCH_SHA256="13be51ff027e427b5696a502aa603ccdaedd3eced7ad293d7d7ca416a00e66ab"
 readonly SOURCE_TREE_MANIFEST_SHA256="6ae65ab02757536de83e489b4db967bd39e0969d40ae5bcce7fb478cadd1b42f"
 readonly SPI_SOURCE_SHA256="684795ce44de9d10133260c3195dfb42b454478bba7e5406decabda3f4edbe9f"
 readonly SPI_PATCHED_SOURCE_SHA256="e02935b6f6d5c715a856d735f7274b3aab1214749686668db75059e659e108e7"
@@ -95,7 +94,6 @@ main() {
   local cross_prefix
   local compiler
   local linker
-  local compatibility_patch
   local actual_source_manifest
   local spi_patch
   local spi_source
@@ -251,14 +249,6 @@ main() {
   printf "%s  %s\n" "${MKIMAGE_SHA256}" "$(command -v mkimage)" |
     sha256sum --check --status ||
     err "mkimage checksum mismatch"
-
-  compatibility_patch="${repo_root}/patches/invoke-kernel/0001-modern-host-toolchain.patch"
-  [[ -f "${compatibility_patch}" ]] ||
-    err "compatibility patch not found: ${compatibility_patch}"
-  printf "%s  %s\n" \
-    "${COMPATIBILITY_PATCH_SHA256}" "${compatibility_patch}" |
-    sha256sum --check --status ||
-    err "compatibility patch checksum mismatch"
 
   spi_patch="${repo_root}/patches/invoke-kernel/0002-bound-spi-gpio-ready-wait.patch"
   spi_source="${source_dir}/drivers/spi/spi-dw.c"
