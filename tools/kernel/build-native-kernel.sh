@@ -357,6 +357,13 @@ main() {
   [[ "${actual_dtb_sha256}" == "${dtb_sha256}" ]] ||
     err "device-tree checksum mismatch"
 
+  # An incremental kernel rebuild can silently produce a different image than a
+  # clean one. A stale shared build directory once yielded 150275c6... where a
+  # clean tree reproduced the gated d29a0075..., so always start from scratch.
+  if [[ -e "${build_dir}" ]]; then
+    printf "Removing existing kernel build directory: %s\n" "${build_dir}"
+    rm -rf -- "${build_dir}"
+  fi
   mkdir -p "${build_dir}"
   make -C "${source_dir}" \
     O="${build_dir}" \
