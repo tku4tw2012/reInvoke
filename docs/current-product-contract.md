@@ -41,8 +41,8 @@ and initramfs loaded through yellow-mode U-Boot.
 | Persistent storage | NAND is not mounted. Ordinary writable MTD nodes are removed; only the explicit read-only NAND node may exist. NAND installation is a separate, unapproved project. |
 | Bluetooth playback | BlueZ 5.55 and patched BlueALSA 4.0.0 provide classic A2DP Sink playback. The allowlist, bond state, D-Bus state, and runtime configuration are volatile. Audible playback and rotary volume have been demonstrated; the final accepted image still needs its attended acceptance run. |
 | Speaker safety | The owned MCU service initializes amplifier and DAC muted. It opens the physical path only while ALSA is `RUNNING`, the active-PCM lease thread matches ALSA's owner, and that thread resolves to the packaged player. Disconnect, silence, process exit, or shutdown reasserts mute. A 1.5-second holdoff prevents brief transport gaps from flapping the hardware mute gates. |
-| Microphone capture | The ALSA capture path is resolved: stereo 48 kHz `S32_LE`, 256-frame periods, and 16 periods are verified. Speech/tap correlation was observed while unmuted, and an accepted restart/privacy test captured only zero samples while muted. This proves the software privacy path, not an independent electrical disconnect. |
-| Microphone privacy | Mic-Mute means microphone privacy, not speaker mute. One process-lifetime controller in the MCU service owns physical-button and compatibility-API changes, RAM state, retry, and the red privacy indication. |
+| Microphone capture | The raw ALSA path is resolved: stereo 48 kHz `S32_LE`, 256-frame periods, and 16 periods. The speaker target starts no capture consumer. Opening/configuring raw PCM can overwrite an earlier DSP mute route; a future voice service must obey the capture-owner contract below. |
+| Microphone privacy | Mic-Mute means microphone privacy, not speaker mute. One process-lifetime MCU controller owns physical-button/API changes, RAM state, retry, and the red animation. On a configured capture path, attended speech/tap tests measured 99.975% nonzero unmuted and exactly 0/244,736 nonzero muted. This is a trusted software boundary, not an electrical disconnect or protection from arbitrary root-level raw-device access. |
 | Physical controls | Rotary volume, Mic-Mute short press, Action short press, Bluetooth long press, and Mic-Mute long press have owned actions. Action toggles Bluetooth play/pause. Bluetooth long reopens the bounded pairing window as a compatibility fallback. Mic-Mute long requests the isolated provisioning window when the image is booted in STA/uAP mode. Other decoded keys are published for compatibility. |
 | LEDs | Animation transport, `ledOff`, and the separate front/rear `ledSet` transport are recovered. Privacy red-ring on/off and the top-ring white pairing indication were observed. The owned `ledSet` path physically switched the lower-front diffuser between amber and white, exercised slow/fast blink and off, and controlled the rear light beside the Bluetooth button with on, slow/fast blink, and off. Mode `dim` produced no visible front or rear output even in a dark room. |
 | Networking | SD8887 station and STA/uAP modes work in RAM. `reinvoke-networkd` owns DHCP, route, and resolver state after a root-controlled supplicant connects. The authenticated provisioning parser and privileged apply adapter work, but the final physical-button-to-AP orchestration is not yet a normal product path. |
@@ -94,6 +94,11 @@ The microphone path intentionally has one public owner:
    mute, and only then publishes session readiness.
 6. An indeterminate unmute is immediately followed by a mute attempt. Failed
    mute reconciliation is retried independently of the router.
+7. A capture owner must not open or read the raw PCM while confirmed state is
+   muted. If low-latency operation requires keeping PCM configured, it must
+   configure the stream, request mute, wait for confirmation, and discard every
+   sample before that confirmation. ALSA `hw_params` can overwrite an earlier
+   DSP route; direct raw opens are outside the privacy controller.
 
 The donor DSP service historically registered eight WAMP procedures, including
 `com.harman.dsp.micMute`. The owned DSP service registers seven. Moving raw
@@ -291,8 +296,9 @@ accepted image is not a released persistent firmware.
 
 Remaining gates are:
 
-1. cold-boot the v19 candidate and confirm its verified 20 ms DSP handshake and
-   one-second post-boot mute-settle behavior without diagnostic tracing;
+1. cold-boot the v21 candidate and confirm its donor-compatible 10 ms DSP
+   handshake, one-idle-poll command deferral, one-second post-boot settle, and
+   readiness-gated dispatch under PID 1;
 2. confirm a replacement `bluetoothd` receives a powered controller before its
    pairing agent starts;
 3. confirm the WAMP allowlist closes ports 9998 and 9999 to non-allowlisted

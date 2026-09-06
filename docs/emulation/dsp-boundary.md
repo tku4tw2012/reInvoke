@@ -242,17 +242,31 @@ unsolicited events arrive. `Dsp_msg_process` calls `msgproc` in a loop and
 sleeps 200 milliseconds whenever it reports no traffic.
 
 The donor's nominal microsecond sleeps do not last a microsecond on the target's
-old kernel. A successful syscall trace measured 8.6-9.4 ms. The owned Go path
-with 10 ms waits consistently read an all-zero response header; tracing stretched
-those waits to 18-19 ms and made both `getVer` and Mic-Mute succeed. The accepted
-owned compatibility envelope is therefore 20 ms for handshake and release.
+old kernel. A successful syscall trace measured 8.6-9.4 ms, so the owned
+handshake and release waits are 10 ms.
+
+The missing behavior was scheduling, not a longer GPIO delay. A newly queued
+command claimed in the pump's current iteration returned an all-zero response.
+Increasing waits through 100 ms, adding response-turnaround delays, and sleeping
+after claim did not fix detached execution; 120 ms could miss boot events. The
+donor and owned clients both succeeded when attached and failed under the
+detached launcher. Deferring a newly observed command for one complete
+200-millisecond idle pump cycle, then running the unchanged 10 ms GPIO sequence,
+made detached `getVer` and Mic-Mute reliable. Each queued command is deferred
+exactly once and remains at the front of the queue.
 
 After `EVENT_DSP_BOOTUP`, the owned service waits one second before restoring
 persisted microphone mute and publishing service readiness. A mute acknowledged
 immediately after the boot event was later overwritten during DSP
-initialization. The settled restore produced an all-zero first capture. External
-WAMP and subscribed-state commands wait on the same readiness barrier; the
-internal startup mute is the only command allowed to bypass it.
+initialization. External WAMP and subscribed-state commands wait on the same
+readiness barrier; the internal startup mute is the only command allowed to
+bypass it.
+
+Opening ALSA capture can itself reconfigure the DSP route after startup. A mute
+issued after capture `hw_params` produced an all-zero stream; an earlier startup
+mute did not constrain a later raw root-level open. Any future voice capture
+owner must therefore obey the privacy-state contract and must not consume
+samples until post-configuration mute is confirmed.
 
 The binary additionally shells out to `/system/bin/toolbox devmem` through
 `popen` and `system` to read and modify three registers:
