@@ -12,6 +12,13 @@ readonly COMPILER_SHA256="a838490fd49184f1f104027239f0a46671c743c29c17a33f6d5daa
 readonly LINKER_SHA256="a46bcacc5b9a240452305a16d10642f25e9edbed6be5912adfd1aede5d256f25"
 readonly LZOP_SHA256="fbcad458eee62c728e8b5695c82805ef5c8640706b45169d509239b9fe0d1a86"
 readonly MKIMAGE_SHA256="b77cea9537d5432123de6ca42cf88f07b259f815cd16266d9883b57ed27f057e"
+# Host build tools. The kernel drives its own host programs through make and
+# HOSTCC, so these transform build inputs just as much as the cross compiler.
+readonly MAKE_SHA256="92f646030615cd98490a68a94c0aefd87b552be3158b941c02e43b0bfdb576db"
+readonly HOSTCC_SHA256="821af3c74506283c179ca413bb33e6b528805a4dd8a5c09df125e5ad560a9e89"
+readonly HOSTCC1_SHA256="31c2233432d9105001eea158b799f7d403dc5a1944c712283dba251f3ab8eb43"
+readonly HOST_AS_SHA256="4e6b50c3faaa834150db32be778fd7d9440a4e1f5fa8beb8a72277b12159d689"
+readonly HOST_LD_SHA256="58937fc20c21e147883b4fdaa0fc7438a8e8f2bb886cfcaa4896100ca91139e7"
 readonly SOURCE_TREE_MANIFEST_SHA256="6ae65ab02757536de83e489b4db967bd39e0969d40ae5bcce7fb478cadd1b42f"
 readonly SPI_SOURCE_SHA256="684795ce44de9d10133260c3195dfb42b454478bba7e5406decabda3f4edbe9f"
 readonly SPI_PATCHED_SOURCE_SHA256="e02935b6f6d5c715a856d735f7274b3aab1214749686668db75059e659e108e7"
@@ -47,6 +54,21 @@ Options:
   --help               Show this help
 EOF
   exit "${exit_code}"
+}
+
+# Host tools are reached through symlinks and wrapper names, so resolve them
+# before hashing.
+verify_host_tool() {
+  local expected="$1"
+  local path="$2"
+  local label="$3"
+  local resolved
+
+  [[ -n "${path}" ]] || err "${label} not found"
+  resolved="$(readlink -f "${path}")"
+  printf "%s  %s\n" "${expected}" "${resolved}" |
+    sha256sum --check --status ||
+    err "${label} checksum mismatch: ${resolved}"
 }
 
 err() {
@@ -250,6 +272,11 @@ main() {
   printf "%s  %s\n" "${MKIMAGE_SHA256}" "$(command -v mkimage)" |
     sha256sum --check --status ||
     err "mkimage checksum mismatch"
+  verify_host_tool "${MAKE_SHA256}" "$(command -v make)" "make"
+  verify_host_tool "${HOSTCC_SHA256}" "$(command -v gcc)" "HOSTCC driver"
+  verify_host_tool "${HOSTCC1_SHA256}" "$(gcc -print-prog-name=cc1)" "HOSTCC cc1"
+  verify_host_tool "${HOST_AS_SHA256}" "$(command -v as)" "host assembler"
+  verify_host_tool "${HOST_LD_SHA256}" "$(command -v ld)" "host linker"
 
   spi_patch="${repo_root}/patches/invoke-kernel/0002-bound-spi-gpio-ready-wait.patch"
   spi_source="${source_dir}/drivers/spi/spi-dw.c"
@@ -528,6 +555,13 @@ main() {
     printf "lzop=%s\n" "${lzop_version}"
     printf "lzop_sha256=%s\n" "${LZOP_SHA256}"
     printf "mkimage=%s\n" "${mkimage_version}"
+    printf "host_make=%s\n" "$(make --version | head -1)"
+    printf "host_make_sha256=%s\n" "${MAKE_SHA256}"
+    printf "host_cc=%s\n" "$(gcc --version | head -1)"
+    printf "host_cc_sha256=%s\n" "${HOSTCC_SHA256}"
+    printf "host_cc1_sha256=%s\n" "${HOSTCC1_SHA256}"
+    printf "host_as_sha256=%s\n" "${HOST_AS_SHA256}"
+    printf "host_ld_sha256=%s\n" "${HOST_LD_SHA256}"
     printf "mkimage_sha256=%s\n" "${MKIMAGE_SHA256}"
     printf "module_count=%s\n" "${module_count}"
   } >"${partial_output}/build-manifest.txt"

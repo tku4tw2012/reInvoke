@@ -332,13 +332,18 @@ Remaining gates are:
 2. complete one attended playback-continuity run; and
 3. finish physical-button orchestration for an isolated provisioning window.
 
-`pre-nand-rc6` is the current fully gated candidate. `pre-nand-rc9` is the
-current experimental candidate and is the first build whose STA/uAP
-provisioning window actually works. It has since passed a clean cold boot from
-the packaged image with no hot patches: `windowd` reported `control socket
-ready` at uptime 5.32 with no crash loop, and the full acceptance collector
-exited zero with DSP version `25688` and no NAND mount. Its destination is one physical Mic-Mute
-long press to record the gate, not another exploratory boot.
+`pre-nand-rc9` is the current fully gated candidate and the first build whose
+STA/uAP provisioning window actually works. It passed a clean cold boot from the
+packaged image with no hot patches: `windowd` reported `control socket ready` at
+uptime 5.32 with no crash loop, and the acceptance collector exited zero with DSP
+version `25688` and no NAND mount.
+
+Its provisioning gate is closed. A physical Mic-Mute long press passed all
+fourteen checks, covering the access point, the bounded descriptor, IPv4 and IPv6
+forwarding staying off, the WAMP control plane staying closed to access-point
+clients, no NAND mount, and full self-cleanup at the 300 second bound. IPv6 is
+not a supported feature; the kernel enables it, so the gate asserts its
+forwarding stays off rather than relying on it being absent.
 
 Holding Mic-Mute opens the provisioning window. This is a reInvoke decision,
 not donor behaviour: the original speaker was provisioned from the vendor phone

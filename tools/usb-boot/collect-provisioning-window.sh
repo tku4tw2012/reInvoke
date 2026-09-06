@@ -6,6 +6,13 @@
 
 set -euo pipefail
 
+readonly AP_ADDRESS="192.168.43.1"
+readonly HTTPS_PORT=8443
+# windowd advertises a 300 second window; allow for scheduling slack in both
+# directions while still rejecting an early collapse.
+readonly MINIMUM_WINDOW_SECONDS=280
+readonly MAXIMUM_WINDOW_SECONDS=340
+
 usage() {
   local exit_code="${1:-0}"
 
@@ -118,6 +125,90 @@ wamp_firewall_unchanged() {
 
   diff <(snapshot_section "${baseline}" "wamp firewall") \
     <(snapshot_section "${other}" "wamp firewall") >/dev/null
+}
+
+# The window must close because its own deadline expired, not because a child
+# failed. windowd logs a distinct message for the error path.
+window_closed_cleanly() {
+  local log="$1"
+
+  grep -q 'provisioning window closed$' "${log}" || return 1
+  ! grep -q 'provisioning window closed after an error' "${log}"
+}
+
+# A window that collapsed after two seconds would still leave a removed runtime
+# directory, so require it to have survived close to its advertised lifetime.
+window_ran_full_lifetime() {
+  local log="$1"
+  local opened
+  local closed
+  local elapsed
+
+  opened="$(grep -m1 'provisioning window starting' "${log}" |
+    awk '{print $3}')"
+  closed="$(grep -m1 'provisioning window closed$' "${log}" |
+    awk '{print $3}')"
+  [[ -n "${opened}" && -n "${closed}" ]] || return 1
+  opened="$(seconds_since_midnight "${opened}")" || return 1
+  closed="$(seconds_since_midnight "${closed}")" || return 1
+  elapsed=$(( closed - opened ))
+  (( elapsed >= MINIMUM_WINDOW_SECONDS && elapsed <= MAXIMUM_WINDOW_SECONDS ))
+}
+
+seconds_since_midnight() {
+  local stamp="$1"
+  local hours
+  local minutes
+  local seconds
+
+  [[ "${stamp}" =~ ^([0-9]{2}):([0-9]{2}):([0-9]{2})$ ]] || return 1
+  hours="${BASH_REMATCH[1]}"
+  minutes="${BASH_REMATCH[2]}"
+  seconds="${BASH_REMATCH[3]}"
+  printf "%d" $((10#${hours} * 3600 + 10#${minutes} * 60 + 10#${seconds}))
+}
+
+# A wildcard listener would expose provisioning to every network the unit is on,
+# so require the socket to be bound to the access-point address itself.
+https_bound_to_access_point() {
+  local file="$1"
+
+  snapshot_section "${file}" sockets |
+    grep -qE "[[:space:]]${AP_ADDRESS}:${HTTPS_PORT}[[:space:]]+.*LISTEN"
+}
+
+# Any single surviving child used to satisfy this, which would hide a partially
+# started window.
+all_window_children_running() {
+  local file="$1"
+  local children
+  local pattern
+
+  children="$(snapshot_section "${file}" "window children")"
+  [[ -n "${children}" ]] || return 1
+  for pattern in \
+    '/hostapd' \
+    'udhcpd' \
+    'reinvoke-wifi-applyd' \
+    '/reinvoke-provisiond'; do
+    printf "%s\n" "${children}" | grep -q -- "${pattern}" || return 1
+  done
+  return 0
+}
+
+# A non-empty file proved nothing about the bootstrap contract.
+descriptor_is_complete() {
+  local file="$1"
+  local field
+
+  [[ -s "${file}" ]] || return 1
+  grep -q "\"url\": \"https://${AP_ADDRESS}:${HTTPS_PORT}\"" "${file}" ||
+    return 1
+  grep -qE '"expires_after_seconds": [0-9]+' "${file}" || return 1
+  for field in token certificate_sha256; do
+    grep -qE "\"${field}\": \"[A-Za-z0-9_-]{16,}\"" "${file}" || return 1
+  done
+  return 0
 }
 
 wait_for_token() {
@@ -256,9 +347,12 @@ main() {
     grep -q 'micmute-long' "${output_dir}/runtime-window.log" &&
       echo "PASS physical.micmute_long" ||
       echo "FAIL physical.micmute_long"
-    grep -q 'state=ENABLED' "${output_dir}/runtime-window.log" &&
-      echo "PASS access_point.enabled" ||
-      echo "INFO access_point.enabled_not_logged"
+    window_closed_cleanly "${output_dir}/runtime-window.log" &&
+      echo "PASS window.clean_close" ||
+      echo "FAIL window.clean_close"
+    window_ran_full_lifetime "${output_dir}/runtime-window.log" &&
+      echo "PASS window.full_lifetime" ||
+      echo "FAIL window.full_lifetime"
     forwarding_disabled "${output_dir}/active.txt" 2>/dev/null &&
       echo "PASS isolation.forwarding_off" ||
       echo "FAIL isolation.forwarding_off"
@@ -269,17 +363,17 @@ main() {
       "${output_dir}/baseline.txt" "${output_dir}/active.txt" &&
       echo "PASS isolation.wamp_rules_unchanged" ||
       echo "FAIL isolation.wamp_rules_unchanged"
-    grep -q 'inet addr:192.168.43.1' "${output_dir}/active.txt" \
+    grep -q "inet addr:${AP_ADDRESS}" "${output_dir}/active.txt" \
       2>/dev/null &&
       echo "PASS access_point.address" ||
       echo "FAIL access_point.address"
-    grep -q ':8443' "${output_dir}/active.txt" 2>/dev/null &&
+    https_bound_to_access_point "${output_dir}/active.txt" &&
       echo "PASS access_point.https_listener" ||
       echo "FAIL access_point.https_listener"
-    [[ -n "$(snapshot_section "${output_dir}/active.txt" "window children")" ]] &&
+    all_window_children_running "${output_dir}/active.txt" &&
       echo "PASS access_point.children_running" ||
       echo "FAIL access_point.children_running"
-    [[ -s "${output_dir}/descriptor.json" ]] &&
+    descriptor_is_complete "${output_dir}/descriptor.json" &&
       echo "PASS access_point.descriptor" ||
       echo "FAIL access_point.descriptor"
     grep -q '=== storage ===' "${output_dir}/active.txt" 2>/dev/null &&
@@ -292,7 +386,7 @@ main() {
     [[ -n "$(snapshot_section "${output_dir}/final.txt" "window children")" ]] &&
       echo "FAIL cleanup.children_stopped" ||
       echo "PASS cleanup.children_stopped"
-    grep -q 'inet addr:192.168.43.1' "${output_dir}/final.txt" 2>/dev/null &&
+    grep -q "inet addr:${AP_ADDRESS}" "${output_dir}/final.txt" 2>/dev/null &&
       echo "FAIL cleanup.address_removed" ||
       echo "PASS cleanup.address_removed"
     forwarding_disabled "${output_dir}/final.txt" 2>/dev/null &&
@@ -309,6 +403,8 @@ main() {
   local required_check
   for required_check in \
     physical.micmute_long \
+    window.clean_close \
+    window.full_lifetime \
     isolation.forwarding_off \
     isolation.wamp_blocked_from_ap \
     isolation.wamp_rules_unchanged \

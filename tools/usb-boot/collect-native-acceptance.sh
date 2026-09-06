@@ -164,11 +164,24 @@ main() {
   )"
   printf "%s\n" "${initial_mic_state}" \
     >"${output_dir}/microphone-state.initial"
+  # Always drive the microphone away from its initial state and back again.
+  # Asserting the state we already had would pass without the DSP doing
+  # anything, so each step must observe an actual transition.
+  if [[ "${initial_mic_state}" == "muted" ]]; then
+    toggled_mic_state="unmuted"
+    toggle_argument='[0]'
+    restore_argument='[1]'
+  else
+    toggled_mic_state="muted"
+    toggle_argument='[1]'
+    restore_argument='[0]'
+  fi
+
   if [[ "${initial_mic_state}" != "muted" &&
         "${initial_mic_state}" != "unmuted" ]]; then
     mic_mute_status=1
   elif node "${repo_root}/tools/control/wamp-call.mjs" \
-    com.harman.dsp.micMute --args '[1]' --timeout 8000 \
+    com.harman.dsp.micMute --args "${toggle_argument}" --timeout 8000 \
     >"${output_dir}/microphone-mute.json" 2>&1 &&
     grep -q '"type": "result"' "${output_dir}/microphone-mute.json"; then
     confirmed_mic_state="$(
@@ -177,7 +190,7 @@ main() {
         tr -d '\r' |
         tail -1
     )"
-    [[ "${confirmed_mic_state}" == "muted" ]] || mic_mute_status=1
+    [[ "${confirmed_mic_state}" == "${toggled_mic_state}" ]] || mic_mute_status=1
   else
     mic_mute_status=1
   fi
@@ -185,10 +198,9 @@ main() {
     >"${output_dir}/microphone-mute.status"
 
   mic_restore_status="${mic_mute_status}"
-  if ((mic_mute_status == 0)) &&
-    [[ "${initial_mic_state}" == "unmuted" ]]; then
+  if ((mic_mute_status == 0)); then
     if node "${repo_root}/tools/control/wamp-call.mjs" \
-      com.harman.dsp.micMute --args '[0]' --timeout 8000 \
+      com.harman.dsp.micMute --args "${restore_argument}" --timeout 8000 \
       >"${output_dir}/microphone-restore.json" 2>&1 &&
       grep -q '"type": "result"' \
         "${output_dir}/microphone-restore.json"; then
@@ -198,7 +210,7 @@ main() {
           tr -d '\r' |
           tail -1
       )"
-      [[ "${confirmed_mic_state}" == "unmuted" ]] ||
+      [[ "${confirmed_mic_state}" == "${initial_mic_state}" ]] ||
         mic_restore_status=1
     else
       mic_restore_status=1
@@ -217,6 +229,8 @@ main() {
       xargs --null sha256sum >SHA256SUMS
   )
   printf "Acceptance evidence: %s\n" "${output_dir}"
+  ((acceptance_command_status == 0)) ||
+    err "on-device acceptance command exited ${acceptance_command_status}"
   ((acceptance_status == 0)) ||
     err "on-device acceptance reported ${acceptance_status} failures"
   ((mcu_status == 0)) || err "MCU WAMP acceptance failed"
