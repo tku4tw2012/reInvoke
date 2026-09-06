@@ -87,15 +87,21 @@ console_session_alive() {
 
 # True when a loader other than this process is alive. Used to tell a genuine
 # concurrent run apart from a lock descriptor leaked into a daemonized child.
+# The pattern is overridable so tests can scan for a controlled marker instead
+# of depending on whether a real loader happens to be armed on this host.
 other_loader_running() {
+  local pattern="${LOADER_PROCESS_PATTERN:-boot-native-ram.sh}"
   local candidate
   local cmdline
 
   for candidate in /proc/[0-9]*; do
     candidate="${candidate#/proc/}"
     [[ "${candidate}" != "$$" && "${candidate}" != "${PPID}" ]] || continue
-    cmdline="$(tr '\0' ' ' <"/proc/${candidate}/cmdline" 2>/dev/null || true)"
-    [[ "${cmdline}" == *boot-native-ram.sh* ]] || continue
+    # A process can exit mid-scan, so suppress the redirection error too.
+    cmdline="$(
+      { tr '\0' ' ' <"/proc/${candidate}/cmdline"; } 2>/dev/null || true
+    )"
+    [[ "${cmdline}" == *"${pattern}"* ]] || continue
     return 0
   done
   return 1
