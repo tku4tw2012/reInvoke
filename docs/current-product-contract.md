@@ -43,8 +43,8 @@ and initramfs loaded through yellow-mode U-Boot.
 | Speaker safety | The owned MCU service initializes amplifier and DAC muted. It opens the physical path only while ALSA is `RUNNING`, the active-PCM lease thread matches ALSA's owner, and that thread resolves to the packaged player. Disconnect, silence, process exit, or shutdown reasserts mute. A 1.5-second holdoff prevents brief transport gaps from flapping the hardware mute gates. |
 | Microphone capture | The raw ALSA path is resolved: stereo 48 kHz `S32_LE`, 256-frame periods, and 16 periods. The speaker target starts no capture consumer. Opening/configuring raw PCM can overwrite an earlier DSP mute route; a future voice service must obey the capture-owner contract below. |
 | Microphone privacy | Mic-Mute means microphone privacy, not speaker mute. One process-lifetime MCU controller owns physical-button/API changes, RAM state, retry, and the red animation. On a configured capture path, attended speech/tap tests measured 99.975% nonzero unmuted and exactly 0/244,736 nonzero muted. This is a trusted software boundary, not an electrical disconnect or protection from arbitrary root-level raw-device access. |
-| Physical controls | Rotary volume, Mic-Mute short press, Action short press, Bluetooth long press, and Mic-Mute long press have owned actions. Action toggles Bluetooth play/pause. Bluetooth long reopens the bounded pairing window as a compatibility fallback. Mic-Mute long requests the isolated provisioning window when the image is booted in STA/uAP mode. Other decoded keys are published for compatibility. |
-| LEDs | Animation transport, `ledOff`, and the separate front/rear `ledSet` transport are recovered. Privacy red-ring on/off and the top-ring white pairing indication were observed. The owned `ledSet` path physically switched the lower-front diffuser between amber and white, exercised slow/fast blink and off, and controlled the rear light beside the Bluetooth button with on, slow/fast blink, and off. Mode `dim` produced no visible front or rear output even in a dark room. |
+| Physical controls | Rotary volume, Mic-Mute short press, Action short press, Bluetooth short/long press, and Mic-Mute long press have owned actions. Bluetooth short toggles the bounded pairing window; long retains the validated reopen fallback. Action toggles Bluetooth play/pause. Mic-Mute long requests the isolated provisioning window when the image is booted in STA/uAP mode. Other decoded keys are published for compatibility. |
+| LEDs | Animation transport, `ledOff`, and the separate front/rear `ledSet` transport are recovered. Privacy red-ring on/off and the top-ring white pairing indication were observed. The new state-driven rear pairing/connection policy is host-tested but has not been physically validated under reInvoke. |
 | Networking | SD8887 station and STA/uAP modes work in RAM. `reinvoke-networkd` owns DHCP, route, and resolver state after a root-controlled supplicant connects. The authenticated provisioning parser and privileged apply adapter work, but the final physical-button-to-AP orchestration is not yet a normal product path. |
 | Local control | Bonefish provides a legacy MessagePack WAMP compatibility bus. It is unauthenticated, so it is not a public network API. PID 1 accepts ports 9998 and 9999 from loopback and from configured operator allowlist entries, then drops the rest in the INPUT chain. The allowlist is operator-local configuration and is empty by default. Images before v13 carry no firewall and listen on every interface. |
 
@@ -134,13 +134,10 @@ channel states and sends:
 as one fixed command to MCU address `0x36`. It serializes state and transport,
 rolls back candidate state on I2C failure, and propagates that failure to the
 WAMP caller. The final zero bytes replace indeterminate donor stack residue.
-This contract is supported by static donor disassembly, host tests, and physical
-v17 validation. Front amber/white mutual exclusion, slow/fast blink, and off
-were observed on the lower-front diffuser. Rear on, slow/fast blink, and off
-were observed beside the Bluetooth button. Repeated isolated ten-second tests
-of front-white and rear `dim`, with room lights off, produced no visible output.
-These indicators are separate from the top-ring animation and microphone
-privacy policy.
+This contract is supported by static donor disassembly and host tests. The
+front/rear transport and the state-driven rear policy still require physical
+reInvoke validation. These indicators are separate from the top-ring animation
+and microphone privacy policy.
 
 The donor rear-indicator policy is state-driven:
 
@@ -157,12 +154,22 @@ the MCU's `com.harman.vui.keypress` publication to the topic `audio-ui`
 subscribes to, so this is recovered policy rather than a proven retail
 end-to-end path.
 
-reInvoke currently preserves its already-validated long-press pairing fallback
-and publishes the short press without a local action. Restoring the donor short
-toggle requires pairing-window cancellation plus authoritative Bluetooth-state
-observation, so that the rear indicator cannot remain blinking after timeout or
-show `off` while a peer is connected. The recovered `ledSet` transport is the
-foundation, not a substitute for that state machine.
+reInvoke implements the short press as `SIGUSR2`: it opens the configured window
+while idle and cancels Pairable/Discoverable while active. `SIGUSR1` retains the
+already-validated long-press reopen fallback. Signal handlers set only
+`sig_atomic_t` flags; D-Bus work stays in the bounded dispatch loop.
+
+The pairing agent tracks the allowlisted BlueZ `Device1.Connected` property at
+startup and through `PropertiesChanged`. It atomically publishes a mode-0600
+`/run/reinvoke/bluetooth-state` file: an active window publishes `pairing`
+regardless of connection, otherwise a connected peer publishes `connected`,
+and all other states publish `off`. The MCU service reads this bounded state,
+maps it to rear slow-blink/on/off, and deduplicates confirmed I2C writes. A
+missing or invalid producer state is logged and safely clears the rear
+indicator; the generation guard removes stale state when the producer exits.
+This controller never changes the top-ring player or microphone
+privacy state. The complete short-toggle and automatic rear indication remain
+hardware-validation items.
 
 ### Bluetooth and audio dependencies
 
@@ -175,7 +182,7 @@ The current media path does not use Harman's Bluedroid service, `audio-ui`, or
 | `bluealsa` 4.0.0 | Upstream plus reInvoke patches for the accepted Invoke playback behavior and SBC gap handling |
 | `bluealsa-aplay` 4.0.0 | Upstream plus reInvoke patches for the donor ALSA write contract, decoded-PCM buffering, short-stream draining, underrun recovery, and the active-PCM lease |
 | `bluealsa-cli` | Local control adapter used by the MCU service for authoritative per-peer volume and mute |
-| `hci-init` and pairing agent | Owned helpers; reset volatile controller state and permit only the configured peer and A2DP/AVRCP services during a bounded window |
+| `hci-init` and pairing agent | Owned helpers; reset volatile controller state, permit only the configured peer and A2DP/AVRCP services during a bounded window, track that peer's connection, and publish authoritative volatile Bluetooth state |
 
 The pairing address is operator-local configuration. Documentation, logs, and
 examples must use `<allowlisted-peer>` or the pattern
@@ -227,10 +234,10 @@ or a persistent NAND modification.
 |---|---|---|
 | Rotary clockwise/counter-clockwise | Coalesced BlueALSA volume change and compatibility publication | Live in both directions during A2DP playback |
 | Mic-Mute short press | Toggle DSP microphone privacy; red ring follows confirmed state | Occasional presses produce no MCU frame under both donor and owned services; software cannot synthesize a missing hardware event |
-| Bluetooth long press | Reopen the bounded allowlisted pairing window; start pairing indication | Intentional compatibility fallback; donor `audio-ui` instead assigns pairing/cancel to short press |
+| Bluetooth long press | Reopen the bounded allowlisted pairing window | Validated compatibility fallback; donor `audio-ui` defines no long-press action |
 | Action short press | Toggle Bluetooth play/pause and play the reviewed one-shot action animation | Owned reinterpretation; no assistant action is assigned |
 | Action long press | Compatibility publication only | Product action incomplete |
-| Bluetooth short press | Compatibility publication only | Donor pairing/cancel policy recovered; owned state/cancel integration remains |
+| Bluetooth short press | Open pairing while idle; cancel pairing while active | Donor-compatible policy is implemented and host-tested; physical toggle and rear indication remain unvalidated |
 | Mic-Mute long press | Request a bounded isolated provisioning window | Requires a STA/uAP boot; physical end-to-end validation remains |
 | Reset short/long press | Compatibility publication only in the RAM runtime | Runtime reset/factory-reset policy intentionally unimplemented |
 
@@ -296,11 +303,12 @@ accepted image is not a released persistent firmware.
 
 Remaining gates are:
 
-1. cold-boot the v21 candidate and confirm its donor-compatible 10 ms DSP
+1. cold-boot the v23 candidate and confirm its donor-compatible 10 ms DSP
    handshake, one-idle-poll command deferral, one-second post-boot settle, and
    readiness-gated dispatch under PID 1;
-2. confirm a replacement `bluetoothd` receives a powered controller before its
-   pairing agent starts;
+2. confirm Bluetooth short-press pair/cancel, retained long-press reopen, the
+   replacement-`bluetoothd` generation guard, and authoritative rear
+   pairing/connected/off transitions;
 3. confirm the WAMP allowlist closes ports 9998 and 9999 to non-allowlisted
    sources on a live network;
 4. complete one attended playback-continuity run on that image; and

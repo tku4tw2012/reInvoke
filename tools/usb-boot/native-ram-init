@@ -124,7 +124,8 @@ wait_service_stop() {
 
 run_with_bluetoothd_generation() {
   guard_child_pid_file="$1"
-  shift
+  guard_state_file="$2"
+  shift 2
   guard_expected_pid=""
   while ${BB} test -z "${guard_expected_pid}" &&
     ! ${BB} test -e /run/reinvoke/shutdown; do
@@ -135,12 +136,13 @@ run_with_bluetoothd_generation() {
   done
   ${BB} test -n "${guard_expected_pid}" || return 1
 
+  ${BB} rm -f "${guard_state_file}"
   "$@" &
   guard_child_pid="$!"
   echo "${guard_child_pid}" >"${guard_child_pid_file}"
   trap '${BB} kill "${guard_child_pid}" 2>/dev/null || true
     wait "${guard_child_pid}" 2>/dev/null || true
-    ${BB} rm -f "${guard_child_pid_file}"
+    ${BB} rm -f "${guard_child_pid_file}" "${guard_state_file}"
     exit 0' TERM INT
   while ${BB} kill -0 "${guard_child_pid}" 2>/dev/null; do
     ${BB} sleep 1
@@ -151,13 +153,13 @@ run_with_bluetoothd_generation() {
     if ! ${BB} test "${guard_current_pid}" = "${guard_expected_pid}"; then
       ${BB} kill "${guard_child_pid}" 2>/dev/null || true
       wait "${guard_child_pid}" 2>/dev/null || true
-      ${BB} rm -f "${guard_child_pid_file}"
+      ${BB} rm -f "${guard_child_pid_file}" "${guard_state_file}"
       return 1
     fi
   done
   wait "${guard_child_pid}"
   guard_child_status="$?"
-  ${BB} rm -f "${guard_child_pid_file}"
+  ${BB} rm -f "${guard_child_pid_file}" "${guard_state_file}"
   return "${guard_child_status}"
 }
 
@@ -280,6 +282,7 @@ start_autonomous_runtime() {
       --playback-owner-executable "${runtime_bin}/bluealsa-aplay" \
       --pairing-agent-pid /run/reinvoke/pairing-agent.pid \
       --pairing-agent-executable "${runtime_bin}/bluez-pairing-agent" \
+      --bluetooth-state /run/reinvoke/bluetooth-state \
       --provisioning-socket /run/reinvoke/provision-window.sock \
       --dsp-mic-control-socket /run/reinvoke/dsp-mic-control.sock \
       --lights-dir "${runtime_root}/share/lights"
@@ -363,9 +366,11 @@ start_autonomous_runtime() {
       supervise pairing-agent-guard \
         run_with_bluetoothd_generation \
         /run/reinvoke/pairing-agent.pid \
+        /run/reinvoke/bluetooth-state \
         ${BB} env DBUS_SYSTEM_BUS_ADDRESS="${runtime_bus}" \
         "${runtime_bin}/bluez-pairing-agent" \
-        "${PEER_ADDRESS}" "${PAIR_SECONDS}" "${PAIR_SECONDS}"
+        "${PEER_ADDRESS}" "${PAIR_SECONDS}" "${PAIR_SECONDS}" \
+        /run/reinvoke/bluetooth-state
     ) &
     echo "$!" >/run/reinvoke/bluetooth-bootstrap.pid
     log "Bluetooth runtime bootstrap started"

@@ -38,39 +38,69 @@ func TestPairingControllerRejectsWrongExecutable(t *testing.T) {
 		pidPath:    pidPath,
 		executable: "/not-this-test",
 	}
-	if err := controller.Apply(
-		context.Background(),
-		inputEvent{Name: "bluetooth-long"},
-	); err == nil {
-		t.Fatal("wrong executable was accepted")
+	for _, name := range []string{"bluetooth", "bluetooth-long"} {
+		if err := controller.Apply(
+			context.Background(),
+			inputEvent{Name: name},
+		); err == nil {
+			t.Fatalf("%s: wrong executable was accepted", name)
+		}
 	}
 }
 
-func TestPairingControllerSignalsVerifiedAgent(t *testing.T) {
-	var signaledPID int
-	var signaledSignal syscall.Signal
+func TestPairingControllerRejectsInvalidPIDForBothSignals(t *testing.T) {
 	controller := pairingSignalController{
 		pidPath:    "/run/reinvoke/pairing-agent.pid",
 		executable: "/opt/reinvoke/bin/bluez-pairing-agent",
 		readFile: func(string) ([]byte, error) {
-			return []byte("42\n"), nil
-		},
-		readlink: func(string) (string, error) {
-			return "/opt/reinvoke/bin/bluez-pairing-agent", nil
-		},
-		signal: func(pid int, signal syscall.Signal) error {
-			signaledPID = pid
-			signaledSignal = signal
-			return nil
+			return []byte("1\n"), nil
 		},
 	}
-	if err := controller.Apply(
-		context.Background(),
-		inputEvent{Name: "bluetooth-long"},
-	); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"bluetooth", "bluetooth-long"} {
+		if err := controller.Apply(
+			context.Background(),
+			inputEvent{Name: name},
+		); err == nil {
+			t.Fatalf("%s: invalid PID was accepted", name)
+		}
 	}
-	if signaledPID != 42 || signaledSignal != syscall.SIGUSR1 {
-		t.Fatalf("signal = (%d, %v)", signaledPID, signaledSignal)
+}
+
+func TestPairingControllerSignalsVerifiedAgent(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		signal syscall.Signal
+	}{
+		{name: "bluetooth", signal: syscall.SIGUSR2},
+		{name: "bluetooth-long", signal: syscall.SIGUSR1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var signaledPID int
+			var signaledSignal syscall.Signal
+			controller := pairingSignalController{
+				pidPath:    "/run/reinvoke/pairing-agent.pid",
+				executable: "/opt/reinvoke/bin/bluez-pairing-agent",
+				readFile: func(string) ([]byte, error) {
+					return []byte("42\n"), nil
+				},
+				readlink: func(string) (string, error) {
+					return "/opt/reinvoke/bin/bluez-pairing-agent", nil
+				},
+				signal: func(pid int, signal syscall.Signal) error {
+					signaledPID = pid
+					signaledSignal = signal
+					return nil
+				},
+			}
+			if err := controller.Apply(
+				context.Background(),
+				inputEvent{Name: test.name},
+			); err != nil {
+				t.Fatal(err)
+			}
+			if signaledPID != 42 || signaledSignal != test.signal {
+				t.Fatalf("signal = (%d, %v)", signaledPID, signaledSignal)
+			}
+		})
 	}
 }

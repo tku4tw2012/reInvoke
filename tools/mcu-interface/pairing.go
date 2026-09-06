@@ -25,7 +25,13 @@ func (controller pairingSignalController) Apply(
 	ctx context.Context,
 	event inputEvent,
 ) error {
-	if event.Name != "bluetooth-long" {
+	var requestedSignal syscall.Signal
+	switch event.Name {
+	case "bluetooth":
+		requestedSignal = syscall.SIGUSR2
+	case "bluetooth-long":
+		requestedSignal = syscall.SIGUSR1
+	default:
 		return nil
 	}
 	select {
@@ -60,7 +66,7 @@ func (controller pairingSignalController) Apply(
 	if actual != controller.executable {
 		return errors.New("pairing agent PID belongs to another executable")
 	}
-	if err := signal(pid, syscall.SIGUSR1); err != nil {
+	if err := signal(pid, requestedSignal); err != nil {
 		return fmt.Errorf("signal pairing agent: %w", err)
 	}
 	return nil
