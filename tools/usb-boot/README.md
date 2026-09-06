@@ -250,6 +250,29 @@ the operator for the yellow-mode power cycle. The armed loader injects as soon
 as it sees the new U-Boot banner and prompt; no second authorization message is
 required.
 
+The loader writes its current state to `--status-file`, which defaults to
+`${XDG_RUNTIME_DIR:-/tmp}/reinvoke-loader-status`. The file always holds one
+timestamped line, so a single `cat` answers whether the yellow-mode window was
+caught without watching a long-running log:
+
+```bash
+cat "${XDG_RUNTIME_DIR:-/tmp}/reinvoke-loader-status"
+```
+
+States progress `staged`, `waiting-for-uboot`, `uboot-acquired`,
+`kernel-loading`, `booting`, `adb-ready`, or `failed` with a reason. While the
+loader is armed it refreshes `waiting-for-uboot` every fifteen seconds, so a
+stale timestamp means the loader died rather than that the window was missed.
+An operator therefore never has to guess after a reset: `uboot-acquired` proves
+the prompt was caught, and `adb-ready` proves the candidate booted.
+
+Children are spawned with the lock descriptor closed. The ADB fork-server
+daemonizes and would otherwise inherit that descriptor and hold the lock for the
+life of the host session, which made every later loader run fail even though no
+loader was running. When the lock is held but no loader process exists, the
+loader now reports that stale-descriptor case explicitly instead of claiming a
+concurrent run.
+
 For historical donor-comparison work only, ADB can start the old minimum
 diagnostic graph:
 

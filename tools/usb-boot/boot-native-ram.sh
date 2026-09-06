@@ -12,6 +12,25 @@ readonly MAX_INITRAMFS_BYTES=$((0x04400000))
 # The open-source console relay can split the prompt suffix after reconnecting.
 readonly UBOOT_PROMPT_PREFIX=$'\rMV88D'
 readonly UBOOT_BANNER="U-Boot 2013.04"
+readonly PROMPT_HEARTBEAT_SECONDS=15
+
+# Single-line loader progress so an operator never has to guess whether the
+# yellow-mode window was caught. Every state change is timestamped and written
+# atomically, which keeps the file readable while the loader is mid-update.
+STATUS_FILE=""
+
+set_status() {
+  local state="$1"
+  local detail="${2:-}"
+  local line
+
+  printf -v line "%s %s%s" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${state}" \
+    "${detail:+ ${detail}}"
+  printf "STATUS %s\n" "${line#* }"
+  [[ -n "${STATUS_FILE}" ]] || return 0
+  printf "%s\n" "${line}" >"${STATUS_FILE}.tmp" &&
+    mv -f "${STATUS_FILE}.tmp" "${STATUS_FILE}" || true
+}
 
 usage() {
   local exit_code="${1:-0}"
@@ -29,6 +48,8 @@ Options:
   --adb-server-port PORT    ADB server port (default: 5037)
   --adb-serial SERIAL       Expected ADB serial
   --wifi-mode MODE          sta or sta-uap (default: sta)
+  --status-file PATH        Machine-readable loader progress file
+                            (default: ${XDG_RUNTIME_DIR:-/tmp}/reinvoke-loader-status)
   --wait-for-prompt         Wait indefinitely for yellow-mode U-Boot
   --prepare-only            Validate and stage without sending commands
   --help                    Show this help
@@ -41,7 +62,24 @@ EOF
 
 err() {
   printf "ERROR: %s\n" "$1" >&2
+  set_status failed "$1" >/dev/null 2>&1 || true
   exit 1
+}
+
+# True when a loader other than this process is alive. Used to tell a genuine
+# concurrent run apart from a lock descriptor leaked into a daemonized child.
+other_loader_running() {
+  local candidate
+  local cmdline
+
+  for candidate in /proc/[0-9]*; do
+    candidate="${candidate#/proc/}"
+    [[ "${candidate}" != "$$" && "${candidate}" != "${PPID}" ]] || continue
+    cmdline="$(tr '\0' ' ' <"/proc/${candidate}/cmdline" 2>/dev/null || true)"
+    [[ "${cmdline}" == *boot-native-ram.sh* ]] || continue
+    return 0
+  done
+  return 1
 }
 
 require_command() {
@@ -148,6 +186,9 @@ wait_for_uboot_prompt() {
   fi
 
   printf "Waiting for yellow-mode U-Boot; no timeout is applied\n"
+  set_status waiting-for-uboot "reset into yellow mode now"
+  local wait_start="${SECONDS}"
+  local next_heartbeat="${PROMPT_HEARTBEAT_SECONDS}"
   while true; do
     if [[ -f "${console_log}" &&
           -p "${console_fifo}" ]] &&
@@ -156,6 +197,8 @@ wait_for_uboot_prompt() {
         console_contains_since \
           "${console_log}" "${log_offset}" "${UBOOT_PROMPT_PREFIX}"; then
         printf "U-Boot prompt is ready\n"
+        set_status uboot-acquired \
+          "after $((SECONDS - wait_start)) seconds; injection starting"
         return
       fi
       if ((require_new_banner == 1)) &&
@@ -167,9 +210,16 @@ wait_for_uboot_prompt() {
         if console_contains_since \
           "${console_log}" "${banner_end}" "${UBOOT_PROMPT_PREFIX}"; then
           printf "U-Boot prompt is ready\n"
+          set_status uboot-acquired \
+            "after $((SECONDS - wait_start)) seconds; injection starting"
           return
         fi
       fi
+    fi
+    if ((SECONDS - wait_start >= next_heartbeat)); then
+      set_status waiting-for-uboot \
+        "still armed after $((SECONDS - wait_start)) seconds"
+      next_heartbeat=$((SECONDS - wait_start + PROMPT_HEARTBEAT_SECONDS))
     fi
     sleep 0.2
   done
@@ -293,6 +343,11 @@ main() {
         wifi_mode="$2"
         shift 2
         ;;
+      --status-file)
+        [[ -n "${2:-}" ]] || err "--status-file requires a value"
+        STATUS_FILE="$2"
+        shift 2
+        ;;
       --wait-for-prompt)
         wait_for_prompt=1
         shift
@@ -309,6 +364,8 @@ main() {
         ;;
     esac
   done
+
+  : "${STATUS_FILE:=${XDG_RUNTIME_DIR:-/tmp}/reinvoke-loader-status}"
 
   [[ -f "${kernel_path}" ]] || err "kernel not found: ${kernel_path}"
   [[ -n "${kernel_sha256}" ]] || err "--kernel-sha256 is required"
@@ -331,10 +388,20 @@ main() {
     require_command "${command_name}"
   done
   loader_lock="${XDG_RUNTIME_DIR:-/tmp}/reinvoke-native-loader-$(id -u).lock"
-  exec 8>"${loader_lock}"
-  flock -n 8 ||
+  exec 8>>"${loader_lock}"
+  if ! flock -n 8; then
+    local holder=""
+    holder="$(head -n 1 "${loader_lock}" 2>/dev/null || true)"
+    if [[ -n "${holder}" ]] && kill -0 "${holder}" 2>/dev/null; then
+      err "another native RAM loader is already staging, waiting, or injecting (PID ${holder})"
+    fi
+    if ! other_loader_running; then
+      err "loader lock ${loader_lock} is held by a stale inherited descriptor and no loader is running; a daemonized child such as the adb fork-server still owns it, so stop that process and retry"
+    fi
     err "another native RAM loader is already staging, waiting, or injecting"
-
+  fi
+  : >"${loader_lock}"
+  printf "%s\n" "$$" >&8
   validate_sha256 "${kernel_sha256}" "${kernel_path}" "kernel"
   validate_sha256 "${initramfs_sha256}" "${initramfs_path}" "initramfs"
 
@@ -354,8 +421,10 @@ main() {
     "$(stat --format="%s" "${kernel_path}")" "${initramfs_size}"
   printf "Kernel SHA-256: %s\n" "${kernel_sha256}"
   printf "Initramfs SHA-256: %s\n" "${initramfs_sha256}"
+  set_status staged "kernel ${kernel_sha256:0:12} initramfs ${initramfs_sha256:0:12}"
 
   if ((prepare_only == 1)); then
+    set_status prepared "staging complete; no commands sent"
     return 0
   fi
 
@@ -372,6 +441,7 @@ main() {
     err "18d1:0d02 is already present; enter U-Boot before loading"
 
   console_offset="$(stat --dereference --format="%s" "${console_log}")"
+  set_status kernel-loading "usbload 0x81"
   printf "usbload 0x81 %s\r" "${KERNEL_STAGING_ADDRESS}" >"${console_fifo}"
   wait_for_console_text \
     "${console_log}" "${console_offset}" "do_usbload, loading image 81" \
@@ -388,20 +458,25 @@ main() {
     bootargs="${bootargs} reinvoke.wifi_mode=sta-uap"
   fi
   printf "Sending initramfs load and volatile boot command batch\n"
+  set_status booting "usbload 0x82 then bootm"
   printf "usbload 0x82 %s\rset bootargs %s\rbootm %s\r" \
     "${INITRAMFS_ADDRESS}" "${bootargs}" "${KERNEL_STAGING_ADDRESS}" \
     >"${console_fifo}"
 
   wait_for_usb_gadget "${usb_timeout}"
+  # The adb fork-server daemonizes and would otherwise inherit the singleton
+  # lock descriptor, holding it for the life of the host session and blocking
+  # every later loader run. Close it explicitly for each adb child.
   timeout "${usb_timeout}" \
-    adb -P "${adb_server_port}" -s "${adb_serial}" wait-for-device
+    adb -P "${adb_server_port}" -s "${adb_serial}" wait-for-device 8>&-
   adb_state="$(
-    adb -P "${adb_server_port}" -s "${adb_serial}" get-state
+    adb -P "${adb_server_port}" -s "${adb_serial}" get-state 8>&-
   )"
   [[ "${adb_state}" == "device" ]] ||
     err "expected ADB device did not become ready"
   printf "ADB %s is ready on server port %s\n" \
     "${adb_serial}" "${adb_server_port}"
+  set_status adb-ready "${adb_serial} on port ${adb_server_port}"
 }
 
 main "$@"

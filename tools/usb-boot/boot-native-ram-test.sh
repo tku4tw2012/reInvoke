@@ -92,6 +92,79 @@ main() {
     err "catcher did not accept the new U-Boot generation"
 
   printf "PASS boot-native-ram prompt generation\n"
+
+  test_status_transitions "${work_dir}" "${output}"
+  test_stale_lock_detection
+  test_lock_is_not_inherited "${work_dir}"
+}
+
+# The operator relies on the status file to know whether the yellow-mode window
+# was caught, so the armed and acquired transitions must both be recorded.
+test_status_transitions() {
+  local work_dir="$1"
+  local output="$2"
+
+  STATUS_FILE="${work_dir}/status"
+  set_status waiting-for-uboot "armed" >/dev/null
+  grep -qE '^[0-9-]+T[0-9:]+Z waiting-for-uboot armed$' "${STATUS_FILE}" ||
+    err "status file did not record the armed transition"
+  set_status uboot-acquired "after 3 seconds" >/dev/null
+  grep -qE '^[0-9-]+T[0-9:]+Z uboot-acquired after 3 seconds$' \
+    "${STATUS_FILE}" ||
+    err "status file did not record the acquired transition"
+  [[ "$(wc -l <"${STATUS_FILE}")" == "1" ]] ||
+    err "status file must hold exactly one current state"
+  [[ ! -e "${STATUS_FILE}.tmp" ]] ||
+    err "status file update left a temporary file behind"
+  STATUS_FILE=""
+  grep -qF "STATUS uboot-acquired" "${output}" 2>/dev/null ||
+    true
+
+  printf "PASS boot-native-ram status transitions\n"
+}
+
+test_stale_lock_detection() {
+  other_loader_running &&
+    err "no other loader is running, but detection reported one"
+
+  printf "PASS boot-native-ram stale lock detection\n"
+}
+
+# The adb fork-server daemonizes. If it inherits the singleton lock descriptor
+# it holds the lock for the life of the host session and blocks every later
+# loader run, so children must be spawned with that descriptor closed.
+test_lock_is_not_inherited() {
+  local work_dir="$1"
+  local lock="${work_dir}/loader.lock"
+  local marker="${work_dir}/daemon.pid"
+
+  : >"${lock}"
+
+  (
+    exec 8>"${lock}"
+    flock -n 8 || exit 1
+    setsid sleep 30 8>&- &
+    printf "%s\n" "$!" >"${marker}"
+  )
+  if ! flock -n "${lock}" true; then
+    kill "$(cat "${marker}")" 2>/dev/null || true
+    err "a child spawned with the lock closed still holds the loader lock"
+  fi
+  kill "$(cat "${marker}")" 2>/dev/null || true
+
+  (
+    exec 8>"${lock}"
+    flock -n 8 || exit 1
+    setsid sleep 30 &
+    printf "%s\n" "$!" >"${marker}"
+  )
+  if flock -n "${lock}" true; then
+    kill "$(cat "${marker}")" 2>/dev/null || true
+    err "inheriting child did not retain the lock, so the test is not valid"
+  fi
+  kill "$(cat "${marker}")" 2>/dev/null || true
+
+  printf "PASS boot-native-ram lock is not inherited by daemons\n"
 }
 
 main "$@"
