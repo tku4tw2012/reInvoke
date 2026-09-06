@@ -240,6 +240,22 @@ summary counts published events rather than subscription confirmations, so a
 window with no presses reports `button_publications=0` instead of appearing to
 observe one.
 
+For the final STA/uAP gate, start the provisioning collector after ADB returns:
+
+```bash
+tools/usb-boot/collect-provisioning-window.sh \
+  --output-dir \
+    "${REINVOKE_ARCHIVE}/hardware/usb-attempts/<timestamp>/provisioning"
+```
+
+It first proves the STA/uAP boot argument, `p2p0`, the window daemon, and its
+control socket are ready. The operator then performs one Mic-Mute long press.
+The collector waits for the HTTPS descriptor, captures the isolated AP address,
+listeners, forwarding state, child processes, storage mounts, and logs, then
+waits for the bounded five-minute window to remove its processes and runtime
+directory. It never reads AP credentials or submits station credentials. On a
+station-only boot it fails before asking for a physical press.
+
 After a capture session reports the live `MV88DE3100|>` prompt, stage and boot
 a reviewed native pair with elapsed progress and a bounded USB criterion:
 
