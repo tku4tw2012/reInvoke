@@ -1111,6 +1111,14 @@ absent here. The NDK path uses `HOSTCFLAGS=-fcommon` for host DTC compatibility.
 The kernel builder now gates the NDK linker, `lzop`, `mkimage`, patches 2–4,
 and the complete final source manifest without falsely claiming patch 1.
 
+A complete fresh `audio-sd8887` build was then run through that hardened path.
+It reproduced the accepted kernel
+`d29a007535794d74d8ed900da366f02631a9a981356caea707e6b163f6d07746`, DTB
+`4dd7a39aa8c8d23ee824724e3f633ec16bb3a0f28c46cb096f0552dc28737dbb`,
+and all four module digests exactly. The third independent deployable set is
+retained under
+`build/artifacts/reinvoke-kernel-v14-9-provenance-20260906/`.
+
 Reproducing an owned service binary requires the checked-in `build.sh` for that
 service rather than hand-assembled flags. It pins `-trimpath`, `-buildvcs=false`,
 `-mod=readonly`, `-ldflags="-s -w"`, and the archived Go 1.18.1 toolchain.

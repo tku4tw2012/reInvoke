@@ -294,6 +294,11 @@ two builds. The owned Go services reproduce from the archived Go 1.18.1
 toolchain and checked-in builders. The kernel image and installed module tree
 reproduce with the archived Android NDK r10e GCC 4.9 toolchain.
 
+The kernel was rebuilt a third time after hardening those provenance gates. The
+fresh build reproduced `d29a0075...`, the supplied DTB, and all four module
+digests exactly; it is retained as
+`reinvoke-kernel-v14-9-provenance-20260906`.
+
 That is not yet a complete clean-room rebuild claim for every C binary. The
 current BlueZ, BlueALSA, iptables, and helper artifacts are pinned and unchanged
 across the accepted candidates, but some builders still depend on an
