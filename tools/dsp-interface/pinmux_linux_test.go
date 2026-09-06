@@ -173,3 +173,48 @@ func TestConfigureDSPPinmuxWaitsForSharedLock(t *testing.T) {
 		t.Fatal("pinmux update did not continue after lock release")
 	}
 }
+
+// A shutdown signal cancels the process context and fails the download, which
+// is exactly when message mode has to be restored. The restore therefore runs
+// on a detached context, and exec must not refuse it.
+func TestDetachedPinmuxContextSurvivesCancelledParent(t *testing.T) {
+	parent, cancelParent := context.WithCancel(context.Background())
+	cancelParent()
+	if parent.Err() == nil {
+		t.Fatal("parent context should already be cancelled")
+	}
+
+	detached, cancelDetached := detachedPinmuxContext()
+	defer cancelDetached()
+	if err := detached.Err(); err != nil {
+		t.Fatalf("detached context must not inherit cancellation: %v", err)
+	}
+	deadline, ok := detached.Deadline()
+	if !ok {
+		t.Fatal("detached context must remain bounded by a deadline")
+	}
+	if time.Until(deadline) <= 0 {
+		t.Fatal("detached context deadline must be in the future")
+	}
+}
+
+// The real defect was that a cancelled context made exec.CommandContext return
+// before running devmem, so the register kept the download-mode value.
+func TestConfigureDSPPinmuxRestoresAfterParentCancellation(t *testing.T) {
+	runner := &recordingPinmuxRunner{value: 0x0038D249}
+	parent, cancelParent := context.WithCancel(context.Background())
+	cancelParent()
+
+	if _, err := configureDSPPinmux(
+		parent,
+		"/bin/busybox",
+		filepath.Join(t.TempDir(), "pinmux.lock"),
+		true,
+		runner.run,
+	); err != nil {
+		t.Fatalf("restore under a cancelled parent: %v", err)
+	}
+	if runner.value != 0x0138D249 {
+		t.Fatalf("expected message mode 0x0138D249, got 0x%08X", runner.value)
+	}
+}
