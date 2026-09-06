@@ -207,9 +207,16 @@ The old gate digest referred to a binary built by a toolchain that was never
 recorded, so it could not be reproduced or re-verified by anyone. On explicit
 user decision, the gate was repinned to the reproducible build.
 
-What this buys: every binary in the runtime is now rebuildable from committed
-source plus archived, checksummed, GPG-verified upstream inputs. Nothing in the
-stack depends on an artifact of unknown origin.
+What this buys: every binary in the runtime is content-addressed, and the
+runtime composition is byte-reproducible from those pinned artifacts. The owned
+Go services and selected C helpers have repeatable checked-in builders.
+
+What it does not yet buy is a clean-room rebuild of every C binary solely from
+retained inputs. Some C builders depend on a host ARM sysroot, built static
+libraries, or host tools whose complete package set is not archived and
+checksum-gated. BlueZ, BlueALSA, iptables, and helper artifacts remain pinned
+and unchanged across the accepted candidates, but artifact identity is stronger
+than their current source-to-binary provenance.
 
 What it costs: the `ae60d800...` value was an original attestation, and it is
 now superseded. It is preserved in `metadata/P1-049.json` under
@@ -219,7 +226,7 @@ Toolchain of record: `arm-linux-gnueabihf-gcc` 11.4.0, flags
 `-std=c11 -O2 -Wall -Wextra -Werror -static`. The rebuilt binary and its build
 notes are archived under `build/pairing-agent-rebuild-20260904/`.
 
-## Iteration 7: fully reproducible runtime, v10
+## Iteration 7: reproducible runtime composition, v10
 
 With the pairing-agent pin resolved, the whole stack was repackaged from
 verified inputs. Recorded as [P1-051](../../../metadata/P1-051.json).

@@ -878,14 +878,50 @@ writes back a computed value:
 | `0xF7E80404` | `SWPORTA_DDR` | `bic 0x8`, pin 3 input | `0x00006B34` | yes |
 
 The kernel's GPIO driver already produces donor-equivalent values, so the two
-missing writes are not the difference. The donor does retry each I2C transfer up
-to three times with twenty millisecond gaps, which the owned service does not.
+missing writes are not the difference. The donor retries transient I2C failures
+up to three times with twenty millisecond gaps. The owned service already
+retries five times with the same gap, so retry policy is not a missing behavior.
 
-Project history also settles whether the owned service ever worked here. On the
-v8 image it recorded rotary events in both directions, two distinct
-microphone-mute events, and a Bluetooth long press. Physical input is therefore
-not an unimplemented protocol in the owned code; it worked on this unit and
-stopped.
+Project tracking states that the v8 image recorded rotary events in both
+directions, two distinct microphone-mute events, and a Bluetooth long press.
+The retained v8 runtime does contain the owned Go MCU binary, but a direct
+per-event v8 evidence bundle has not been located; the nearby detailed rotary
+log is from the donor C++ service. Treat the v8 statement as attended secondary
+evidence rather than the primary proof previously claimed.
+
+### Live donor A/B isolates hardware initialization
+
+The donor MCU service was staged entirely in RAM with its archived Boost
+libraries and isolated donor libc while the owned MCU supervisor was frozen. No
+persistent storage was mounted or written.
+
+Starting the donor on the same RC4 kernel and hardware changed GPIO3 from low
+to high. The first run omitted its required router arguments and crashed after
+hardware initialization, yet the line had already released. A second run with
+`127.0.0.1 9999` stayed online, completed the startup exchange, and kept the
+line high. Handing the donor-initialized hardware back to the owned service
+kept it high for twenty consecutive samples.
+
+The owned startup transaction order was then replayed exactly from a clean-high
+state. It sent `0x01`, `0x23`, drained `0x01`, `0x06`, and `0x23`, sent
+`0x25` and `0x26`, drained `0x26`, and ended high. Its zero-filled `0x24`
+heartbeat and `0x09` indicator-off frame also left the line high. Runtime
+protocol does not reassert the interrupt once hardware initialization has
+released it.
+
+The remaining difference was introduced by v13 commit `8ccec28`: the original
+donor-exact expander direction write `0x03=0x00` was replaced with a partial
+mask that preserves `0xe1`, and DSP reset output bit `0x01` was removed from
+the MCU sequence. A live `0xe1` to `0x00` toggle after initialization does not
+change GPIO3, so the effect is a cold-initialization or latched-state property,
+not a direct level coupling.
+
+The next candidate restores donor-exact expander directions through the shared
+interprocess lock. It deliberately does not restore the donor's output-bit-0
+write: reInvoke assigns that bit exclusively to `dsp-interface`, and a review
+correctly found that an MCU restart could otherwise truncate the DSP's
+multi-update reset pulse. A regression test holds reset low throughout MCU
+initialization.
 
 ### D-Bus restart recovery
 
@@ -894,8 +930,10 @@ Killing the session bus cycled the whole BlueZ stack rather than stranding it.
 The bus, `bluetoothd`, `bluealsa`, and the pairing agent all came back with new
 process IDs, `bluetoothd` re-registered both A2DP endpoints, the playback
 process stayed supervised, and the pairing agent reopened its bounded window.
-The MCU and DSP services were unaffected, since neither uses the session bus,
-and both still answered `getmcustatus` and `getVer` afterwards.
+The MCU and DSP service processes were unaffected, since neither uses the
+session bus. DSP `getVer` still completed afterwards. `getmcustatus` also
+returned, but because it serves a compile-time constant that result proves only
+WAMP process liveness, not MCU hardware health.
 
 Two checks in that pass needed correcting before they meant anything. A probe
 for a powered adapter reported zero because `hciconfig` is absent from this
@@ -921,13 +959,12 @@ counts stayed between four and thirteen after about twenty service restarts, so
 the churn above leaked neither memory nor descriptors.
 
 ### Candidate discipline
-No further candidate is warranted. The only commit after the `pre-nand-rc2` pin
-is documentation, and no image-affecting path differs, so rebuilding would
-produce the same artifact under a new name. The provenance chain is closed:
-`build.sh` at `HEAD` reproduces
-`4a7882d4f463b6a6adf84f38e868faf1b2e17a0a0303d0c6c2246ecf07ef4c95`, that binary
-is the one inside the `pre-nand-rc2` runtime bundle, and it is the binary the
-gated device is running.
+
+RC3 and RC4 were warranted by image-affecting MCU changes: bounded recovery
+retry and frame diagnostics. The next candidate is warranted by a controlled
+live donor A/B and an identified v13 regression, not by another timing
+hypothesis. Kernel, DSP, and C runtime artifacts remain unchanged; only the
+owned Go MCU binary will be rebuilt with its pinned Go 1.18.1 builder.
 
 Reproducing an owned service binary requires the checked-in `build.sh` for that
 service rather than hand-assembled flags. It pins `-trimpath`, `-buildvcs=false`,
