@@ -12,23 +12,6 @@ import (
 	"time"
 )
 
-func pollDeferredCommand(
-	t *testing.T,
-	link *link,
-) (*frame, bool, error) {
-	t.Helper()
-	received, worked, err := link.Poll()
-	if err != nil || worked || received != nil {
-		t.Fatalf(
-			"deferral poll: received=%v worked=%t error=%v",
-			received,
-			worked,
-			err,
-		)
-	}
-	return link.Poll()
-}
-
 type orderedGPIO struct {
 	*memoryGPIO
 	operations *[]string
@@ -264,7 +247,7 @@ func TestTransmitUsesObservedHardwareHandshakeTiming(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	event, worked, err := pollDeferredCommand(t, link)
+	event, worked, err := link.Poll()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +314,7 @@ func TestTransmitRetriesRejectedResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	event, worked, err := pollDeferredCommand(t, link)
+	event, worked, err := link.Poll()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +359,7 @@ func TestTrackedCommandReportsResponseFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, worked, pollErr := pollDeferredCommand(t, link)
+	_, worked, pollErr := link.Poll()
 	if !worked || !errors.Is(pollErr, errCommandResponse) {
 		t.Fatalf("worked=%t error=%v, want command response failure", worked, pollErr)
 	}
@@ -408,7 +391,7 @@ func TestTransmitPreservesUnrelatedValidFrame(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, worked, err := pollDeferredCommand(t, link)
+	response, worked, err := link.Poll()
 	if err != nil || !worked || response == nil || response.ID != messageIDControl {
 		t.Fatalf("worked=%t response=%#v error=%v", worked, response, err)
 	}
@@ -453,7 +436,7 @@ func TestTransmitRetriesReceiveAfterRejectedResponse(t *testing.T) {
 	if err := link.Enqueue(messageIDControl, []byte{0x04, 0x1e}); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := pollDeferredCommand(t, link)
+	_, _, err := link.Poll()
 	if err != nil {
 		t.Fatalf("transmit failed despite DSP becoming ready again: %v", err)
 	}

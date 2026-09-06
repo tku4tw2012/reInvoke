@@ -318,6 +318,7 @@ start_autonomous_runtime() {
       -boot-state /run/reinvoke/dsp-booted \
       -microphone-state /run/reinvoke/microphone-state \
       -mic-control-socket /run/reinvoke/dsp-mic-control.sock \
+      -devmem "${BB}" \
       ${dsp_state_flag} \
       -router-host 127.0.0.1 -router-port 9999
   fi

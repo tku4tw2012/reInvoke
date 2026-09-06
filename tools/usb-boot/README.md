@@ -206,18 +206,21 @@ rotated backup. If syslog is unavailable, services use the bounded kernel log.
 
 ## Collect autonomous acceptance evidence
 
-The packaged `/usr/sbin/reinvoke-acceptance` command checks runtime hashes,
-NAND isolation, raw MTD-node removal, radio/audio devices, service PID files,
-zombies, and fatal kernel messages. Collect a complete host-side evidence
-bundle after each boot:
+The packaged `/usr/sbin/reinvoke-acceptance` command is structural smoke only:
+runtime hashes, NAND isolation, raw MTD-node removal, radio/audio devices,
+service PID files, zombies, and fatal kernel messages. It is not release
+acceptance by itself. Collect the complete host-side evidence bundle after each
+boot:
 
 ```bash
 tools/usb-boot/collect-native-acceptance.sh \
   --output-dir "${REINVOKE_ARCHIVE}/hardware/usb-attempts/<timestamp>/acceptance"
 ```
 
-The collector also calls the owned MCU and DSP WAMP surfaces and retains all
-service logs. It exits nonzero after evidence collection if any check fails.
+The collector also calls MCU status, requires DSP `getVer` and version event
+`25688`, verifies Mic-Mute and restores the initial privacy state, then retains
+post-probe service logs. It exits nonzero after evidence collection if any check
+fails.
 
 After a capture session reports the live `MV88DE3100|>` prompt, stage and boot
 a reviewed native pair with elapsed progress and a bounded USB criterion:
@@ -239,6 +242,13 @@ yellow-mode U-Boot appears, without imposing an operator timeout. Use
 `--prepare-only` to validate and stage without touching the live console. While
 `capture-attempt.sh` owns the USB interface, pass its isolated ADB server port
 to the loader. The default capture port is 5038.
+
+One host-wide loader lock covers staging, waiting, and injection. A second
+loader fails before it can replace shared `81_IMAGE`/`82_IMAGE` or send commands.
+Operationally, start a fresh USB session, verify exactly one loader, then ask
+the operator for the yellow-mode power cycle. The armed loader injects as soon
+as it sees the new U-Boot banner and prompt; no second authorization message is
+required.
 
 For historical donor-comparison work only, ADB can start the old minimum
 diagnostic graph:

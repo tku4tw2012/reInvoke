@@ -132,4 +132,5 @@ else
 fi
 
 echo "SUMMARY failures=${failures}"
+echo "INFO scope=structural full_gate=collect-native-acceptance.sh"
 exit "${failures}"

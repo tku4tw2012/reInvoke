@@ -245,22 +245,22 @@ The donor's nominal microsecond sleeps do not last a microsecond on the target's
 old kernel. A successful syscall trace measured 8.6-9.4 ms, so the owned
 handshake and release waits are 10 ms.
 
-The missing behavior was scheduling, not a longer GPIO delay. A newly queued
-command claimed in the pump's current iteration returned an all-zero response.
-Increasing waits through 100 ms, adding response-turnaround delays, and sleeping
-after claim did not fix detached execution; 120 ms could miss boot events. The
-donor and owned clients both succeeded when attached and failed under the
-detached launcher. Deferring a newly observed command for one complete
-200-millisecond idle pump cycle, then running the unchanged 10 ms GPIO sequence,
-made detached `getVer` and Mic-Mute reliable. Each queued command is deferred
-exactly once and remains at the front of the queue.
+The message path also requires GPIO5's SoC pin function to be restored after the
+manual image-download chip-select is released. Leaving register `0xF7EA8008` at
+`0x0038D249` allowed the image download and unsolicited boot event but made host
+commands read all-zero response headers. Setting only GPIO5's
+`0x01000000` function bit produced `0x0138D249`, preserved the MCU GPIO3 bit,
+and made detached `getVer` and Mic-Mute immediately reliable.
 
-After `EVENT_DSP_BOOTUP`, the owned service waits one second before restoring
-persisted microphone mute and publishing service readiness. A mute acknowledged
-immediately after the boot event was later overwritten during DSP
-initialization. External WAMP and subscribed-state commands wait on the same
-readiness barrier; the internal startup mute is the only command allowed to
-bypass it.
+The owned service now read-modify-writes only that bit: clear before each image
+download, set after GPIO5 release, and verify readback. This is repeated for
+every supervised generation. Timing, inter-byte pacing, response-turnaround,
+thread-affinity, and idle-cycle experiments did not fix the bad pinmux and were
+removed.
+
+External WAMP and subscribed-state commands wait until the private microphone
+socket and persisted privacy restoration are ready. The internal startup mute
+is the only command allowed to bypass that readiness barrier.
 
 Opening ALSA capture can itself reconfigure the DSP route after startup. A mute
 issued after capture `hw_params` produced an all-zero stream; an earlier startup
@@ -277,11 +277,12 @@ The binary additionally shells out to `/system/bin/toolbox devmem` through
 | `0xF7E80400` | `0x00000A08` | GPIO data |
 | `0xF7E80404` | `0x00000F28` | GPIO direction |
 
-The reInvoke initramfs has no `/system/bin/toolbox`, so these calls fail
-silently, yet the DSP still booted and answered on hardware. The register
-writes are therefore not required when the device tree already selects the
-right pin functions, which is an artifact-backed conclusion about this
-platform, not a general one.
+The original reInvoke implementation omitted these writes because image
+download and the asynchronous boot event still worked. That conclusion was
+incorrect: the message path remained in the wrong GPIO5 pin function and all
+host-command responses were zero. The owned service invokes BusyBox `devmem`
+directly and preserves unrelated register bits rather than copying the donor's
+whole-register constants.
 
 ## Reset line
 
@@ -435,8 +436,9 @@ The recovered requirements and their current disposition are:
    speaker.
 6. The expander read-modify-write on `0x20` register `0x01` bit 0 for reset.
 
-Deliberately not required: the `devmem` shell-outs, the Breakpad minidump
-writer that targets `/data/crash`, and the memory-dump path.
+Deliberately not required: the Breakpad minidump writer that targets
+`/data/crash` and the memory-dump path. GPIO5 pinmux switching is required and
+is implemented without a shell.
 
 The owned service intentionally does not copy `call_mcu_unmute`. DSP startup
 restores required microphone mute before readiness but never opens the speaker
