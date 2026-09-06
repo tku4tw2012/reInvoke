@@ -372,6 +372,7 @@ func TestRenderPrivateAPConfigurations(t *testing.T) {
 	t.Parallel()
 	config := windowConfig{
 		runtimeDirectory: "/run/reinvoke/provision-window",
+		hostapdDirectory: "/run/reinvoke-hostapd",
 		interfaceName:    "p2p0",
 		network:          testNetworkPlan(t),
 	}
@@ -386,7 +387,7 @@ func TestRenderPrivateAPConfigurations(t *testing.T) {
 		"ssid=installation-ap",
 		"wpa=2",
 		"wpa_passphrase=installation-secret",
-		"ctrl_interface=/run/reinvoke/provision-window/hostapd-control",
+		"ctrl_interface=/run/reinvoke-hostapd/control",
 	} {
 		if !strings.Contains(hostapd, expected) {
 			t.Fatalf("hostapd config does not contain %q", expected)
@@ -615,6 +616,9 @@ func TestSuccessfulWindowCleanupPreservesStationState(t *testing.T) {
 	var lifecycleLockHeld bool
 	config := windowConfig{
 		runtimeDirectory: runtimeDirectory,
+		hostapdDirectory: filepath.Join(t.TempDir(), "hostapd"),
+		hostapdUID:       os.Getuid(),
+		hostapdGID:       os.Getgid(),
 		interfaceName:    "p2p0",
 		stationInterface: "mlan0",
 		network:          testNetworkPlan(t),
@@ -655,6 +659,8 @@ func TestSuccessfulWindowCleanupPreservesStationState(t *testing.T) {
 			string,
 			process,
 			time.Duration,
+			int,
+			int,
 		) error {
 			return nil
 		},
@@ -788,6 +794,7 @@ func TestHostapdLoaderCommandIsFixed(t *testing.T) {
 	t.Parallel()
 	config := windowConfig{
 		runtimeDirectory: "/run/reinvoke/provision-window",
+		hostapdDirectory: "/run/reinvoke-hostapd",
 		hostapdPath:      "/trusted/hostapd",
 		hostapdLoader:    "/trusted/loader",
 		hostapdLibraries: "/trusted/lib",
@@ -798,7 +805,7 @@ func TestHostapdLoaderCommandIsFixed(t *testing.T) {
 	}
 	actual := strings.Join(arguments, " ")
 	expected := "--library-path /trusted/lib /trusted/hostapd " +
-		"/run/reinvoke/provision-window/hostapd.conf"
+		"/run/reinvoke-hostapd/hostapd.conf"
 	if actual != expected {
 		t.Fatalf("arguments = %q, want %q", actual, expected)
 	}
@@ -903,5 +910,73 @@ func TestValidateRootPathsAcceptRootGroupWrite(t *testing.T) {
 	}
 	if err := validateRootExecutable(executable); err == nil {
 		t.Fatal("non-executable file must be rejected")
+	}
+}
+
+// The donor hostapd hard-codes setuid(1008)/setgid(1008) and drops root before
+// reading its configuration, so its directory must exist, be 0700, and be owned
+// by that uid rather than by root.
+func TestPrepareHostapdDirectoryOwnsAndRestricts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hostapd")
+	if err := os.MkdirAll(filepath.Join(path, "stale"), 0755); err != nil {
+		t.Fatalf("seed stale directory: %v", err)
+	}
+	removed := false
+	removeAll := func(target string) error {
+		removed = true
+		return os.RemoveAll(target)
+	}
+	if err := prepareHostapdDirectory(
+		path,
+		os.Getuid(),
+		os.Getgid(),
+		removeAll,
+	); err != nil {
+		t.Fatalf("prepare hostapd directory: %v", err)
+	}
+	if !removed {
+		t.Fatal("stale hostapd directory was not cleared")
+	}
+	if _, err := os.Stat(filepath.Join(path, "stale")); !os.IsNotExist(err) {
+		t.Fatal("stale contents survived preparation")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat hostapd directory: %v", err)
+	}
+	if info.Mode().Perm() != 0700 {
+		t.Fatalf("mode = %#o, want 0700", info.Mode().Perm())
+	}
+	uid, err := fileOwnerUID(info)
+	if err != nil {
+		t.Fatalf("owner uid: %v", err)
+	}
+	if uid != uint32(os.Getuid()) {
+		t.Fatalf("uid = %d, want %d", uid, os.Getuid())
+	}
+	if err := prepareHostapdDirectory(
+		"relative/path",
+		os.Getuid(),
+		os.Getgid(),
+		removeAll,
+	); err == nil {
+		t.Fatal("relative hostapd directory must be rejected")
+	}
+}
+
+func TestHostapdPathsStayOutsideTheWindowRuntime(t *testing.T) {
+	config := windowConfig{
+		runtimeDirectory: "/run/reinvoke/provision-window",
+		hostapdDirectory: "/run/reinvoke-hostapd",
+	}
+	paths := pathsFor(config)
+	for _, path := range []string{paths.hostapdConfig, paths.hostapdControl} {
+		relative, err := filepath.Rel(config.runtimeDirectory, path)
+		if err != nil {
+			t.Fatalf("relate %s: %v", path, err)
+		}
+		if !strings.HasPrefix(relative, "..") {
+			t.Fatalf("%s must not sit inside the root-only window runtime", path)
+		}
 	}
 }

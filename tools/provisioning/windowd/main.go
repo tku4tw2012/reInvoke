@@ -31,6 +31,10 @@ import (
 const (
 	defaultSocketPath       = "/run/reinvoke/provision-window.sock"
 	defaultRuntimeDirectory = "/run/reinvoke/provision-window"
+	// The donor hostapd hard-codes setuid(1008)/setgid(1008).
+	defaultHostapdDirectory = "/run/reinvoke-hostapd"
+	defaultHostapdUID       = 1008
+	defaultHostapdGID       = 1008
 	defaultInterface        = "p2p0"
 	defaultStationInterface = "mlan0"
 	defaultAddress          = "192.168.43.1/24"
@@ -86,6 +90,9 @@ type networkPlan struct {
 
 type windowConfig struct {
 	runtimeDirectory string
+	hostapdDirectory string
+	hostapdUID       int
+	hostapdGID       int
 	interfaceName    string
 	stationInterface string
 	network          networkPlan
@@ -157,7 +164,7 @@ type windowManager struct {
 	loadCredentials   func() (apCredentials, error)
 	disableForwarding func() error
 	waitApply         func(context.Context, string, process, time.Duration) error
-	waitAP            func(context.Context, string, string, process, time.Duration) error
+	waitAP            func(context.Context, string, string, process, time.Duration, int, int) error
 	waitDescriptor    func(context.Context, string, process, time.Duration) error
 	recoverApply      func(string, uint32, time.Duration) error
 	removeAll         func(string) error
@@ -354,7 +361,10 @@ func (d *daemon) handleConnection(
 		d.logger.Printf("provisioning window starting")
 		if err := d.manager.Run(ctx, duration); err != nil &&
 			!errors.Is(err, context.Canceled) {
-			d.logger.Printf("provisioning window closed after an error")
+			// Every error returned by Run is a sanitized constant, so the
+			// detail is safe to log and is the only way to diagnose a
+			// window that fails on hardware.
+			d.logger.Printf("provisioning window closed after an error: %v", err)
 			return
 		}
 		d.logger.Printf("provisioning window closed")
@@ -390,8 +400,8 @@ func (d *daemon) Serve(ctx context.Context, listener *net.UnixListener) error {
 func pathsFor(config windowConfig) runtimePaths {
 	bootstrap := filepath.Join(config.runtimeDirectory, "bootstrap")
 	return runtimePaths{
-		hostapdConfig:  filepath.Join(config.runtimeDirectory, "hostapd.conf"),
-		hostapdControl: filepath.Join(config.runtimeDirectory, "hostapd-control"),
+		hostapdConfig:  filepath.Join(config.hostapdDirectory, "hostapd.conf"),
+		hostapdControl: filepath.Join(config.hostapdDirectory, "control"),
 		dhcpConfig:     filepath.Join(config.runtimeDirectory, "udhcpd.conf"),
 		dhcpLease:      filepath.Join(config.runtimeDirectory, "udhcpd.leases"),
 		dhcpPID:        filepath.Join(config.runtimeDirectory, "udhcpd.pid"),
@@ -412,6 +422,18 @@ func (m *windowManager) Run(parent context.Context, lifetime time.Duration) (
 	paths := pathsFor(m.config)
 	if err := prepareRuntimeDirectory(
 		m.config.runtimeDirectory,
+		m.removeAll,
+	); err != nil {
+		return err
+	}
+	// The donor hostapd hard-codes setgid(1008)/setuid(1008) and drops root
+	// before it reads its configuration, so its files cannot live under the
+	// root-only window runtime. Give it a dedicated directory it owns instead
+	// of relaxing /run/reinvoke.
+	if err := prepareHostapdDirectory(
+		m.config.hostapdDirectory,
+		m.config.hostapdUID,
+		m.config.hostapdGID,
 		m.removeAll,
 	); err != nil {
 		return err
@@ -441,6 +463,13 @@ func (m *windowManager) Run(parent context.Context, lifetime time.Duration) (
 	if err := os.Mkdir(paths.hostapdControl, 0700); err != nil {
 		return errors.New("create hostapd control directory")
 	}
+	if err := os.Chown(
+		paths.hostapdControl,
+		m.config.hostapdUID,
+		m.config.hostapdGID,
+	); err != nil {
+		return errors.New("own hostapd control directory")
+	}
 	if err := os.Mkdir(paths.bootstrap, 0700); err != nil {
 		return errors.New("create bootstrap directory")
 	}
@@ -449,6 +478,15 @@ func (m *windowManager) Run(parent context.Context, lifetime time.Duration) (
 		renderHostapdConfig(m.config, paths, credentials),
 	); err != nil {
 		return errors.New("write hostapd configuration")
+	}
+	// hostapd reads this after dropping to its own uid; 0600 keeps the
+	// passphrase unreadable by anyone else.
+	if err := os.Chown(
+		paths.hostapdConfig,
+		m.config.hostapdUID,
+		m.config.hostapdGID,
+	); err != nil {
+		return errors.New("own hostapd configuration")
 	}
 	if err := writePrivateFile(
 		paths.dhcpConfig,
@@ -559,6 +597,8 @@ func (m *windowManager) Run(parent context.Context, lifetime time.Duration) (
 		m.config.interfaceName,
 		hostapdProcess,
 		m.config.readyTimeout,
+		m.config.hostapdUID,
+		m.config.hostapdGID,
 	); err != nil {
 		return errors.New("access point did not become ready")
 	}
@@ -709,6 +749,10 @@ func (m *windowManager) cleanup(
 	if err := m.removeAll(m.config.runtimeDirectory); err != nil &&
 		firstError == nil {
 		firstError = errors.New("remove window runtime")
+	}
+	if err := m.removeAll(m.config.hostapdDirectory); err != nil &&
+		firstError == nil {
+		firstError = errors.New("remove hostapd runtime")
 	}
 	return firstError
 }
@@ -877,6 +921,35 @@ func loadCredentialFiles(
 	return apCredentials{SSID: ssid, PSK: psk}, nil
 }
 
+// prepareHostapdDirectory creates the directory hostapd owns after it drops
+// privileges. It is deliberately outside the root-only window runtime so that
+// /run/reinvoke can stay 0700.
+func prepareHostapdDirectory(
+	path string,
+	uid int,
+	gid int,
+	removeAll func(string) error,
+) error {
+	if !filepath.IsAbs(path) {
+		return errors.New("hostapd directory must be absolute")
+	}
+	if err := removeAll(path); err != nil {
+		return errors.New("clear hostapd directory")
+	}
+	if err := os.Mkdir(path, 0700); err != nil {
+		return errors.New("create hostapd directory")
+	}
+	if err := os.Chown(path, uid, gid); err != nil {
+		_ = removeAll(path)
+		return errors.New("own hostapd directory")
+	}
+	if err := os.Chmod(path, 0700); err != nil {
+		_ = removeAll(path)
+		return errors.New("restrict hostapd directory")
+	}
+	return nil
+}
+
 func writePrivateFile(path string, content []byte) error {
 	file, err := os.OpenFile(
 		path,
@@ -948,6 +1021,8 @@ func waitForHostapd(
 	_ string,
 	child process,
 	timeout time.Duration,
+	hostapdUID int,
+	hostapdGID int,
 ) error {
 	localPath := filepath.Join(filepath.Dir(filepath.Dir(path)), ".hostapd-query")
 	return waitForCondition(ctx, child, timeout, func() bool {
@@ -960,6 +1035,12 @@ func waitForHostapd(
 		}
 		defer connection.Close()
 		defer os.Remove(localPath)
+		// hostapd replies as its own unprivileged uid, and a unixgram reply
+		// needs write access to this socket, so root ownership would silently
+		// drop every response.
+		if err := os.Chown(localPath, hostapdUID, hostapdGID); err != nil {
+			return false
+		}
 		_ = connection.SetDeadline(time.Now().Add(250 * time.Millisecond))
 		if _, err := connection.Write([]byte("STATUS")); err != nil {
 			return false
@@ -1377,6 +1458,9 @@ func run() error {
 		httpPort         int
 		readyTimeout     time.Duration
 		applyTimeout     time.Duration
+		hostapdDirectory string
+		hostapdUID       int
+		hostapdGID       int
 	)
 	flag.StringVar(&socketPath, "socket", defaultSocketPath, "root-only MCU control socket")
 	flag.StringVar(
@@ -1384,6 +1468,24 @@ func run() error {
 		"runtime-dir",
 		defaultRuntimeDirectory,
 		"root-only RAM window directory",
+	)
+	flag.StringVar(
+		&hostapdDirectory,
+		"hostapd-dir",
+		defaultHostapdDirectory,
+		"RAM directory owned by the hostapd uid",
+	)
+	flag.IntVar(
+		&hostapdUID,
+		"hostapd-uid",
+		defaultHostapdUID,
+		"uid the trusted hostapd drops to",
+	)
+	flag.IntVar(
+		&hostapdGID,
+		"hostapd-gid",
+		defaultHostapdGID,
+		"gid the trusted hostapd drops to",
 	)
 	flag.StringVar(&interfaceName, "interface", defaultInterface, "AP interface")
 	flag.StringVar(
@@ -1482,6 +1584,35 @@ func run() error {
 	); err != nil {
 		return errors.New("validate runtime parent")
 	}
+	if hostapdUID <= 0 || hostapdGID <= 0 {
+		return errors.New("hostapd uid and gid must be unprivileged")
+	}
+	if !filepath.IsAbs(hostapdDirectory) ||
+		filepath.Clean(hostapdDirectory) != hostapdDirectory ||
+		hostapdDirectory == "/" {
+		return errors.New("hostapd directory must be a clean absolute path")
+	}
+	if hostapdRelative, hostapdErr := filepath.Rel(
+		cleanRuntime,
+		hostapdDirectory,
+	); hostapdErr != nil ||
+		hostapdRelative == "." ||
+		(hostapdRelative != ".." &&
+			!strings.HasPrefix(
+				hostapdRelative,
+				".."+string(filepath.Separator),
+			)) {
+		// hostapd's directory is reachable by an unprivileged uid, so it must
+		// never sit inside the root-only window runtime.
+		return errors.New("hostapd directory must be outside the window runtime")
+	}
+	if err := validateRootDirectory(
+		filepath.Dir(hostapdDirectory),
+		false,
+		true,
+	); err != nil {
+		return errors.New("validate hostapd parent")
+	}
 	stationParent := filepath.Dir(stationConfig)
 	if filepath.Dir(applySocket) != stationParent ||
 		filepath.Dir(stationControl) != stationParent ||
@@ -1549,6 +1680,9 @@ func run() error {
 
 	config := windowConfig{
 		runtimeDirectory: runtimeDirectory,
+		hostapdDirectory: hostapdDirectory,
+		hostapdUID:       hostapdUID,
+		hostapdGID:       hostapdGID,
 		interfaceName:    interfaceName,
 		stationInterface: stationInterface,
 		network:          network,

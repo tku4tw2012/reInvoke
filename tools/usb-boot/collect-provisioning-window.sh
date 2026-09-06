@@ -63,7 +63,54 @@ snapshot() {
       $BB grep -E ":8080|:8443" || true
     echo "=== storage ==="
     $BB mount | $BB grep -Ei "mtd|ubi|yaffs|nand" || true
+    echo "=== wamp firewall ==="
+    /opt/reinvoke/lib/ld-linux-armhf.so.3 \
+      --library-path /opt/reinvoke/lib \
+      /opt/reinvoke/bin/iptables -S INPUT 2>/dev/null || true
   ' >"${output_dir}/${phase}.txt"
+}
+
+# Prints one "=== name ===" section of a snapshot file.
+snapshot_section() {
+  local file="$1"
+  local name="$2"
+
+  awk -v want="=== ${name} ===" '
+    $0 == want { capture = 1; next }
+    /^=== / { capture = 0 }
+    capture { print }
+  ' "${file}" 2>/dev/null
+}
+
+# The provisioning window must never widen the WAMP control-plane firewall.
+# Access-point clients live in 192.168.43.0/24, which no ACCEPT rule covers, so
+# each WAMP port must keep an unconditional DROP behind the loopback and
+# operator ACCEPT rules.
+wamp_firewall_isolated() {
+  local file="$1"
+  local rules
+  local port
+
+  rules="$(snapshot_section "${file}" "wamp firewall")"
+  [[ -n "${rules}" ]] || return 1
+  for port in 9998 9999; do
+    printf "%s\n" "${rules}" |
+      grep -qE -- "-A INPUT -p tcp -m tcp --dport ${port} -j DROP$" ||
+      return 1
+    printf "%s\n" "${rules}" |
+      grep -E -- "--dport ${port} -j ACCEPT$" |
+      grep -qvE -- "(-i lo|-s 192\.168\.4\.27/32) " &&
+      return 1
+  done
+  return 0
+}
+
+wamp_firewall_unchanged() {
+  local baseline="$1"
+  local other="$2"
+
+  diff <(snapshot_section "${baseline}" "wamp firewall") \
+    <(snapshot_section "${other}" "wamp firewall") >/dev/null
 }
 
 wait_for_token() {
@@ -208,6 +255,13 @@ main() {
     forwarding_disabled "${output_dir}/active.txt" 2>/dev/null &&
       echo "PASS isolation.forwarding_off" ||
       echo "FAIL isolation.forwarding_off"
+    wamp_firewall_isolated "${output_dir}/active.txt" &&
+      echo "PASS isolation.wamp_blocked_from_ap" ||
+      echo "FAIL isolation.wamp_blocked_from_ap"
+    wamp_firewall_unchanged \
+      "${output_dir}/baseline.txt" "${output_dir}/active.txt" &&
+      echo "PASS isolation.wamp_rules_unchanged" ||
+      echo "FAIL isolation.wamp_rules_unchanged"
     grep -q 'inet addr:192.168.43.1' "${output_dir}/active.txt" \
       2>/dev/null &&
       echo "PASS access_point.address" ||
@@ -224,8 +278,7 @@ main() {
       echo "PASS access_point.descriptor" ||
       echo "FAIL access_point.descriptor"
     grep -q '=== storage ===' "${output_dir}/active.txt" 2>/dev/null &&
-      ! awk '/=== storage ===/{found=1; next} found && NF{exit 1}' \
-        "${output_dir}/active.txt" &&
+      [[ -z "$(snapshot_section "${output_dir}/active.txt" storage)" ]] &&
       echo "PASS storage.no_nand_mount" ||
       echo "FAIL storage.no_nand_mount"
     grep -q '/run/reinvoke/provision-window' "${output_dir}/final.txt" &&
@@ -242,7 +295,34 @@ main() {
     forwarding_disabled "${output_dir}/final.txt" 2>/dev/null &&
       echo "PASS cleanup.forwarding_off" ||
       echo "FAIL cleanup.forwarding_off"
+    wamp_firewall_unchanged \
+      "${output_dir}/baseline.txt" "${output_dir}/final.txt" &&
+      echo "PASS cleanup.wamp_rules_restored" ||
+      echo "FAIL cleanup.wamp_rules_restored"
   } >"${output_dir}/SUMMARY"
+
+  # A check that never prints would otherwise pass silently, so require the
+  # full expected set to be present before trusting the result.
+  local required_check
+  for required_check in \
+    physical.micmute_long \
+    isolation.forwarding_off \
+    isolation.wamp_blocked_from_ap \
+    isolation.wamp_rules_unchanged \
+    access_point.address \
+    access_point.https_listener \
+    access_point.children_running \
+    access_point.descriptor \
+    storage.no_nand_mount \
+    cleanup.runtime_removed \
+    cleanup.children_stopped \
+    cleanup.address_removed \
+    cleanup.forwarding_off \
+    cleanup.wamp_rules_restored; do
+    grep -qE "^(PASS|FAIL) ${required_check}$" "${output_dir}/SUMMARY" || {
+      printf "FAIL missing.%s\n" "${required_check}" >>"${output_dir}/SUMMARY"
+    }
+  done
 
   if grep -q '^FAIL ' "${output_dir}/SUMMARY"; then
     status=1
