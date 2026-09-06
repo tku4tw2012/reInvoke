@@ -332,9 +332,15 @@ Remaining gates are:
 2. complete one attended playback-continuity run; and
 3. finish physical-button orchestration for an isolated provisioning window.
 
-`pre-nand-rc6` is the current fully gated candidate. `pre-nand-rc8` is the
-current experimental candidate. Its destination is the remaining STA/uAP
-provisioning-window gate, not another exploratory boot. RC7 booted and passed
+`pre-nand-rc6` is the current fully gated candidate. `pre-nand-rc9` is the
+current experimental candidate and is the first build whose STA/uAP
+provisioning window actually works. Its destination is one physical Mic-Mute
+long press to record the gate, not another exploratory boot.
+
+Holding Mic-Mute opens the provisioning window. This is a reInvoke decision,
+not donor behaviour: the original speaker was provisioned from the vendor phone
+application, and reInvoke has none. The top action button publishes
+`action-long` and is deliberately ignored. RC7 booted and passed
 cold-boot acceptance, but its first-ever `sta-uap` boot exposed a latent defect:
 `reinvoke-provision-windowd` crash-looped on `hostapd library path is not
 root-controlled`, because `/opt/reinvoke` directories ship `root:root 0775` and

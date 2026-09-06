@@ -10,7 +10,7 @@ readonly EXPECTED_SOURCE_SHA256="08a8f96a5c476a08ba19441d83637e606f27f442d56c268
 readonly EXPECTED_PROVISIOND_SHA256="5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07"
 readonly EXPECTED_WIFI_APPLYD_SHA256="6697df000d130a6461d1e3f57b6ebe8b1ad1742984a94250bc1e243dca097610"
 readonly EXPECTED_NETWORKD_SHA256="27a9af2eb94a857eeb72551512a67dd6782405bd9a0cfb51b3d09aa14cfba6b7"
-readonly EXPECTED_WINDOWD_SHA256="e1c4059d649b6713214618a513d071ebdba52d8c0ab775ecc8cf5d29cadf3fa8"
+readonly EXPECTED_WINDOWD_SHA256="e9b509779eafc4366e46da30e7928ac3ca41f85e27a1f8f3be8c45bcd20cc207"
 readonly EXPECTED_MODULE_TREE_MANIFEST_SHA256="06d7a5f5bc43c3b3d869b9b962e1ef70d7f3c3fc15d934c8dc020332b57b940a"
 readonly MAX_NATIVE_INITRAMFS_BYTES=$((60 * 1024 * 1024))
 
@@ -297,6 +297,9 @@ main() {
   trap "${cleanup_command}" EXIT
   rootfs_dir="${work_dir}/rootfs"
   archive_listing="${work_dir}/archive.list"
+  # The staging root becomes the archive's "." entry, so it must not inherit
+  # the caller's umask.
+  umask 022
   mkdir -p "${rootfs_dir}" "$(dirname "${output_path}")"
 
   gzip --decompress --stdout "${source_initramfs}" |
@@ -353,8 +356,11 @@ main() {
     mkdir -p "${rootfs_dir}/opt/reinvoke"
     cp -a "${runtime_bundle}/." "${rootfs_dir}/opt/reinvoke/"
     rm -rf "${rootfs_dir}/home/galois"
-    # cp -a carries the staging host's umask into the image, which both trips
-    # the root-controlled path checks and makes the archive umask-dependent.
+    # The bundle's directories were created by mkdir -p under the building
+    # host's umask and cp -a preserves them. Left alone they trip windowd's
+    # root-controlled path checks and make the image digest umask-dependent.
+    # Directories extracted from the donor archive keep their recorded modes
+    # and are deliberately not touched here.
     find "${rootfs_dir}/opt/reinvoke" -type d -exec chmod 0755 {} +
   fi
 
