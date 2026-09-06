@@ -139,7 +139,7 @@ argument, which defaults to `/run/reinvoke/bluetooth-state`. The HCI initializer
 resets the controller and removes volatile keys before a clean reconstruction.
 
 The pairing-agent digest gated by `build-native-runtime.sh` is
-`7e9cb4c8d4047d3151e9ac2ed5ee34759af3a19a1dd2e014c3c3f134f33a20bd`.
+`0e2e17763fb9f9212aee30226d2399f2ca7a4a93f7fb275c0fd6e7af6fe54a57`.
 Two consecutive builds produced byte-identical static ARM binaries. The builder
 pins the compiler and strip tool, but the built D-Bus static library and ARM
 sysroot are not yet independently checksum-gated, so this is not a complete
