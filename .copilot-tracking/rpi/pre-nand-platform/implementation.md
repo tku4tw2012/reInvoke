@@ -1094,6 +1094,23 @@ disconnect changed it to `off`. Review then found that an unrelated
 checks the interface array and was re-tested through target `RemoveDevice`,
 persistent bonded pairing, connect, and disconnect.
 
+### Kernel source reconstruction audit
+
+The hardware kernel's extracted source was rebuilt independently from the
+retained 521 MB original archive. Applying patches 2–4 and hashing every file
+produced
+`6ae65ab02757536de83e489b4db967bd39e0969d40ae5bcce7fb478cadd1b42f`,
+exactly matching all 42,321 files in the source tree used for the accepted
+kernel.
+
+Applying patch 1 first produced a different tree. That is expected and exposed
+a mistaken provenance assumption: `0001-modern-host-toolchain.patch` belongs
+to the GCC 9/11 experimental controls, not the NDK GCC 4.9 hardware path. It
+adds target ARM `uaccess` changes and compiler headers that are intentionally
+absent here. The NDK path uses `HOSTCFLAGS=-fcommon` for host DTC compatibility.
+The kernel builder now gates the NDK linker, `lzop`, `mkimage`, patches 2–4,
+and the complete final source manifest without falsely claiming patch 1.
+
 Reproducing an owned service binary requires the checked-in `build.sh` for that
 service rather than hand-assembled flags. It pins `-trimpath`, `-buildvcs=false`,
 `-mod=readonly`, `-ldflags="-s -w"`, and the archived Go 1.18.1 toolchain.

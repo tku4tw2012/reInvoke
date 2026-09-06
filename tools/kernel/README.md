@@ -83,14 +83,21 @@ tools/kernel/build-native-kernel.sh \
 The `baseline`, `spi-gpio`, and `audio` profiles all start from
 `berlin2cdp_amp_defconfig`, use the explicit NDK BFD linker, checksum-gate the
 source archive, complete patched source-tree manifest, compiler, linker, NDK
-archive, compatibility and reproducibility patches, `lzop`, `mkimage`, and
-supplied DTB, and build modules with `-fno-pic -fno-pie`.
+archive, SPI and reproducibility patches, `lzop`, `mkimage`, and supplied DTB,
+and build modules with `-fno-pic -fno-pie`.
 
 The source-tree gate prevents a modified extracted tree from silently producing
 a candidate. The builder still consumes that retained extracted tree rather
 than reconstructing it from the source archive and applying every patch in a
 new work directory, so the input is content-locked but the clean-room extraction
 step remains future work.
+
+The GCC 9/11 compatibility patch `0001-modern-host-toolchain.patch` is
+deliberately absent from this NDK GCC 4.9 path. The hardware kernel uses
+`HOSTCFLAGS=-fcommon` for its host-side DTC instead, and applying patch 1 would
+also change target ARM `uaccess` code. A scratch reconstruction from the
+original 521 MB source archive plus patches 2–4 produced the exact 42,321-file
+source manifest above, with no remaining file differences.
 
 The separate `audio-sd8887` profile disables the recovery-compatible SD8801
 module and builds the disclosed native SD8887 STA/uAP pair. It is not the
