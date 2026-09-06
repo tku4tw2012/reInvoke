@@ -794,6 +794,35 @@ thousands of interrupts from the drain loop, and `gpio3/active_low` is `0`, so
 the polarity is not inverted. The kernel is not losing edges; none are being
 produced.
 
+The SoC registers were read directly to rule out every software layer between
+the pad and the service. `gpiochip0` reports base `0`, so the replacement DTB's
+`base-gpio` property is applied and `gpio3` really is GPIO 3 rather than an
+offset pin from the old recovery kernel. The DesignWare port-A registers show a
+correct configuration:
+
+| Register | Address | Value | Meaning for pin 3 |
+|---|---|---|---|
+| `SWPORTA_DDR` | `0xF7E80404` | `0x00006B34` | bit clear, so the pin is an input |
+| `SWPORTA_CTL` | `0xF7E80408` | `0x00000000` | software mode rather than hardware mode |
+| `INTEN` | `0xF7E80430` | `0x00000008` | interrupt enabled |
+| `INTMASK` | `0xF7E80434` | `0x00000000` | not masked |
+| `INTTYPE_LEVEL` | `0xF7E80438` | `0x00000008` | edge sensitive |
+| `INT_POLARITY` | `0xF7E8043C` | `0x00000000` | falling edge |
+| `DEBOUNCE` | `0xF7E80448` | `0x00000000` | no debounce |
+| `INTSTATUS` | `0xF7E80440` | `0x00000000` | nothing pending |
+| `EXT_PORTA` | `0xF7E80450` | `0x10001800` | bit clear, so the pad itself reads low |
+
+`EXT_PORTA` is the authoritative input register, and it agrees with sysfs. The
+pin is genuinely low at the pad with a correctly armed falling-edge interrupt,
+so no further edge can occur while the line stays asserted. That rules out the
+DTB numbering, the pinmux, the GPIO driver, the sysfs layer, and the service
+loop. Whatever holds the line is on the MCU side of the pad.
+
+The donor also wrote `0xF7E80404` and `0xF7E80408` through `/dev/mem`, which the
+owned service does not, and the reason was never established. Those registers
+already hold correct values here because the kernel driver configures them, so
+the missing donor writes are not the cause either.
+
 `decodeMCUEvent` accepts only frames whose first byte is `0x04`. Everything the
 drain reads therefore fails to decode, which is consistent with the MCU
 repeating a non-event frame such as a status or version reply. `pre-nand-rc4`
