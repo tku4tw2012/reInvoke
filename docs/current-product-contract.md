@@ -340,8 +340,11 @@ Remaining gates are:
 
 The `pre-nand-rc1` cold-boot gate is met, and `pre-nand-rc2` has since cleared
 the same gate twice on its own cold boot, including once after deliberate fault
-injection. `pre-nand-rc2` is the current candidate. On a cold boot from
-power-off the image selected download mode, restored message mode, and reported
+injection. It remains the last fully gated candidate. `pre-nand-rc5` is the
+current experimental candidate; it restores the donor expander-direction
+initialization after a controlled donor/owned A/B isolated the v13 regression,
+and it must clear the same gate before superseding RC2. On a cold boot from
+power-off the accepted image selected download mode, restored message mode, and reported
 `EVENT_DSP_VERSION=0.0.64.58`, and the full
 `collect-native-acceptance.sh` gate passed twice with no failures, once on the
 first DSP generation and once after a supervised restart. A killed DSP service
