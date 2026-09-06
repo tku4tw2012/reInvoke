@@ -328,15 +328,13 @@ accepted image is not a released persistent firmware.
 
 Remaining gates are:
 
-1. package and re-gate the reviewed Bluetooth ObjectManager connected-state
-   fix, then physically confirm the rear connected indication;
-2. complete one attended playback-continuity run on that image; and
+1. physically confirm the rear connected indication;
+2. complete one attended playback-continuity run; and
 3. finish physical-button orchestration for an isolated provisioning window.
 
-`pre-nand-rc5` is the current fully gated candidate. `pre-nand-rc6` is the
-current experimental candidate; it packages the live-tested BlueZ
-ObjectManager state fix and must clear the same cold-boot gate before replacing
-RC5. RC5's first cold boot
+`pre-nand-rc6` is the current fully gated candidate. It retains RC5's MCU,
+kernel, DSP, and physical-control fix and adds the reviewed BlueZ ObjectManager
+connected-state fix. RC5's first cold boot
 restored GPIO3 high and recovered rotary input, Mic-Mute privacy, Bluetooth
 short-toggle, Bluetooth long reopen, and the rear pairing indication. The
 operator observed both rear slow blink and top red privacy, while the evidence
@@ -369,9 +367,10 @@ an unexpected peer.
 
 Physical button presses reach the services as MCU publications and cannot be
 injected over WAMP. RC5 now proves those publications and their policies. The
-RC6 pairing agent also proved `pairing -> connected -> off` against a
-persistent RAM-only bond when run live on RC5. The operator was absent for the
-rear connected light, and the packaged RC6 binary still needs a cold boot.
+The packaged RC6 pairing agent proves `pairing -> connected -> off` against a
+persistent RAM-only bond. Its cold-boot collector passed with all statuses zero,
+and the packaged pairing-agent hash matches the candidate manifest. The
+operator was absent for the rear connected light.
 
 The WAMP firewall was verified structurally on the running image. Both ports
 accept loopback and the single allowlisted host and drop every other source,
