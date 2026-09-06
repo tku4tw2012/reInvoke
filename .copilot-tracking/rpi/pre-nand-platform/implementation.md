@@ -966,6 +966,27 @@ live donor A/B and an identified v13 regression, not by another timing
 hypothesis. Kernel, DSP, and C runtime artifacts remain unchanged; only the
 owned Go MCU binary will be rebuilt with its pinned Go 1.18.1 builder.
 
+## `pre-nand-rc5` candidate
+
+RC5 restores the donor expander direction value while keeping DSP reset value
+ownership in `dsp-interface`.
+
+* MCU SHA-256
+  `c4c1cd15e98fc90e3389ba981480056cec3db7328e7223ed91a8af7ee03edb6f`;
+* DSP SHA-256 unchanged at
+  `4a7882d4f463b6a6adf84f38e868faf1b2e17a0a0303d0c6c2246ecf07ef4c95`;
+* runtime manifest SHA-256
+  `ae0ac4eea47c60342ed60d25594a608e19d41a7da74bed726f1837ef6ba6a6d9`;
+* 32,441,880-byte initramfs SHA-256
+  `c57114a4602809329502276de4d292d42406b2eb6bbb649f1ea15a538f3cebb0`;
+* kernel unchanged at
+  `d29a007535794d74d8ed900da366f02631a9a981356caea707e6b163f6d07746`.
+
+The MCU binary, runtime bundle, and initramfs were each built twice and agree
+byte for byte. RC5 is not accepted until a cold boot proves GPIO3 begins high,
+physical input publications return, and the full RC2 acceptance gate still
+passes.
+
 Reproducing an owned service binary requires the checked-in `build.sh` for that
 service rather than hand-assembled flags. It pins `-trimpath`, `-buildvcs=false`,
 `-mod=readonly`, `-ldflags="-s -w"`, and the archived Go 1.18.1 toolchain.
