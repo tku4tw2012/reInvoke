@@ -82,8 +82,15 @@ tools/kernel/build-native-kernel.sh \
 
 The `baseline`, `spi-gpio`, and `audio` profiles all start from
 `berlin2cdp_amp_defconfig`, use the explicit NDK BFD linker, checksum-gate the
-source, compiler, NDK archive, and supplied DTB, and build modules with
-`-fno-pic -fno-pie`.
+source archive, complete patched source-tree manifest, compiler, linker, NDK
+archive, compatibility and reproducibility patches, `lzop`, `mkimage`, and
+supplied DTB, and build modules with `-fno-pic -fno-pie`.
+
+The source-tree gate prevents a modified extracted tree from silently producing
+a candidate. The builder still consumes that retained extracted tree rather
+than reconstructing it from the source archive and applying every patch in a
+new work directory, so the input is content-locked but the clean-room extraction
+step remains future work.
 
 The separate `audio-sd8887` profile disables the recovery-compatible SD8801
 module and builds the disclosed native SD8887 STA/uAP pair. It is not the
