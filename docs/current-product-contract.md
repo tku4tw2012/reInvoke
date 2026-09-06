@@ -332,9 +332,12 @@ Remaining gates are:
 2. complete one attended playback-continuity run; and
 3. finish physical-button orchestration for an isolated provisioning window.
 
-`pre-nand-rc6` is the current fully gated candidate. It retains RC5's MCU,
-kernel, DSP, and physical-control fix and adds the reviewed BlueZ ObjectManager
-connected-state fix. RC5's first cold boot
+`pre-nand-rc6` is the current fully gated candidate. `pre-nand-rc7` is the
+current experimental candidate and contains only the final full-branch review
+remediations. Its destination is the remaining STA/uAP provisioning-window
+gate, not another exploratory boot. RC6 retains RC5's MCU, kernel, DSP, and
+physical-control fix and adds the reviewed BlueZ ObjectManager connected-state
+fix. RC5's first cold boot
 restored GPIO3 high and recovered rotary input, Mic-Mute privacy, Bluetooth
 short-toggle, Bluetooth long reopen, and the rear pairing indication. The
 operator observed both rear slow blink and top red privacy, while the evidence
