@@ -1316,6 +1316,76 @@ staging tree is created closes that, and directories extracted from the donor
 archive keep their recorded modes rather than being flattened. The image is now
 built under umask `002`, `022` and `077` and is byte identical in all three.
 
+## The kernel rebuild claim was weaker than it looked
+
+Adding host-tool gating to the kernel builder produced a kernel that did not
+match the accepted `d29a0075...`, which was alarming because the change only
+added checksum checks and manifest lines. Investigating that discrepancy found a
+real defect that had been hidden the whole time.
+
+`build-native-kernel.sh` never cleaned its build directory. It ran `mkdir -p` on
+a shared path under the archive and reused whatever was already there. The three
+earlier rebuilds that were recorded as exact reproductions all ran against that
+same populated directory, so they were incremental rebuilds with very little
+work to do rather than clean-room reproductions. They agreed with each other
+because `make` had nothing to rebuild, not because a full build is
+deterministic.
+
+Two genuinely clean builds settled it. A build into an empty directory produced
+`d29a0075...`, matching the kernel shipped in RC9 and the accepted DTB and all
+four module digests, so the shipped kernel really is reproducible from source.
+The incremental build against the stale directory produced `150275c6...`
+instead. The artifact is retained as
+`build/artifacts/reinvoke-kernel-v15-hosttools-20260906` because it is the
+counter-example.
+
+The hazard is that re-running the builder could emit a kernel that does not
+match the gated digest while every input check still passed. The builder now
+removes an existing build directory before it starts, and rebuilding into the
+previously dirty shared directory reproduced `d29a0075...` and the accepted
+module digests exactly.
+
+Host build tools are now gated as well. `make`, the `HOSTCC` driver, `cc1`, the
+host assembler and the host linker are resolved through their symlinks and
+checksummed, and their versions and digests are recorded in the build manifest.
+The kernel drives its own host programs, so those tools transform build inputs
+just as much as the cross compiler does.
+
+## Gates that could pass without exercising the claim
+
+A critique pass found several checks that could report success while proving
+nothing, which is the failure mode this project keeps rediscovering.
+
+The acceptance collector recorded the on-device command's exit status and then
+never looked at it, so a command that printed `SUMMARY failures=0` and exited
+non-zero passed. That status is now part of the final gate.
+
+The microphone check could produce two free passes. It asserted the state was
+`muted` after asking for mute, which is satisfied without any transition if the
+unit was already muted, and it skipped the restore step entirely in that case
+while inheriting the mute step's success. It now drives the microphone away from
+whatever state it started in and back again, requiring an observed transition in
+both directions, and it leaves the device as it found it. Forcing a muted start
+confirmed both transitions occur.
+
+The provisioning collector had four similar weaknesses. Any listener containing
+`:8443` satisfied the HTTPS check, including a wildcard bind that would expose
+provisioning on every network the unit is attached to; it now requires the
+access-point address. A single surviving child satisfied the children check; it
+now requires hostapd, `udhcpd`, the apply daemon and the provisioning daemon
+individually. The descriptor check only tested that the file was non-empty; it
+now parses the URL, token, certificate digest and expiry. The cleanup check
+would have passed if the window had collapsed after two seconds, because it only
+waited for the runtime directory to disappear; it now requires a clean close and
+that the window ran close to its advertised lifetime.
+
+The hostapd `state=ENABLED` check was reported as informational because it could
+never pass: the donor hostapd logs through Android's `liblog` and never reaches
+the system log. It has been replaced by assertions that are actually observable.
+
+Every new predicate was checked in both directions against the recorded
+hardware evidence, accepting the real bundle and rejecting tampered copies.
+
 ## Change log
 
 Iterations land on the `feat/native-ram-platform` branch as they complete.
