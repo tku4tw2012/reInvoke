@@ -82,6 +82,21 @@ wait_for_token() {
   return 1
 }
 
+forwarding_disabled() {
+  local path="$1"
+
+  awk '
+    /=== forwarding ===/ {
+      getline ipv4
+      getline ipv6
+      found = 1
+    }
+    END {
+      exit !(found && ipv4 == "0" && ipv6 == "0")
+    }
+  ' "${path}"
+}
+
 main() {
   local output_dir=""
   local start_timeout=90
@@ -190,12 +205,9 @@ main() {
     grep -q 'state=ENABLED' "${output_dir}/runtime-window.log" &&
       echo "PASS access_point.enabled" ||
       echo "INFO access_point.enabled_not_logged"
-    grep -q '^0$' <(
-      awk '/=== forwarding ===/{getline; print}' "${output_dir}/active.txt" \
-        2>/dev/null
-    ) &&
-      echo "PASS isolation.ipv4_forwarding_off" ||
-      echo "FAIL isolation.ipv4_forwarding_off"
+    forwarding_disabled "${output_dir}/active.txt" 2>/dev/null &&
+      echo "PASS isolation.forwarding_off" ||
+      echo "FAIL isolation.forwarding_off"
     grep -q 'inet addr:192.168.43.1' "${output_dir}/active.txt" \
       2>/dev/null &&
       echo "PASS access_point.address" ||
@@ -203,9 +215,14 @@ main() {
     grep -q ':8443' "${output_dir}/active.txt" 2>/dev/null &&
       echo "PASS access_point.https_listener" ||
       echo "FAIL access_point.https_listener"
-    [[ ! -e "${output_dir}/active.txt" ]] ||
-      grep -q 'reinvoke-provision' "${output_dir}/active.txt" ||
-      status=1
+    grep -qE \
+      'reinvoke-wifi-applyd|/reinvoke-provisiond|/hostapd|udhcpd' \
+      "${output_dir}/active.txt" 2>/dev/null &&
+      echo "PASS access_point.children_running" ||
+      echo "FAIL access_point.children_running"
+    [[ -s "${output_dir}/descriptor.json" ]] &&
+      echo "PASS access_point.descriptor" ||
+      echo "FAIL access_point.descriptor"
     grep -q '=== storage ===' "${output_dir}/active.txt" 2>/dev/null &&
       ! awk '/=== storage ===/{found=1; next} found && NF{exit 1}' \
         "${output_dir}/active.txt" &&
@@ -214,6 +231,17 @@ main() {
     grep -q '/run/reinvoke/provision-window' "${output_dir}/final.txt" &&
       echo "FAIL cleanup.runtime_removed" ||
       echo "PASS cleanup.runtime_removed"
+    grep -qE \
+      'reinvoke-wifi-applyd|/reinvoke-provisiond|/hostapd|udhcpd' \
+      "${output_dir}/final.txt" 2>/dev/null &&
+      echo "FAIL cleanup.children_stopped" ||
+      echo "PASS cleanup.children_stopped"
+    grep -q 'inet addr:192.168.43.1' "${output_dir}/final.txt" 2>/dev/null &&
+      echo "FAIL cleanup.address_removed" ||
+      echo "PASS cleanup.address_removed"
+    forwarding_disabled "${output_dir}/final.txt" 2>/dev/null &&
+      echo "PASS cleanup.forwarding_off" ||
+      echo "FAIL cleanup.forwarding_off"
   } >"${output_dir}/SUMMARY"
 
   if grep -q '^FAIL ' "${output_dir}/SUMMARY"; then
