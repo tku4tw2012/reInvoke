@@ -523,3 +523,7 @@ main() {
 }
 
 main "$@"
+# Stop bash reading past this point. A loader can stay armed for hours, and
+# editing this file meanwhile would otherwise make bash resume at a stale byte
+# offset and execute a fragment of the edited script at global scope.
+exit "$?"
