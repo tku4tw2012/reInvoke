@@ -334,7 +334,10 @@ Remaining gates are:
 
 `pre-nand-rc6` is the current fully gated candidate. `pre-nand-rc9` is the
 current experimental candidate and is the first build whose STA/uAP
-provisioning window actually works. Its destination is one physical Mic-Mute
+provisioning window actually works. It has since passed a clean cold boot from
+the packaged image with no hot patches: `windowd` reported `control socket
+ready` at uptime 5.32 with no crash loop, and the full acceptance collector
+exited zero with DSP version `25688` and no NAND mount. Its destination is one physical Mic-Mute
 long press to record the gate, not another exploratory boot.
 
 Holding Mic-Mute opens the provisioning window. This is a reInvoke decision,
