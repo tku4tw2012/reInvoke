@@ -306,16 +306,52 @@ accepted image is not a released persistent firmware.
 
 Remaining gates are:
 
-1. cold-boot `pre-nand-rc1` and confirm download-mode selection,
-   message-mode restoration, `getVer`, and persisted Mic-Mute across a
-   supervised DSP restart under PID 1;
-2. confirm Bluetooth short-press pair/cancel, retained long-press reopen, the
-   replacement-`bluetoothd` generation guard, and authoritative rear
-   pairing/connected/off transitions;
-3. confirm the WAMP allowlist closes ports 9998 and 9999 to non-allowlisted
+1. confirm Bluetooth short-press pair/cancel, retained long-press reopen, and
+   authoritative rear pairing/connected/off transitions;
+2. confirm the WAMP allowlist closes ports 9998 and 9999 to non-allowlisted
    sources on a live network;
-4. complete one attended playback-continuity run on that image; and
-5. finish physical-button orchestration for an isolated provisioning window.
+3. complete one attended playback-continuity run on that image; and
+4. finish physical-button orchestration for an isolated provisioning window.
+
+The `pre-nand-rc1` cold-boot gate is met. On a cold boot from power-off the
+image selected download mode, restored message mode, and reported
+`EVENT_DSP_VERSION=0.0.64.58`, and the full
+`collect-native-acceptance.sh` gate passed twice with no failures, once on the
+first DSP generation and once after a supervised restart. A killed DSP service
+was replaced under PID 1, restored the GPIO5 pin function to `0x0138D249`,
+reapplied the retained microphone mute before announcing readiness, and
+round-tripped `getVer` and both microphone directions. A killed `bluetoothd`
+was likewise replaced, re-registered both A2DP endpoints, and the generation
+guard restarted the pairing agent.
+
+That guard reopens a pairing window on every `bluetoothd` generation, which is
+the agent's documented startup behaviour rather than a regression. The window is
+bounded to its configured seconds and was observed returning to `off` on
+expiry, and the agent rejects every device-bearing request from any address
+outside its single-device allowlist, so an unattended replacement cannot admit
+an unexpected peer.
+
+Physical button presses reach the services as MCU publications and cannot be
+injected over WAMP, so the remaining control and indicator gates need the
+operator and are not claimed here.
+
+The WAMP firewall was verified structurally on the running image. Both ports
+accept loopback and the single allowlisted host and drop every other source,
+with the accept rules ordered ahead of the drop rules. PID 1 installs those
+rules before the router starts and leaves the autonomous runtime stopped if the
+setup fails, so there is no interval in which the router listens unprotected.
+
+The router binds `0.0.0.0` on both ports, which is deliberate because the
+allowlisted host is off-box, but it means the firewall is the only thing
+standing between the router and the wider network rather than a second layer.
+That places the fail-closed ordering above and the pinned allowlist on the
+critical path for this boundary.
+
+The live-network half of that gate cannot be closed on-box. This kernel exposes
+only a mount namespace, so no network namespace can be created to originate
+genuine non-allowlisted traffic, and packets addressed to a local address
+traverse loopback and would match the accept rule instead. Confirming the drop
+behaviour therefore requires a separate host on the same WLAN.
 
 Entering yellow mode requires the recovery button held at power-on, so cold-boot
 gates cannot be driven from software and need the operator present.
