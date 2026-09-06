@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -25,6 +26,9 @@ const (
 	// A wedged MCU never releases its interrupt, so suppression must expire
 	// instead of disabling physical input for the rest of the boot.
 	mcuRecoveryRetryInterval = 30 * time.Second
+	// Bound the distinct frames reported per drain so a RAM-only log cannot
+	// be flooded by a permanently stuck interrupt.
+	maxReportedDrainFrames = 4
 )
 
 var errMCUDrainLimit = errors.New(
@@ -138,6 +142,10 @@ func (source *gpioEventSource) drainPendingEvents(
 	events chan<- inputEvent,
 	readFirst bool,
 ) error {
+	// A stuck interrupt is only actionable if the frames behind it are visible,
+	// and undecodable frames were previously dropped without trace.
+	var undecoded int
+	distinct := make([]string, 0, maxReportedDrainFrames)
 	for count := 0; count < maxMCUPendingReads; count++ {
 		if !readFirst || count != 0 {
 			lineHigh, err := readGPIOLevel(source.value, buffer)
@@ -152,21 +160,46 @@ func (source *gpioEventSource) drainPendingEvents(
 		if err != nil {
 			return fmt.Errorf("drain pending MCU event: %w", err)
 		}
-		if events != nil {
-			if event, ok := decodeMCUEvent(frame); ok {
-				event.OccurredAt = time.Now()
-				select {
-				case events <- event:
-				case <-ctx.Done():
-					return ctx.Err()
-				}
+		event, decoded := decodeMCUEvent(frame)
+		if !decoded {
+			undecoded++
+			distinct = recordDrainFrame(distinct, frame)
+		} else if events != nil {
+			event.OccurredAt = time.Now()
+			select {
+			case events <- event:
+			case <-ctx.Done():
+				return ctx.Err()
 			}
 		}
 		if !waitMCUDrain(ctx) {
 			return ctx.Err()
 		}
 	}
+	if undecoded > 0 {
+		source.logError(fmt.Errorf(
+			"drained %d undecodable MCU frames of %d reads; distinct frames %s",
+			undecoded,
+			maxMCUPendingReads,
+			strings.Join(distinct, " "),
+		))
+	}
 	return errMCUDrainLimit
+}
+
+// recordDrainFrame keeps a bounded set of distinct frames for one drain so the
+// report stays useful without flooding a RAM-only log.
+func recordDrainFrame(distinct []string, frame [6]byte) []string {
+	rendered := fmt.Sprintf("%02x", frame)
+	for _, existing := range distinct {
+		if existing == rendered {
+			return distinct
+		}
+	}
+	if len(distinct) >= maxReportedDrainFrames {
+		return distinct
+	}
+	return append(distinct, rendered)
 }
 
 func (source *gpioEventSource) Events(

@@ -5,7 +5,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -205,5 +207,63 @@ func TestCurrentTimeFallsBackToWallClock(t *testing.T) {
 	source := &gpioEventSource{}
 	if source.currentTime().IsZero() {
 		t.Fatal("current time must fall back to the wall clock")
+	}
+}
+
+// A stuck interrupt is only diagnosable if the frames behind it are reported,
+// but the report must stay bounded on a RAM-only target.
+func TestRecordDrainFrameKeepsBoundedDistinctSet(t *testing.T) {
+	var distinct []string
+	distinct = recordDrainFrame(distinct, [6]byte{1, 2, 3, 4, 5, 6})
+	distinct = recordDrainFrame(distinct, [6]byte{1, 2, 3, 4, 5, 6})
+	if len(distinct) != 1 {
+		t.Fatalf("repeated frame recorded %d times, want 1", len(distinct))
+	}
+	if distinct[0] != "010203040506" {
+		t.Fatalf("frame rendered as %q", distinct[0])
+	}
+
+	for index := 0; index < maxReportedDrainFrames+3; index++ {
+		distinct = recordDrainFrame(
+			distinct,
+			[6]byte{byte(index), 9, 9, 9, 9, 9},
+		)
+	}
+	if len(distinct) != maxReportedDrainFrames {
+		t.Fatalf(
+			"distinct frames = %d, want the %d frame bound",
+			len(distinct),
+			maxReportedDrainFrames,
+		)
+	}
+}
+
+// The drain limit must report what it saw rather than dropping frames silently.
+func TestDrainLimitReportsUndecodableFrames(t *testing.T) {
+	value, err := os.CreateTemp(t.TempDir(), "gpio-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer value.Close()
+	if _, err := value.WriteString("0\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	var reported []string
+	source := &gpioEventSource{
+		value:    value,
+		bus:      &recordingMCUEventBus{frame: [6]byte{0xff, 0, 0, 0, 0, 0}},
+		logError: func(err error) { reported = append(reported, err.Error()) },
+	}
+	err = source.drainPendingEvents(context.Background(), make([]byte, 8), nil, false)
+	if !errors.Is(err, errMCUDrainLimit) {
+		t.Fatalf("drain error = %v, want the drain limit", err)
+	}
+	if len(reported) != 1 {
+		t.Fatalf("reported %d diagnostics, want 1", len(reported))
+	}
+	if !strings.Contains(reported[0], "undecodable MCU frames") ||
+		!strings.Contains(reported[0], "ff0000000000") {
+		t.Fatalf("diagnostic did not name the frames: %q", reported[0])
 	}
 }
