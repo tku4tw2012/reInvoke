@@ -23,8 +23,9 @@ type indicatorLEDState struct {
 type indicatorLEDController struct {
 	writer indicatorLEDWriter
 
-	mu    sync.Mutex
-	state indicatorLEDState
+	mu        sync.Mutex
+	state     indicatorLEDState
+	confirmed bool
 }
 
 func newIndicatorLEDController(
@@ -56,7 +57,25 @@ func (controller *indicatorLEDController) Set(
 	case "back":
 		candidate.back = value
 	}
+	return controller.writeLocked(candidate)
+}
 
+func (controller *indicatorLEDController) SetBackIfChanged(mode string) error {
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+
+	value := indicatorLEDMode(mode)
+	if controller.confirmed && controller.state.back == value {
+		return nil
+	}
+	candidate := controller.state
+	candidate.back = value
+	return controller.writeLocked(candidate)
+}
+
+func (controller *indicatorLEDController) writeLocked(
+	candidate indicatorLEDState,
+) error {
 	frame := [6]byte{
 		indicatorLEDCode,
 		candidate.amber,
@@ -69,6 +88,7 @@ func (controller *indicatorLEDController) Set(
 		return fmt.Errorf("set indicator LEDs: %w", err)
 	}
 	controller.state = candidate
+	controller.confirmed = true
 	return nil
 }
 

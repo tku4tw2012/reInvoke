@@ -156,7 +156,8 @@ start_stack() {
   adb_shell "busybox rm -rf /tmp/reinvoke-dbus /tmp/reinvoke-bt-state;
     busybox rm -rf /usr/var/lib/bluetooth;
     busybox mkdir -p /tmp/reinvoke-dbus /tmp/reinvoke-bt-state \
-      /usr/var/lib/bluetooth"
+      /usr/var/lib/bluetooth /run/reinvoke;
+    busybox chmod 0700 /run/reinvoke"
   start_device_process \
     "dbus-daemon" \
     "/tmp/reinvoke-dbus/dbus.log" \
@@ -184,7 +185,8 @@ start_stack() {
     "reinvoke-bluez-pairing-agent" \
     "/tmp/reinvoke-bt-state/pairing-agent.log" \
     "busybox env DBUS_SYSTEM_BUS_ADDRESS='${bus_address}' \
-      /tmp/reinvoke-bluez-pairing-agent '${PEER_ADDRESS}' '${PAIR_SECONDS}'"
+      /tmp/reinvoke-bluez-pairing-agent '${PEER_ADDRESS}' '${PAIR_SECONDS}' \
+      '${PAIR_SECONDS}' /run/reinvoke/bluetooth-state"
 }
 
 main() {
