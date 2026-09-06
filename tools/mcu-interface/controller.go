@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -121,9 +122,33 @@ func (c *controller) setAmpMute(muted bool) error {
 	return c.setAmpMuteLocked(muted)
 }
 
+func (c *controller) setAmpMuteContext(
+	ctx context.Context,
+	muted bool,
+) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return c.setAmpMuteLocked(muted)
+}
+
 func (c *controller) setDACMute(muted bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.setDACMuteLocked(muted)
+}
+
+func (c *controller) setDACMuteContext(
+	ctx context.Context,
+	muted bool,
+) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return c.setDACMuteLocked(muted)
 }
 

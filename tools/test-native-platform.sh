@@ -47,7 +47,8 @@ main() {
   trap - EXIT
   node --test \
     "${script_dir}/control/"*.test.mjs \
-    "${script_dir}/emulation/"*.test.mjs
+    "${script_dir}/emulation/"*.test.mjs \
+    "${script_dir}/provisioning/"*.test.mjs
   "${script_dir}/usb-boot/boot-native-ram-test.sh"
   find "${script_dir}" -type f -name "*.sh" -print0 |
     xargs --null --max-args=1 bash -n

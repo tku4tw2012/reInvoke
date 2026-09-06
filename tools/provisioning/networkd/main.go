@@ -285,6 +285,17 @@ func configureLease(
 	networkPaths paths,
 	resolverLink string,
 ) error {
+	content, err := json.Marshal(current)
+	if err != nil {
+		return errors.New("encode lease state")
+	}
+	if err := writeAtomic(
+		networkPaths.lease,
+		append(content, '\n'),
+		0600,
+	); err != nil {
+		return err
+	}
 	if err := ensureLeaseAddress(runner, current); err != nil {
 		return err
 	}
@@ -292,13 +303,6 @@ func configureLease(
 		return err
 	}
 	if err := writeAtomic(networkPaths.resolver, renderResolver(current), 0644); err != nil {
-		return err
-	}
-	content, err := json.Marshal(current)
-	if err != nil {
-		return errors.New("encode lease state")
-	}
-	if err := writeAtomic(networkPaths.lease, append(content, '\n'), 0600); err != nil {
 		return err
 	}
 	if err := ensureResolverLink(
@@ -310,6 +314,41 @@ func configureLease(
 		return err
 	}
 	return nil
+}
+
+func configureLeaseTransactional(
+	runner commandRunner,
+	current lease,
+	networkPaths paths,
+	resolverLink string,
+) error {
+	configureErr := configureLease(
+		runner,
+		current,
+		networkPaths,
+		resolverLink,
+	)
+	if configureErr == nil {
+		return nil
+	}
+
+	networkErr := removeLeaseNetwork(runner, current)
+	var leaseErr error
+	if networkErr == nil {
+		leaseErr = removeFile(networkPaths.lease)
+	}
+	return combineErrors(
+		configureErr,
+		networkErr,
+		removeManagedResolverLink(
+			resolverLink,
+			networkPaths.resolver,
+			0,
+			true,
+		),
+		removeFile(networkPaths.resolver),
+		leaseErr,
+	)
 }
 
 func ensureLeaseAddress(runner commandRunner, current lease) error {
@@ -640,12 +679,20 @@ func parseInterfaceAddresses(output []byte) ([]interfaceAddress, error) {
 }
 
 func loadStoredLease(path string, expectedInterface string) (lease, error) {
+	return loadStoredLeaseForUID(path, expectedInterface, 0)
+}
+
+func loadStoredLeaseForUID(
+	path string,
+	expectedInterface string,
+	expectedUID uint32,
+) (lease, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return lease{}, err
 	}
 	uid, ownerErr := fileOwnerUID(info)
-	if ownerErr != nil || uid != 0 || !info.Mode().IsRegular() ||
+	if ownerErr != nil || uid != expectedUID || !info.Mode().IsRegular() ||
 		info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0600 {
 		return lease{}, errors.New("lease state is not root-controlled")
 	}
@@ -678,8 +725,30 @@ func clearLeaseState(
 	expectedInterface string,
 	resolverLink string,
 ) error {
+	return clearLeaseStateForUID(
+		runner,
+		networkPaths,
+		expectedInterface,
+		resolverLink,
+		0,
+		true,
+	)
+}
+
+func clearLeaseStateForUID(
+	runner commandRunner,
+	networkPaths paths,
+	expectedInterface string,
+	resolverLink string,
+	expectedUID uint32,
+	requireRAM bool,
+) error {
 	var cleanupErr, leaseFileErr error
-	current, err := loadStoredLease(networkPaths.lease, expectedInterface)
+	current, err := loadStoredLeaseForUID(
+		networkPaths.lease,
+		expectedInterface,
+		expectedUID,
+	)
 	if err == nil {
 		cleanupErr = removeLeaseNetwork(runner, current)
 		if cleanupErr == nil {
@@ -693,8 +762,8 @@ func clearLeaseState(
 		removeManagedResolverLink(
 			resolverLink,
 			networkPaths.resolver,
-			0,
-			true,
+			expectedUID,
+			requireRAM,
 		),
 		removeFile(networkPaths.resolver),
 		leaseFileErr,
@@ -1082,24 +1151,13 @@ func runEvent(
 						),
 					)
 				}
-				if err := configureLease(
+				if err := configureLeaseTransactional(
 					execRunner{},
 					current,
 					networkPaths,
 					resolverLink,
 				); err != nil {
-					return combineErrors(
-						err,
-						removeLeaseNetwork(execRunner{}, current),
-						removeManagedResolverLink(
-							resolverLink,
-							networkPaths.resolver,
-							0,
-							true,
-						),
-						removeFile(networkPaths.resolver),
-						removeFile(networkPaths.lease),
-					)
+					return err
 				}
 				return nil
 			default:

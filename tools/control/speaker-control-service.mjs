@@ -471,7 +471,8 @@ Options:
   --music-volume VALUE  Initial music volume, 0-100 (default: 20)
   --bluetooth-active    Register and activate com.harman.bluetooth
   --bluealsa-pcm PATH   Use this explicit BlueALSA PCM object path
-  --bluealsactl PATH    bluealsactl executable (default: bluealsactl)
+  --bluealsa-cli PATH   bluealsa-cli executable (default: bluealsa-cli)
+  --bluealsactl PATH    Legacy alias for --bluealsa-cli
   --bluealsa-dbus NAME  BlueALSA D-Bus service suffix
   --backend-poll-ms MS  Backend observation interval (default: 1000)
   --help                Show this help`);
@@ -510,8 +511,9 @@ function parseOptions(argv) {
       case "--bluealsa-pcm":
         options.bluealsaPcm = value;
         break;
+      case "--bluealsa-cli":
       case "--bluealsactl":
-        options.bluealsactl = value;
+        options.bluealsaCli = value;
         break;
       case "--bluealsa-dbus":
         options.bluealsaDbus = value;
@@ -552,7 +554,7 @@ async function main() {
       ? null
       : new BlueAlsaCliBackend({
           pcmPath: options.bluealsaPcm,
-          command: options.bluealsactl,
+          command: options.bluealsaCli,
           dbusSuffix: options.bluealsaDbus,
         });
   await serveSpeakerControl({

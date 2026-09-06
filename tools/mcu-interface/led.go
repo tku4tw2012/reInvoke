@@ -70,6 +70,9 @@ func (player *ledPlayer) start(
 	if !validLEDName(name) {
 		return errors.New("invalid LED animation name")
 	}
+	if err := parent.Err(); err != nil {
+		return err
+	}
 	player.mu.Lock()
 	blocked := player.privacyMuted && !force
 	player.mu.Unlock()
@@ -87,6 +90,9 @@ func (player *ledPlayer) start(
 
 	player.mu.Lock()
 	defer player.mu.Unlock()
+	if err := parent.Err(); err != nil {
+		return err
+	}
 	if player.privacyMuted && !force {
 		return nil
 	}
@@ -98,15 +104,34 @@ func (player *ledPlayer) start(
 	player.done = done
 	go func() {
 		defer close(done)
-		if err := runLEDAnimationStarted(
-			ctx,
-			player.writer,
-			data,
-			repeat,
-			started,
-		); err != nil &&
-			player.logf != nil {
-			player.logf("LED animation %s: %v", name, err)
+		startSignal := started
+		for {
+			err := runLEDAnimationStarted(
+				ctx,
+				player.writer,
+				data,
+				repeat,
+				startSignal,
+			)
+			startSignal = nil
+			if err == nil {
+				break
+			}
+			if player.logf != nil {
+				player.logf("LED animation %s: %v", name, err)
+			}
+			if !repeat || ctx.Err() != nil {
+				break
+			}
+			timer := time.NewTimer(ledChunkDelay)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return
+			case <-timer.C:
+			}
 		}
 		if !repeat && ctx.Err() == nil {
 			if err := clearLEDs(player.writer); err != nil && player.logf != nil {
@@ -144,8 +169,15 @@ func (player *ledPlayer) Clear() error {
 }
 
 func (player *ledPlayer) Stop() error {
+	return player.StopContext(context.Background())
+}
+
+func (player *ledPlayer) StopContext(ctx context.Context) error {
 	player.mu.Lock()
 	defer player.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if player.privacyMuted {
 		return nil
 	}
