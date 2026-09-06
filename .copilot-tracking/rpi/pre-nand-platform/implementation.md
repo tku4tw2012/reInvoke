@@ -1094,6 +1094,25 @@ disconnect changed it to `off`. Review then found that an unrelated
 checks the interface array and was re-tested through target `RemoveDevice`,
 persistent bonded pairing, connect, and disconnect.
 
+## `pre-nand-rc6` cold-boot results
+
+RC6 cleared the complete cold-boot gate.
+
+* The running pairing-agent hash matched
+  `0e2e17763fb9f9212aee30226d2399f2ca7a4a93f7fb275c0fd6e7af6fe54a57`.
+* GPIO3 was high and the DSP pinmux read `0x0138D249`.
+* `collect-native-acceptance.sh` exited zero with every status zero, DSP
+  version `25688`, Mic-Mute confirmation/restoration, and no structural
+  failures.
+* An explicit host `NoInputNoOutput` agent created a persistent RAM-only bond;
+  the target `info` file exists without its link key being copied into evidence.
+* The packaged agent reported `connected` while the bonded host was connected
+  and `off` after disconnect, while both sides retained `Paired: yes`.
+
+RC6 is retained as a bound kernel/initramfs pair. Its `CANDIDATE` manifest now
+marks the hardware gate passed and links the cold-boot, live-component, and
+packaged-BlueZ evidence directories.
+
 ### Kernel source reconstruction audit
 
 The hardware kernel's extracted source was rebuilt independently from the
