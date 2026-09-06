@@ -1119,6 +1119,24 @@ and all four module digests exactly. The third independent deployable set is
 retained under
 `build/artifacts/reinvoke-kernel-v14-9-provenance-20260906/`.
 
+### Firewall source matching
+
+The allowlist's source decision was exercised without touching ports 9998 or
+9999. A temporary listener on port 19997 and two temporary loopback aliases
+used the production source rule shape:
+
+* `192.168.4.27` connected and received its echo through ACCEPT.
+* `192.168.4.28` timed out through DROP.
+* Rule counters advanced by six packets/326 bytes on ACCEPT and two packets/120
+  bytes on DROP.
+
+The aliases, listener, and test rules were removed. Captured rules before and
+after compare byte for byte, and the evidence bundle is retained under
+`evidence/firewall-source-match-20260906/`. The earlier actual-port test already
+proved that a DROP ahead of WAMP port 9999 blocks a working call and removing it
+restores the call. Together these establish rule ordering, target loading,
+actual WAMP blocking, and source-address discrimination.
+
 Reproducing an owned service binary requires the checked-in `build.sh` for that
 service rather than hand-assembled flags. It pins `-trimpath`, `-buildvcs=false`,
 `-mod=readonly`, `-ldflags="-s -w"`, and the archived Go 1.18.1 toolchain.

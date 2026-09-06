@@ -330,10 +330,8 @@ Remaining gates are:
 
 1. package and re-gate the reviewed Bluetooth ObjectManager connected-state
    fix, then physically confirm the rear connected indication;
-2. confirm the WAMP allowlist closes ports 9998 and 9999 to non-allowlisted
-   sources on a live network;
-3. complete one attended playback-continuity run on that image; and
-4. finish physical-button orchestration for an isolated provisioning window.
+2. complete one attended playback-continuity run on that image; and
+3. finish physical-button orchestration for an isolated provisioning window.
 
 `pre-nand-rc5` is the current fully gated candidate. `pre-nand-rc6` is the
 current experimental candidate; it packages the live-tested BlueZ
@@ -394,13 +392,14 @@ rules left intact. That exercises the hand-symlinked `xtables` modules, the
 chain ordering, and the drop target on this kernel, which structural inspection
 alone could not establish.
 
-What remains unproven is only the source matching: that a non-allowlisted remote
-address is dropped while the allowlisted one is accepted. The live-network half
-of that gate cannot be closed on-box. This kernel exposes
-only a mount namespace, so no network namespace can be created to originate
-genuine non-allowlisted traffic, and packets addressed to a local address
-traverse loopback and would match the accept rule instead. Confirming the drop
-behaviour therefore requires a separate host on the same WLAN.
+Source matching was tested separately without disrupting the live WAMP clients.
+An isolated listener on port 19997 used temporary source aliases
+`192.168.4.27` and `192.168.4.28`. With the same ordered source-accept and
+default-drop rules, `.27` connected and echoed data while `.28` timed out.
+Packet counters advanced on both rules. The aliases, listener, and test rules
+were then removed, and the original six WAMP rules compared byte for byte with
+their pre-test capture. Combined with the direct port-9999 DROP test, this
+closes the allowlist mechanism without requiring an unrelated network device.
 
 This kernel also sets `pid_max` to 4096, and the PID counter was observed
 wrapping within 132 seconds of ordinary supervision churn. PID reuse is a
