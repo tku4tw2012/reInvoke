@@ -353,6 +353,9 @@ main() {
     mkdir -p "${rootfs_dir}/opt/reinvoke"
     cp -a "${runtime_bundle}/." "${rootfs_dir}/opt/reinvoke/"
     rm -rf "${rootfs_dir}/home/galois"
+    # cp -a carries the staging host's umask into the image, which both trips
+    # the root-controlled path checks and makes the archive umask-dependent.
+    find "${rootfs_dir}/opt/reinvoke" -type d -exec chmod 0755 {} +
   fi
 
   rm -f \
