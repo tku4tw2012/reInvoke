@@ -100,6 +100,7 @@ main() {
 
   node "${repo_root}/tools/control/wamp-monitor.mjs" \
     --topic com.harman.test.inputEvent \
+    --topic com.harman.vui.keypress \
     --topic com.harman.volumeChanged \
     --topic com.harman.musicMuteChanged \
     --topic com.harman.stateChanged \
@@ -160,7 +161,8 @@ summarize() {
   # Count only published events. The subscription confirmation carries the same
   # topic and would otherwise be reported as a button press that never happened.
   buttons="$(
-    grep -c '"type":"event".*"topic":"com.harman.test.inputEvent"' \
+    grep -cE \
+      '"type":"event".*"topic":"com\.harman\.(test\.inputEvent|vui\.keypress)"' \
       "${output_dir}/button-events.jsonl" 2>/dev/null || true
   )"
   [[ -n "${buttons}" ]] || buttons=0

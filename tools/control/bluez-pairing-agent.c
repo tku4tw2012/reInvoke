@@ -31,6 +31,7 @@
 #define AGENT_BUS "org.reinvoke.PairingAgent"
 #define DEFAULT_STATE_PATH "/run/reinvoke/bluetooth-state"
 #define DEVICE_INTERFACE "org.bluez.Device1"
+#define OBJECT_MANAGER_INTERFACE "org.freedesktop.DBus.ObjectManager"
 #define PROPERTIES_INTERFACE "org.freedesktop.DBus.Properties"
 
 static char allowed_device[64];
@@ -496,15 +497,101 @@ static bool parse_connected_change(
   return true;
 }
 
-static DBusHandlerResult handle_bluez_property(DBusConnection *connection,
-                                               DBusMessage *message,
-                                               void *user_data) {
+enum device_object_change {
+  DEVICE_OBJECT_INVALID = -1,
+  DEVICE_OBJECT_UNCHANGED = 0,
+  DEVICE_OBJECT_ADDED = 1,
+  DEVICE_OBJECT_REMOVED = 2,
+};
+
+static enum device_object_change
+parse_device_object_change(DBusMessage *message) {
+  DBusMessageIter arguments;
+  DBusMessageIter interfaces;
+  const char *path;
+  const bool added =
+      dbus_message_is_signal(message, OBJECT_MANAGER_INTERFACE,
+                             "InterfacesAdded");
+
+  if (!dbus_message_iter_init(message, &arguments) ||
+      dbus_message_iter_get_arg_type(&arguments) != DBUS_TYPE_OBJECT_PATH) {
+    return DEVICE_OBJECT_INVALID;
+  }
+  dbus_message_iter_get_basic(&arguments, &path);
+  if (path == NULL || strcmp(path, allowed_device) != 0) {
+    return DEVICE_OBJECT_UNCHANGED;
+  }
+  if (!dbus_message_iter_next(&arguments) ||
+      dbus_message_iter_get_arg_type(&arguments) != DBUS_TYPE_ARRAY) {
+    return DEVICE_OBJECT_INVALID;
+  }
+  dbus_message_iter_recurse(&arguments, &interfaces);
+  while (dbus_message_iter_get_arg_type(&interfaces) != DBUS_TYPE_INVALID) {
+    const char *interface;
+
+    if (added) {
+      DBusMessageIter entry;
+
+      if (dbus_message_iter_get_arg_type(&interfaces) !=
+          DBUS_TYPE_DICT_ENTRY) {
+        return DEVICE_OBJECT_INVALID;
+      }
+      dbus_message_iter_recurse(&interfaces, &entry);
+      if (dbus_message_iter_get_arg_type(&entry) != DBUS_TYPE_STRING) {
+        return DEVICE_OBJECT_INVALID;
+      }
+      dbus_message_iter_get_basic(&entry, &interface);
+    } else {
+      if (dbus_message_iter_get_arg_type(&interfaces) != DBUS_TYPE_STRING) {
+        return DEVICE_OBJECT_INVALID;
+      }
+      dbus_message_iter_get_basic(&interfaces, &interface);
+    }
+    if (interface != NULL && strcmp(interface, DEVICE_INTERFACE) == 0) {
+      return added ? DEVICE_OBJECT_ADDED : DEVICE_OBJECT_REMOVED;
+    }
+    dbus_message_iter_next(&interfaces);
+  }
+  return DEVICE_OBJECT_UNCHANGED;
+}
+
+static DBusHandlerResult handle_bluez_change(DBusConnection *connection,
+                                             DBusMessage *message,
+                                             void *user_data) {
   struct pairing_state *state = user_data;
   const char *path = dbus_message_get_path(message);
   bool connected;
   enum reinvoke_connected_update update;
 
   (void)connection;
+  if (dbus_message_is_signal(message, OBJECT_MANAGER_INTERFACE,
+                             "InterfacesAdded") ||
+      dbus_message_is_signal(message, OBJECT_MANAGER_INTERFACE,
+                             "InterfacesRemoved")) {
+    const enum device_object_change object_change =
+        parse_device_object_change(message);
+
+    if (object_change == DEVICE_OBJECT_INVALID) {
+      fprintf(stderr, "invalid BlueZ ObjectManager signal\n");
+      return DBUS_HANDLER_RESULT_HANDLED;
+    }
+    if (object_change == DEVICE_OBJECT_UNCHANGED) {
+      return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
+    if (object_change == DEVICE_OBJECT_ADDED) {
+      state->connected_refresh_required = true;
+      state->connected_refresh_after = (struct timespec){0};
+    } else {
+      state->connected_refresh_required = false;
+      if (state->device_connected) {
+        state->device_connected = false;
+        if (!publish_authoritative_state(state)) {
+          state->write_failed = true;
+        }
+      }
+    }
+    return DBUS_HANDLER_RESULT_HANDLED;
+  }
   if (!dbus_message_is_signal(message, PROPERTIES_INTERFACE,
                               "PropertiesChanged") ||
       path == NULL || strcmp(path, allowed_device) != 0) {
@@ -531,13 +618,16 @@ static DBusHandlerResult handle_bluez_property(DBusConnection *connection,
 
 static bool watch_allowed_device(DBusConnection *connection,
                                  struct pairing_state *state) {
+  static const char *const object_members[] = {"InterfacesAdded",
+                                               "InterfacesRemoved"};
   DBusError error;
   char match[256];
+  size_t index;
   int length;
 
-  if (!dbus_connection_add_filter(connection, handle_bluez_property, state,
+  if (!dbus_connection_add_filter(connection, handle_bluez_change, state,
                                   NULL)) {
-    fprintf(stderr, "register Device1 property filter failed\n");
+    fprintf(stderr, "register BlueZ state filter failed\n");
     return false;
   }
   length = snprintf(
@@ -547,7 +637,7 @@ static bool watch_allowed_device(DBusConnection *connection,
       DEVICE_INTERFACE "'",
       allowed_device);
   if (length < 0 || (size_t)length >= sizeof(match)) {
-    dbus_connection_remove_filter(connection, handle_bluez_property, state);
+    dbus_connection_remove_filter(connection, handle_bluez_change, state);
     return false;
   }
   dbus_error_init(&error);
@@ -556,8 +646,30 @@ static bool watch_allowed_device(DBusConnection *connection,
   if (dbus_error_is_set(&error)) {
     fprintf(stderr, "watch Device1.Connected: %s\n", error.message);
     dbus_error_free(&error);
-    dbus_connection_remove_filter(connection, handle_bluez_property, state);
+    dbus_connection_remove_filter(connection, handle_bluez_change, state);
     return false;
+  }
+  for (index = 0; index < sizeof(object_members) / sizeof(object_members[0]);
+       index++) {
+    length = snprintf(
+        match, sizeof(match),
+        "type='signal',sender='" BLUEZ_BUS "',interface='"
+        OBJECT_MANAGER_INTERFACE "',member='%s'",
+        object_members[index]);
+    if (length < 0 || (size_t)length >= sizeof(match)) {
+      dbus_connection_remove_filter(connection, handle_bluez_change, state);
+      return false;
+    }
+    dbus_error_init(&error);
+    dbus_bus_add_match(connection, match, &error);
+    dbus_connection_flush(connection);
+    if (dbus_error_is_set(&error)) {
+      fprintf(stderr, "watch BlueZ %s: %s\n", object_members[index],
+              error.message);
+      dbus_error_free(&error);
+      dbus_connection_remove_filter(connection, handle_bluez_change, state);
+      return false;
+    }
   }
   return true;
 }
@@ -878,7 +990,7 @@ cleanup:
     exit_status = EXIT_FAILURE;
   }
   if (connection != NULL && property_watch_registered) {
-    dbus_connection_remove_filter(connection, handle_bluez_property, &state);
+    dbus_connection_remove_filter(connection, handle_bluez_change, &state);
   }
   if (connection != NULL && agent_registered) {
     call_agent_manager(connection, "UnregisterAgent", false);
