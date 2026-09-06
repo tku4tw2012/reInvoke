@@ -55,6 +55,13 @@ snapshot() {
     $BB ps -o pid,ppid,args |
       $BB grep -E "reinvoke-provision|reinvoke-wifi-applyd|hostapd|udhcpd" |
       $BB grep -v grep || true
+    echo "=== window children ==="
+    # The supervised windowd and its logger always carry the child binary names
+    # in their own arguments, so they must not count as running children.
+    $BB ps -o pid,ppid,args |
+      $BB grep -E "reinvoke-wifi-applyd|/reinvoke-provisiond|/hostapd|udhcpd" |
+      $BB grep -v grep |
+      $BB grep -v "reinvoke-provision-windowd" || true
     echo "=== runtime files ==="
     $BB find /run/reinvoke/provision-window -maxdepth 3 -print 2>/dev/null ||
       true
@@ -269,9 +276,7 @@ main() {
     grep -q ':8443' "${output_dir}/active.txt" 2>/dev/null &&
       echo "PASS access_point.https_listener" ||
       echo "FAIL access_point.https_listener"
-    grep -qE \
-      'reinvoke-wifi-applyd|/reinvoke-provisiond|/hostapd|udhcpd' \
-      "${output_dir}/active.txt" 2>/dev/null &&
+    [[ -n "$(snapshot_section "${output_dir}/active.txt" "window children")" ]] &&
       echo "PASS access_point.children_running" ||
       echo "FAIL access_point.children_running"
     [[ -s "${output_dir}/descriptor.json" ]] &&
@@ -284,9 +289,7 @@ main() {
     grep -q '/run/reinvoke/provision-window' "${output_dir}/final.txt" &&
       echo "FAIL cleanup.runtime_removed" ||
       echo "PASS cleanup.runtime_removed"
-    grep -qE \
-      'reinvoke-wifi-applyd|/reinvoke-provisiond|/hostapd|udhcpd' \
-      "${output_dir}/final.txt" 2>/dev/null &&
+    [[ -n "$(snapshot_section "${output_dir}/final.txt" "window children")" ]] &&
       echo "FAIL cleanup.children_stopped" ||
       echo "PASS cleanup.children_stopped"
     grep -q 'inet addr:192.168.43.1' "${output_dir}/final.txt" 2>/dev/null &&
