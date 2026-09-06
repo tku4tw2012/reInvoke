@@ -149,8 +149,16 @@ compilation. The resolved sysroot is retained twice under
 `f1f13d539bc70049d77dbf6583ca0819bb90d5f0800c0397ae9145bea3b7e2c1`, and
 extract to the gated manifest
 `bd39640b96ef4adc6ef4bff1870a5bef2ddacb63b06f6f623816136565124012`.
-The GCC/binutils Debian packages are identified but not yet retained, so this
-is not a complete clean-room build claim.
+The exact GCC, binutils, C-library-development, and Linux-header Debian packages
+are retained with `SHA256SUMS` under `toolchains/armhf-gcc11-debs/`.
+
+The built D-Bus input is likewise retained twice under
+`toolchains/dbus-1.12.20-armhf-static/`. Both normalized archives have SHA-256
+`658cdbcfae37f6aad12067c88b7aca78183cfdc31fce57a3e8d8ebff09f75a00` and
+extract to the gated static-library and header manifests. The pairing-agent
+binary can therefore be reconstructed from retained, content-gated inputs on a
+compatible Ubuntu 22.04 host. Rebuilding the D-Bus static archive itself from
+source is a separate provenance layer.
 
 The signal/state precedence seam has a host-only test:
 
