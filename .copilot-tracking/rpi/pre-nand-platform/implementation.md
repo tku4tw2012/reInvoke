@@ -594,6 +594,40 @@ signal when the executable does not match, which
 exits on its own when `org.bluez` disappears, so agent recovery does not depend
 on the guard's PID comparison alone.
 
+### Generation and lock-contention stress
+
+Eight further DSP generations were driven on `pre-nand-rc2`. Every one restored
+`0x0138D249`, preserved the MCU's `0x00200000` bit, and round-tripped `getVer`,
+for eight passes and no failures.
+
+`configureMCUInterruptPin` runs only at MCU startup, so the shared pinmux lock is
+contended only when the MCU starts while the DSP is between its download-mode
+clear and its message-mode restore. That contention had never been exercised on
+hardware, only in unit tests. Killing both services together in three rounds
+produced replacement processes with adjacent PIDs, which places both
+read-modify-write sequences in the same window. The register read `0x0138D249`
+after every round, and both services then answered `getmcustatus`, `getVer`, and
+a Mic-Mute round trip. Fifteen pinmux restores are recorded in the runtime log
+across the whole session.
+
+An earlier attempt at that contention test was invalid and is recorded here
+because the failure mode is the one this effort keeps repeating. Its device-side
+command substitution never executed, so nothing was killed; the process IDs were
+identical before and after all five rounds while the register kept its correct
+value. It would have read as five clean passes. A restart test is only evidence
+when the process ID is shown to change, and the corrected run above asserts
+exactly that.
+
+### Candidate discipline
+
+No further candidate is warranted. The only commit after the `pre-nand-rc2` pin
+is documentation, and no image-affecting path differs, so rebuilding would
+produce the same artifact under a new name. The provenance chain is closed:
+`build.sh` at `HEAD` reproduces
+`4a7882d4f463b6a6adf84f38e868faf1b2e17a0a0303d0c6c2246ecf07ef4c95`, that binary
+is the one inside the `pre-nand-rc2` runtime bundle, and it is the binary the
+gated device is running.
+
 Reproducing an owned service binary requires the checked-in `build.sh` for that
 service rather than hand-assembled flags. It pins `-trimpath`, `-buildvcs=false`,
 `-mod=readonly`, `-ldflags="-s -w"`, and the archived Go 1.18.1 toolchain.
