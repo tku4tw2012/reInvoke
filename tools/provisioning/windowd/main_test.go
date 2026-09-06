@@ -262,6 +262,96 @@ func TestRefuseUnsafeStaleControlSocket(t *testing.T) {
 	}
 }
 
+func TestWaitForUnixSocketRejectsStaleInodeAfterChildExit(t *testing.T) {
+	t.Parallel()
+	path, _ := createRetainedUnixSocket(t, 0600, true)
+	defer os.Remove(path)
+	child := newFakeProcess()
+	child.once.Do(func() { close(child.done) })
+
+	err := waitForUnixSocket(
+		context.Background(),
+		path,
+		child,
+		time.Second,
+	)
+	if err == nil || !strings.Contains(err.Error(), "child exited") {
+		t.Fatalf("stale socket readiness error = %v", err)
+	}
+}
+
+func TestWaitForUnixSocketRequiresLiveListener(t *testing.T) {
+	t.Parallel()
+	path, listener := createRetainedUnixSocket(t, 0600, false)
+	defer listener.Close()
+	defer os.Remove(path)
+
+	if err := waitForUnixSocket(
+		context.Background(),
+		path,
+		newFakeProcess(),
+		time.Second,
+	); err != nil {
+		t.Fatalf("live socket was not ready: %v", err)
+	}
+}
+
+func TestSocketLifecycleLockSerializesCallers(t *testing.T) {
+	t.Parallel()
+	lockPath := filepath.Join(t.TempDir(), "apply.sock.lock")
+	entered := make(chan string, 2)
+	release := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- withSocketLifecycleLock(
+			context.Background(),
+			lockPath,
+			uint32(os.Geteuid()),
+			func() error {
+				entered <- "first"
+				<-release
+				return nil
+			},
+		)
+	}()
+	if caller := <-entered; caller != "first" {
+		t.Fatalf("first lock caller = %q", caller)
+	}
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- withSocketLifecycleLock(
+			context.Background(),
+			lockPath,
+			uint32(os.Geteuid()),
+			func() error {
+				entered <- "second"
+				return nil
+			},
+		)
+	}()
+	select {
+	case caller := <-entered:
+		t.Fatalf("%s caller bypassed held lifecycle lock", caller)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case caller := <-entered:
+		if caller != "second" {
+			t.Fatalf("second lock caller = %q", caller)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("second caller did not continue after lock release")
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWindowGateSerializesWindows(t *testing.T) {
 	t.Parallel()
 	gate := &windowGate{}
@@ -521,6 +611,8 @@ func TestSuccessfulWindowCleanupPreservesStationState(t *testing.T) {
 	}
 	runner := &fakeRunner{}
 	starter := &fakeStarter{all: make(chan struct{})}
+	var recoveredApply bool
+	var lifecycleLockHeld bool
 	config := windowConfig{
 		runtimeDirectory: runtimeDirectory,
 		interfaceName:    "p2p0",
@@ -574,6 +666,27 @@ func TestSuccessfulWindowCleanupPreservesStationState(t *testing.T) {
 		) error {
 			return nil
 		},
+		recoverApply: func(string, uint32, time.Duration) error {
+			recoveredApply = true
+			lockFile, err := os.OpenFile(
+				config.applySocket+".lock",
+				os.O_RDWR,
+				0,
+			)
+			if err != nil {
+				return err
+			}
+			defer lockFile.Close()
+			err = syscall.Flock(
+				int(lockFile.Fd()),
+				syscall.LOCK_EX|syscall.LOCK_NB,
+			)
+			lifecycleLockHeld = errors.Is(err, syscall.EWOULDBLOCK)
+			if err == nil {
+				_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+			}
+			return nil
+		},
 		removeAll: os.RemoveAll,
 	}
 
@@ -585,6 +698,12 @@ func TestSuccessfulWindowCleanupPreservesStationState(t *testing.T) {
 	case <-starter.all:
 	case <-time.After(time.Second):
 		t.Fatal("window children did not start")
+	}
+	if !recoveredApply {
+		t.Fatal("window did not recover the apply socket before launch")
+	}
+	if !lifecycleLockHeld {
+		t.Fatal("apply socket recovery ran without the lifecycle lock")
 	}
 	starter.processes[1].once.Do(func() {
 		close(starter.processes[1].done)

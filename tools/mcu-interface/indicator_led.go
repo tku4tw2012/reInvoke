@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 )
@@ -39,8 +40,25 @@ func (controller *indicatorLEDController) Set(
 	mode,
 	color string,
 ) error {
+	return controller.SetContext(
+		context.Background(),
+		target,
+		mode,
+		color,
+	)
+}
+
+func (controller *indicatorLEDController) SetContext(
+	ctx context.Context,
+	target,
+	mode,
+	color string,
+) error {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	candidate := controller.state
 	value := indicatorLEDMode(mode)

@@ -136,6 +136,26 @@ test("uses only an explicit PCM path and updates both channels", async () => {
   ]);
 });
 
+test("defaults to the packaged bluealsa-cli executable", async () => {
+  const calls = [];
+  const backend = new BlueAlsaCliBackend({
+    pcmPath: "/verified/pcm/path",
+    run: async (command, args) => {
+      calls.push([command, args]);
+      return { code: 0, stdout: STEREO_INFO, stderr: "" };
+    },
+    observe: async () => ({
+      sourceConnected: true,
+      transportState: "playing",
+    }),
+  });
+
+  await backend.read();
+
+  assert.equal(calls[0][0], "bluealsa-cli");
+  assert.deepEqual(calls[0][1], ["info", "/verified/pcm/path"]);
+});
+
 test("accepts an injected target-verified volume mapping", async () => {
   const calls = [];
   const backend = new BlueAlsaCliBackend({

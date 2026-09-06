@@ -150,6 +150,16 @@ int main(int argc, char **argv) {
     close(descriptor);
     return EXIT_FAILURE;
   }
+  if (unpair_address != NULL) {
+    const int unpaired = unpair_device(device_id, unpair_address);
+
+    if (unpaired < 0) {
+      perror("MGMT_OP_UNPAIR_DEVICE");
+      close(descriptor);
+      return EXIT_FAILURE;
+    }
+    deleted_keys += unpaired;
+  }
   if (reset) {
     int hci_descriptor = hci_open_dev(device_id);
 
@@ -157,17 +167,6 @@ int main(int argc, char **argv) {
       perror("hci_open_dev");
       close(descriptor);
       return EXIT_FAILURE;
-    }
-    if (unpair_address != NULL) {
-      const int unpaired = unpair_device(device_id, unpair_address);
-
-      if (unpaired < 0) {
-        perror("MGMT_OP_UNPAIR_DEVICE");
-        close(hci_descriptor);
-        close(descriptor);
-        return EXIT_FAILURE;
-      }
-      deleted_keys += unpaired;
     }
     {
       const int controller_keys =

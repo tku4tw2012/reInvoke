@@ -4,12 +4,32 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestCancelledSessionCannotResumeQueuedIndicatorWrite(t *testing.T) {
+	writer := &recordingIndicatorLEDWriter{}
+	controller := newIndicatorLEDController(writer)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	controller.mu.Lock()
+	go func() {
+		done <- controller.SetContext(ctx, "back", "on", "")
+	}()
+	cancel()
+	controller.mu.Unlock()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("queued indicator error = %v, want cancellation", err)
+	}
+	if frames := writer.recorded(); len(frames) != 0 {
+		t.Fatalf("cancelled session wrote indicator frames: %x", frames)
+	}
+}
 
 type recordingIndicatorLEDWriter struct {
 	mu     sync.Mutex

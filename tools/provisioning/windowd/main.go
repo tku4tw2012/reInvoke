@@ -41,6 +41,8 @@ const (
 	defaultWindowLifetime   = 5 * time.Minute
 	maxWindowLifetime       = 15 * time.Minute
 	minWindowLifetime       = 30 * time.Second
+	socketProbeTimeout      = 250 * time.Millisecond
+	socketLockRetry         = 50 * time.Millisecond
 	defaultReadyTimeout     = 15 * time.Second
 	defaultApplyTimeout     = 25 * time.Second
 	defaultHostapdPath      = "/usr/sbin/hostapd"
@@ -157,6 +159,7 @@ type windowManager struct {
 	waitApply         func(context.Context, string, process, time.Duration) error
 	waitAP            func(context.Context, string, string, process, time.Duration) error
 	waitDescriptor    func(context.Context, string, process, time.Duration) error
+	recoverApply      func(string, uint32, time.Duration) error
 	removeAll         func(string) error
 }
 
@@ -484,25 +487,48 @@ func (m *windowManager) Run(parent context.Context, lifetime time.Duration) (
 	if maximum := lifetime - 5*time.Second; applyTimeout > maximum {
 		applyTimeout = maximum
 	}
-	applyProcess, err := m.starter.Start(
-		m.config.applydPath,
-		"-socket", paths.applySocket,
-		"-config", paths.applyConfig,
-		"-control-dir", paths.applyControl,
-		"-interface", m.config.stationInterface,
-		"-lifetime", lifetime.String(),
-	)
-	if err != nil {
-		return errors.New("start Wi-Fi apply service")
+	recoverApply := m.recoverApply
+	if recoverApply == nil {
+		recoverApply = recoverStaleControlSocket
 	}
-	children = append(children, applyProcess)
-	if err := m.waitApply(
+	var applyProcess process
+	if err := withSocketLifecycleLock(
 		ctx,
-		paths.applySocket,
-		applyProcess,
-		m.config.readyTimeout,
+		paths.applySocket+".lock",
+		uint32(os.Geteuid()),
+		func() error {
+			if err := recoverApply(
+				paths.applySocket,
+				uint32(os.Geteuid()),
+				socketProbeTimeout,
+			); err != nil {
+				return errors.New("recover Wi-Fi apply socket")
+			}
+			var err error
+			applyProcess, err = m.starter.Start(
+				m.config.applydPath,
+				"-socket", paths.applySocket,
+				"-config", paths.applyConfig,
+				"-control-dir", paths.applyControl,
+				"-interface", m.config.stationInterface,
+				"-lifetime", lifetime.String(),
+			)
+			if err != nil {
+				return errors.New("start Wi-Fi apply service")
+			}
+			children = append(children, applyProcess)
+			if err := m.waitApply(
+				ctx,
+				paths.applySocket,
+				applyProcess,
+				m.config.readyTimeout,
+			); err != nil {
+				return errors.New("Wi-Fi apply service did not become ready")
+			}
+			return nil
+		},
 	); err != nil {
-		return errors.New("Wi-Fi apply service did not become ready")
+		return err
 	}
 
 	provisionProcess, err := m.starter.Start(
@@ -884,9 +910,16 @@ func waitForUnixSocket(
 ) error {
 	return waitForCondition(ctx, child, timeout, func() bool {
 		info, err := os.Lstat(path)
-		return err == nil &&
-			info.Mode()&os.ModeSocket != 0 &&
-			info.Mode()&os.ModeSymlink == 0
+		if err != nil ||
+			info.Mode()&os.ModeSocket == 0 ||
+			info.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+		connection, err := net.DialTimeout("unix", path, socketProbeTimeout)
+		if err != nil {
+			return false
+		}
+		return connection.Close() == nil
 	})
 }
 
@@ -953,7 +986,19 @@ func waitForCondition(
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-child.Done():
+			return errors.New("child exited before readiness")
+		default:
+		}
 		if condition() {
+			select {
+			case <-child.Done():
+				return errors.New("child exited before readiness")
+			default:
+			}
 			return nil
 		}
 		select {
@@ -1206,6 +1251,66 @@ func recoverStaleControlSocket(
 	return nil
 }
 
+func withSocketLifecycleLock(
+	ctx context.Context,
+	path string,
+	expectedUID uint32,
+	run func() error,
+) error {
+	fileDescriptor, err := syscall.Open(
+		path,
+		syscall.O_CREAT|syscall.O_RDWR|syscall.O_CLOEXEC|syscall.O_NOFOLLOW,
+		0600,
+	)
+	if err != nil {
+		return errors.New("open socket lifecycle lock")
+	}
+	file := os.NewFile(uintptr(fileDescriptor), path)
+	if file == nil {
+		syscall.Close(fileDescriptor)
+		return errors.New("open socket lifecycle lock")
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return errors.New("inspect socket lifecycle lock")
+	}
+	uid, ownerErr := fileOwnerUID(info)
+	if ownerErr != nil || uid != expectedUID || !info.Mode().IsRegular() ||
+		info.Mode().Perm() != 0600 {
+		return errors.New("socket lifecycle lock is unsafe")
+	}
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err = syscall.Flock(
+			fileDescriptor,
+			syscall.LOCK_EX|syscall.LOCK_NB,
+		)
+		if err == nil {
+			break
+		}
+		if err != syscall.EAGAIN &&
+			err != syscall.EWOULDBLOCK &&
+			err != syscall.EINTR {
+			return errors.New("lock socket lifecycle")
+		}
+		timer := time.NewTimer(socketLockRetry)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	defer syscall.Flock(fileDescriptor, syscall.LOCK_UN)
+	return run()
+}
+
 func validatePort(port int) error {
 	if port < 1 || port > 65535 {
 		return errors.New("port must be from 1 through 65535")
@@ -1440,6 +1545,7 @@ func run() error {
 		waitApply:         waitForUnixSocket,
 		waitAP:            waitForHostapd,
 		waitDescriptor:    waitForPrivateFile,
+		recoverApply:      recoverStaleControlSocket,
 		removeAll:         os.RemoveAll,
 	}
 	service := &daemon{

@@ -105,6 +105,9 @@ func (controller *blueALSAController) ToggleMuted(
 ) (blueALSASnapshot, error) {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return blueALSASnapshot{}, err
+	}
 	if controller.cachedValid {
 		newMuted := !controller.cachedMuted
 		value := "n"
@@ -160,6 +163,9 @@ func (controller *blueALSAController) Snapshot(
 ) (blueALSASnapshot, error) {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return blueALSASnapshot{}, err
+	}
 	return controller.snapshotLocked(ctx)
 }
 
@@ -169,9 +175,10 @@ func (controller *blueALSAController) SetVolume(
 ) (blueALSASnapshot, error) {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
-	if percent < 0 || percent > 100 {
-		return blueALSASnapshot{}, errors.New("volume must be from 0 through 100")
+	if err := ctx.Err(); err != nil {
+		return blueALSASnapshot{}, err
 	}
+	percent = clampVolume(percent)
 	if controller.cachedValid {
 		rawVolume := (percent*127 + 50) / 100
 		value := strconv.Itoa(rawVolume)
@@ -224,14 +231,11 @@ func (controller *blueALSAController) AdjustVolume(
 ) (blueALSASnapshot, error) {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return blueALSASnapshot{}, err
+	}
 	if controller.cachedValid {
-		percent := controller.cachedVolume + delta
-		if percent < 0 {
-			percent = 0
-		}
-		if percent > 100 {
-			percent = 100
-		}
+		percent := adjustVolume(controller.cachedVolume, delta)
 		if percent == controller.cachedVolume {
 			return blueALSASnapshot{Volume: percent, Muted: controller.cachedMuted}, nil
 		}
@@ -261,13 +265,7 @@ func (controller *blueALSAController) adjustVolumeSlowLocked(
 	if err != nil {
 		return blueALSASnapshot{}, err
 	}
-	percent := snapshot.Volume + delta
-	if percent < 0 {
-		percent = 0
-	}
-	if percent > 100 {
-		percent = 100
-	}
+	percent := adjustVolume(snapshot.Volume, delta)
 	rawVolume := (percent*127 + 50) / 100
 	value := strconv.Itoa(rawVolume)
 	if _, err := controller.run(
@@ -287,12 +285,36 @@ func (controller *blueALSAController) adjustVolumeSlowLocked(
 	return snapshot, nil
 }
 
+func clampVolume(percent int) int {
+	if percent < 0 {
+		return 0
+	}
+	if percent > 100 {
+		return 100
+	}
+	return percent
+}
+
+func adjustVolume(current int, delta int) int {
+	current = clampVolume(current)
+	if delta > 0 && delta >= 100-current {
+		return 100
+	}
+	if delta < 0 && delta <= -current {
+		return 0
+	}
+	return current + delta
+}
+
 func (controller *blueALSAController) SetMuted(
 	ctx context.Context,
 	muted bool,
 ) (blueALSASnapshot, error) {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return blueALSASnapshot{}, err
+	}
 	if controller.cachedValid {
 		value := "n"
 		if muted {

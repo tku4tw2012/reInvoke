@@ -22,6 +22,7 @@ type microphonePrivacyController struct {
 	statePath   string
 	controlPath string
 	lights      *ledPlayer
+	lifetime    context.Context
 	reconcile   chan struct{}
 	logf        func(string, ...interface{})
 }
@@ -40,6 +41,7 @@ func newMicrophonePrivacyController(
 		statePath:   statePath,
 		controlPath: controlPath,
 		lights:      lights,
+		lifetime:    context.Background(),
 		reconcile:   make(chan struct{}, 1),
 		logf:        logf,
 	}
@@ -53,6 +55,10 @@ func (controller *microphonePrivacyController) Apply(
 		return nil
 	}
 	controller.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		controller.mu.Unlock()
+		return err
+	}
 	err := controller.setLocked(ctx, !controller.muted)
 	controller.mu.Unlock()
 	if err != nil {
@@ -66,6 +72,10 @@ func (controller *microphonePrivacyController) Set(
 	muted bool,
 ) error {
 	controller.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		controller.mu.Unlock()
+		return err
+	}
 	err := controller.setLocked(ctx, muted)
 	controller.mu.Unlock()
 	if err != nil {
@@ -79,6 +89,9 @@ func (controller *microphonePrivacyController) Reconcile(
 ) error {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if !controller.muted && !controller.desired && !controller.unknown {
 		return nil
 	}
@@ -123,7 +136,10 @@ func (controller *microphonePrivacyController) setLocked(
 	controller.desired = true
 	controller.unknown = true
 	if !muted && controller.lights != nil {
-		if err := controller.lights.SetPrivacyMuted(ctx, false); err != nil {
+		if err := controller.lights.SetPrivacyMuted(
+			controller.lifetime,
+			false,
+		); err != nil {
 			return fmt.Errorf("clear privacy indicator before unmute: %w", err)
 		}
 	}
@@ -134,13 +150,13 @@ func (controller *microphonePrivacyController) setLocked(
 	}
 	if err := setDSPMicrophone(ctx, controller.controlPath, muted); err != nil {
 		if !muted {
-			return controller.restoreMuteLocked(ctx, err)
+			return controller.restoreMuteLocked(controller.lifetime, err)
 		}
 		return err
 	}
 	if err := persistMicrophoneState(controller.statePath, muted); err != nil {
 		if !muted {
-			return controller.restoreMuteLocked(ctx, err)
+			return controller.restoreMuteLocked(controller.lifetime, err)
 		}
 		return fmt.Errorf("persist confirmed microphone state: %w", err)
 	}
@@ -148,7 +164,10 @@ func (controller *microphonePrivacyController) setLocked(
 	controller.desired = muted
 	controller.unknown = false
 	if controller.lights != nil {
-		if err := controller.lights.SetPrivacyMuted(ctx, muted); err != nil {
+		if err := controller.lights.SetPrivacyMuted(
+			controller.lifetime,
+			muted,
+		); err != nil {
 			return fmt.Errorf("set microphone privacy indicator: %w", err)
 		}
 	}
@@ -171,7 +190,10 @@ func (controller *microphonePrivacyController) restoreMuteLocked(
 		controller.desired = true
 		controller.unknown = false
 		if controller.lights != nil {
-			restoreErr = controller.lights.SetPrivacyMuted(ctx, true)
+			restoreErr = controller.lights.SetPrivacyMuted(
+				controller.lifetime,
+				true,
+			)
 		}
 	}
 	if restoreErr != nil {

@@ -174,6 +174,36 @@ func TestConfigureDSPPinmuxWaitsForSharedLock(t *testing.T) {
 	}
 }
 
+func TestConfigureDSPPinmuxLockHonorsContext(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "pinmux.lock")
+	holder, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close()
+	if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Flock(int(holder.Fd()), syscall.LOCK_UN)
+
+	runner := &recordingPinmuxRunner{value: 0x0038D249}
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	_, err = configureDSPPinmux(
+		ctx,
+		"/bin/busybox",
+		lockPath,
+		true,
+		runner.run,
+	)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("lock error = %v, want context deadline", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("devmem ran before lock acquisition: %#v", runner.calls)
+	}
+}
+
 // A shutdown signal cancels the process context and fails the download, which
 // is exactly when message mode has to be restored. The restore therefore runs
 // on a detached context, and exec must not refuse it.
@@ -204,9 +234,14 @@ func TestConfigureDSPPinmuxRestoresAfterParentCancellation(t *testing.T) {
 	runner := &recordingPinmuxRunner{value: 0x0038D249}
 	parent, cancelParent := context.WithCancel(context.Background())
 	cancelParent()
+	if parent.Err() == nil {
+		t.Fatal("parent context should already be cancelled")
+	}
+	restoreCtx, cancelRestore := detachedPinmuxContext()
+	defer cancelRestore()
 
 	if _, err := configureDSPPinmux(
-		parent,
+		restoreCtx,
 		"/bin/busybox",
 		filepath.Join(t.TempDir(), "pinmux.lock"),
 		true,

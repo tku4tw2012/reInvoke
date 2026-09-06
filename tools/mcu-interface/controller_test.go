@@ -4,6 +4,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -297,5 +299,50 @@ func TestDACFailureReassertsBothMutes(t *testing.T) {
 			control.dacMuted,
 			control.initialized,
 		)
+	}
+}
+
+func TestCancelledSessionCannotResumeQueuedMuteWrite(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		run  func(*controller, context.Context) error
+	}{
+		{
+			name: "amplifier",
+			run: func(control *controller, ctx context.Context) error {
+				return control.setAmpMuteContext(ctx, false)
+			},
+		},
+		{
+			name: "DAC",
+			run: func(control *controller, ctx context.Context) error {
+				return control.setDACMuteContext(ctx, false)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			hardware := newRecordingHardware(0)
+			control := newController(
+				hardware,
+				mutePolicy{AllowUnmute: true},
+			)
+			control.initialized = true
+			start := len(hardware.operations)
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			control.mu.Lock()
+			go func() { done <- test.run(control, ctx) }()
+			cancel()
+			control.mu.Unlock()
+			if err := <-done; !errors.Is(err, context.Canceled) {
+				t.Fatalf("queued mute error = %v, want cancellation", err)
+			}
+			if len(hardware.operations) != start {
+				t.Fatalf(
+					"cancelled session wrote hardware: %#v",
+					hardware.operations[start:],
+				)
+			}
+		})
 	}
 }

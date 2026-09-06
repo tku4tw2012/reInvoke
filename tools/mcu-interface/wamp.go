@@ -215,7 +215,7 @@ func (service *wampService) run(ctx context.Context) error {
 			go func(message []interface{}) {
 				defer invocations.Done()
 				if err := service.handleInvocation(
-					ctx,
+					sessionContext,
 					client,
 					registrations,
 					message,
@@ -316,12 +316,16 @@ func (service *wampService) handleInvocation(
 	case "com.harman.vui.mutedaccontrol":
 		invocationError = applyMuteCommand(
 			args,
-			service.controller.setDACMute,
+			func(muted bool) error {
+				return service.controller.setDACMuteContext(ctx, muted)
+			},
 		)
 	case "com.harman.vui.muteampcontrol":
 		invocationError = applyMuteCommand(
 			args,
-			service.controller.setAmpMute,
+			func(muted bool) error {
+				return service.controller.setAmpMuteContext(ctx, muted)
+			},
 		)
 	case "com.harman.volumeGet":
 		var snapshot blueALSASnapshot
@@ -332,7 +336,7 @@ func (service *wampService) handleInvocation(
 	case "com.harman.volumeSet":
 		var snapshot blueALSASnapshot
 		var value int
-		value, invocationError = mediaIntegerArgument(args, false)
+		value, invocationError = mediaIntegerArgument(args, true)
 		if invocationError == nil && service.media == nil {
 			invocationError = errors.New("media backend is unavailable")
 		}
@@ -340,7 +344,7 @@ func (service *wampService) handleInvocation(
 			snapshot, invocationError = service.media.SetVolume(ctx, value)
 		}
 		if invocationError == nil {
-			result = []interface{}{value, "music"}
+			result = []interface{}{snapshot.Volume, "music"}
 			resultKwargs = mediaVolumeState(snapshot)
 			events = mediaVolumeEvents(snapshot, false)
 		}
@@ -413,7 +417,12 @@ func (service *wampService) handleInvocation(
 			invocationError = errors.New("indicator LED controller is unavailable")
 		}
 		if invocationError == nil {
-			invocationError = service.indicatorLEDs.Set(target, mode, color)
+			invocationError = service.indicatorLEDs.SetContext(
+				ctx,
+				target,
+				mode,
+				color,
+			)
 		}
 	case "com.harman.ledOff":
 		if len(args) != 0 {
@@ -421,7 +430,7 @@ func (service *wampService) handleInvocation(
 		} else if service.lights == nil {
 			invocationError = errors.New("LED player is unavailable")
 		} else {
-			invocationError = service.lights.Stop()
+			invocationError = service.lights.StopContext(ctx)
 		}
 	case "com.harman.dsp.micMute":
 		var muted bool

@@ -5,11 +5,36 @@ package main
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 )
 
 type recordingLEDWriter struct {
 	packets [][]byte
+}
+
+type recoveringLEDWriter struct {
+	mu        sync.Mutex
+	calls     int
+	recovered chan struct{}
+	once      sync.Once
+}
+
+func (writer *recoveringLEDWriter) WriteMCUData([]byte) error {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	writer.calls++
+	if writer.calls == 2 {
+		return errors.New("injected second-chunk failure")
+	}
+	if writer.calls >= 4 {
+		writer.once.Do(func() { close(writer.recovered) })
+	}
+	return nil
 }
 
 func (writer *recordingLEDWriter) WriteMCUData(data []byte) error {
@@ -80,6 +105,7 @@ func TestPrivacyIndicatorBlocksTransientAnimationsAndLEDOff(t *testing.T) {
 		writer:       writer,
 		privacyMuted: true,
 	}
+
 	if err := player.Apply(
 		context.Background(),
 		inputEvent{Name: "action"},
@@ -101,5 +127,66 @@ func TestPrivacyIndicatorBlocksTransientAnimationsAndLEDOff(t *testing.T) {
 	}
 	if len(writer.packets) != 1 || len(writer.packets[0]) != 41 {
 		t.Fatalf("privacy clear packets = %#v", writer.packets)
+	}
+}
+
+func TestPrivacyIndicatorRetriesAfterPostStartFailure(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(directory, micPrivacyLEDName+".bin"),
+		make([]byte, ledChunkBytes+ledFrameBytes),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	writer := &recoveringLEDWriter{recovered: make(chan struct{})}
+	var logged int
+	player := &ledPlayer{
+		directory: directory,
+		writer:    writer,
+		logf: func(string, ...interface{}) {
+			logged++
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := player.SetPrivacyMuted(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-writer.recovered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("privacy animation did not recover after second-chunk failure")
+	}
+	if logged == 0 {
+		t.Fatal("post-start privacy animation failure was not logged")
+	}
+	if err := player.SetPrivacyMuted(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCancelledSessionCannotResumeQueuedAnimation(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(directory, "animation.bin"),
+		make([]byte, ledFrameBytes),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	writer := &recordingLEDWriter{}
+	player := &ledPlayer{directory: directory, writer: writer}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	player.mu.Lock()
+	go func() { done <- player.Start(ctx, "animation", false) }()
+	cancel()
+	player.mu.Unlock()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("queued animation error = %v, want cancellation", err)
+	}
+	if len(writer.packets) != 0 {
+		t.Fatalf("cancelled session wrote %d LED packets", len(writer.packets))
 	}
 }

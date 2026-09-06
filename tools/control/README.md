@@ -115,15 +115,13 @@ evidence probe, not a working media bridge.
 
 `hci-init.c` and `bluez-pairing-agent.c` are the owned control components for
 the RAM-only BlueZ replacement. No prebuilt copy is committed. Build them as
-static ARM binaries against the pinned BlueZ and D-Bus build trees:
+static ARM binaries from retained, gated inputs:
 
 ```bash
-arm-linux-gnueabihf-gcc -std=c11 -O2 -Wall -Wextra -Werror -static \
-  -Ipath/to/bluez-5.55 \
-  -Ipath/to/armhf-sysroot/usr/include \
-  tools/control/hci-init.c \
-  path/to/bluez-5.55/lib/.libs/libbluetooth-internal.a \
-  -o path/to/hci-init
+tools/control/build-hci-init.sh \
+  --bluez-archive path/to/bluez-5.55.tar.xz \
+  --sysroot path/to/armhf-sysroot \
+  --output path/to/hci-init
 
 tools/control/build-bluez-pairing-agent.sh \
   --dbus-source path/to/dbus-1.12.20 \
@@ -137,6 +135,9 @@ the A2DP/AVRCP UUID set. `SIGUSR2` toggles/cancels the bounded pairing window;
 and atomically publishes `pairing`, `connected`, or `off` to the optional fourth
 argument, which defaults to `/run/reinvoke/bluetooth-state`. The HCI initializer
 resets the controller and removes volatile keys before a clean reconstruction.
+`--unpair ADDRESS` also performs the advertised standalone MGMT unpair without
+requiring `--reset`; a live test removed one retained RAM-only bond and reported
+`deleted_keys=1`.
 
 The pairing-agent digest gated by `build-native-runtime.sh` is
 `0e2e17763fb9f9212aee30226d2399f2ca7a4a93f7fb275c0fd6e7af6fe54a57`.

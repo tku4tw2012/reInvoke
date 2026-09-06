@@ -249,6 +249,7 @@ func main() {
 		lights,
 		log.Printf,
 	)
+	privacy.lifetime = ctx
 	inputControls = append(inputControls, privacy)
 	privacyDone := make(chan struct{})
 	go func() {

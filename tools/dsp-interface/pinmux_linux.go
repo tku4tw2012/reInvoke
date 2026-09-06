@@ -23,6 +23,7 @@ const (
 	// Restoring message mode must survive the signal that cancels the boot, so
 	// it runs on its own deadline instead of the process context.
 	dspPinmuxRestoreTimeout = 10 * time.Second
+	dspPinmuxLockRetry      = 10 * time.Millisecond
 )
 
 // detachedPinmuxContext returns a bounded context that no shutdown signal can
@@ -69,7 +70,7 @@ func configureDSPPinmux(
 		return 0, fmt.Errorf("open DSP pinmux lock: %w", err)
 	}
 	defer lockFile.Close()
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+	if err := lockDSPPinmux(ctx, lockFile); err != nil {
 		return 0, fmt.Errorf("lock DSP pinmux: %w", err)
 	}
 	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
@@ -112,6 +113,36 @@ func configureDSPPinmux(
 		)
 	}
 	return confirmed, nil
+}
+
+func lockDSPPinmux(ctx context.Context, lockFile *os.File) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := syscall.Flock(
+			int(lockFile.Fd()),
+			syscall.LOCK_EX|syscall.LOCK_NB,
+		)
+		if err == nil {
+			return nil
+		}
+		if err != syscall.EAGAIN &&
+			err != syscall.EWOULDBLOCK &&
+			err != syscall.EINTR {
+			return err
+		}
+
+		timer := time.NewTimer(dspPinmuxLockRetry)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func readDSPPinmux(

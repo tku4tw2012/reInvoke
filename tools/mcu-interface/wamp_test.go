@@ -135,6 +135,7 @@ func TestVolumeSetUsesBlueALSAAsAuthority(t *testing.T) {
 			default:
 				return nil, errors.New("unexpected command")
 			}
+
 		},
 	)
 	if err != nil {
@@ -161,6 +162,57 @@ func TestVolumeSetUsesBlueALSAAsAuthority(t *testing.T) {
 	}
 	if !reflect.DeepEqual(response[3], []interface{}{uint64(25), "music"}) {
 		t.Fatalf("result args = %#v", response[3])
+	}
+}
+
+func TestVolumeSetClampsAndReturnsEffectiveValue(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value interface{}
+		want  uint64
+	}{
+		{name: "negative", value: int64(-1), want: 0},
+		{name: "above maximum", value: uint64(101), want: 100},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			media, err := newBlueALSAController(
+				"bluealsa-cli",
+				"AA:BB:CC:11:22:33",
+				func(_ context.Context, args ...string) ([]byte, error) {
+					switch args[0] {
+					case "list-pcms":
+						return []byte(
+							"/org/bluealsa/hci0/dev_AA_BB_CC_11_22_33/" +
+								"a2dpsnk/source\n",
+						), nil
+					case "info":
+						return []byte(
+							"Volume: L: 64 R: 64\nMuted: L: N R: N\n",
+						), nil
+					case "volume":
+						return nil, nil
+					default:
+						return nil, errors.New("unexpected command")
+					}
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := invokeForTest(
+				t,
+				&wampService{media: media},
+				"com.harman.volumeSet",
+				[]interface{}{test.value, "music"},
+			)
+			if messageType(response) != wampYield {
+				t.Fatalf("response = %#v", response)
+			}
+			want := []interface{}{test.want, "music"}
+			if !reflect.DeepEqual(response[3], want) {
+				t.Fatalf("result args = %#v, want %#v", response[3], want)
+			}
+		})
 	}
 }
 
@@ -445,6 +497,91 @@ func TestMicrophoneMuteUsesPrivateControlSocket(t *testing.T) {
 			privacy.desired,
 			privacy.unknown,
 		)
+	}
+}
+
+type countingPrivacyLEDWriter struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (writer *countingPrivacyLEDWriter) WriteMCUData([]byte) error {
+	writer.mu.Lock()
+	writer.calls++
+	writer.mu.Unlock()
+	return nil
+}
+
+func (writer *countingPrivacyLEDWriter) count() int {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	return writer.calls
+}
+
+func TestPrivacyAnimationOutlivesWAMPSession(t *testing.T) {
+	socketPath, requests := startMicControlResponder(t, "OK\n")
+	lightsDirectory := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(lightsDirectory, micPrivacyLEDName+".bin"),
+		make([]byte, ledFrameBytes),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	writer := &countingPrivacyLEDWriter{}
+	lights := &ledPlayer{directory: lightsDirectory, writer: writer}
+	privacy := newMicrophonePrivacyController(
+		false,
+		filepath.Join(t.TempDir(), "microphone-state"),
+		socketPath,
+		lights,
+		nil,
+	)
+	processCtx, cancelProcess := context.WithCancel(context.Background())
+	privacy.lifetime = processCtx
+	sessionCtx, cancelSession := context.WithCancel(context.Background())
+	if err := privacy.Set(sessionCtx, true); err != nil {
+		t.Fatal(err)
+	}
+	if request := <-requests; request != "1\n" {
+		t.Fatalf("request = %q, want mute", request)
+	}
+	before := writer.count()
+	cancelSession()
+	time.Sleep(ledChunkDelay + 100*time.Millisecond)
+	if after := writer.count(); after <= before {
+		t.Fatalf(
+			"privacy animation stopped with WAMP session: before=%d after=%d",
+			before,
+			after,
+		)
+	}
+	cancelProcess()
+	if err := lights.SetPrivacyMuted(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCancelledSessionCannotResumeQueuedPrivacyMutation(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "microphone-state")
+	privacy := newMicrophonePrivacyController(
+		false,
+		statePath,
+		filepath.Join(t.TempDir(), "missing.sock"),
+		nil,
+		nil,
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	privacy.mu.Lock()
+	go func() { done <- privacy.Set(ctx, true) }()
+	cancel()
+	privacy.mu.Unlock()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("queued privacy error = %v, want cancellation", err)
+	}
+	if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("cancelled session persisted privacy state: %v", err)
 	}
 }
 
