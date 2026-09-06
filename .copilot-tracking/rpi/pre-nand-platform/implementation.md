@@ -550,6 +550,50 @@ The runtime bundle and the initramfs were each built twice and agree byte for
 byte. `pre-nand-rc2` is unproven on hardware until it clears the same gate
 `pre-nand-rc1` cleared, which needs an operator-driven cold boot.
 
+## `pre-nand-rc2` cold-boot results
+
+The candidate was cold-booted from power-off and cleared the full
+`collect-native-acceptance.sh` gate twice with zero failures, once immediately
+after boot and once after the fault injection below. Both runs reported MCU
+status `000116`, the `com.harman.dsp.version` event `25688`, a confirmed
+Mic-Mute, and restoration of the initial state. The running DSP binary hashed to
+`4a7882d4f463b6a6adf84f38e868faf1b2e17a0a0303d0c6c2246ecf07ef4c95`, and GPIO5
+read `0x0138D249` on the first generation with no manual write.
+
+The shutdown defect the candidate exists for was reproduced and shown fixed on
+hardware rather than argued from the source. The DSP service was interrupted
+with `SIGTERM` while its image download was in flight, which is the window that
+previously stranded the register:
+
+* the register read `0x0038D249` mid-download, confirming GPIO5 was cleared and
+  the process was genuinely inside the vulnerable window;
+* the service logged `boot DSP: context canceled`, confirming the signal
+  cancelled the boot;
+* it also logged `restored DSP message pinmux 0x0138D249`, so the restore ran
+  despite that cancellation; and
+* the register read `0x0138D249` afterwards.
+
+`pre-nand-rc1` would have left `0x0038D249` in place for the rest of the boot.
+The supervisor then replaced the interrupted service, which completed its
+download, restored the pin function, booted the DSP, and round-tripped `getVer`
+and both microphone directions.
+
+Killing `bluetoothd` produced a replacement that re-registered both A2DP
+endpoints. The guard restarted the pairing agent, which reopened its bounded
+window and returned to `off` on expiry. After all of that churn the image
+reported no zombies, no kernel oops, segfault, or BUG lines, both WAMP ports
+listening, and every supervised service present.
+
+This kernel sets `pid_max` to 4096, and the PID counter was observed wrapping
+within 132 seconds of ordinary supervision churn. PID reuse is therefore a
+routine event on this target rather than a remote possibility, and any logic
+that identifies a process by PID has to prove identity another way. The MCU
+pairing control already does: it resolves `/proc/<pid>/exe` and refuses to
+signal when the executable does not match, which
+`TestPairingControllerRejectsWrongExecutable` covers. The pairing agent also
+exits on its own when `org.bluez` disappears, so agent recovery does not depend
+on the guard's PID comparison alone.
+
 Reproducing an owned service binary requires the checked-in `build.sh` for that
 service rather than hand-assembled flags. It pins `-trimpath`, `-buildvcs=false`,
 `-mod=readonly`, `-ldflags="-s -w"`, and the archived Go 1.18.1 toolchain.

@@ -313,8 +313,10 @@ Remaining gates are:
 3. complete one attended playback-continuity run on that image; and
 4. finish physical-button orchestration for an isolated provisioning window.
 
-The `pre-nand-rc1` cold-boot gate is met. On a cold boot from power-off the
-image selected download mode, restored message mode, and reported
+The `pre-nand-rc1` cold-boot gate is met, and `pre-nand-rc2` has since cleared
+the same gate twice on its own cold boot, including once after deliberate fault
+injection. `pre-nand-rc2` is the current candidate. On a cold boot from
+power-off the image selected download mode, restored message mode, and reported
 `EVENT_DSP_VERSION=0.0.64.58`, and the full
 `collect-native-acceptance.sh` gate passed twice with no failures, once on the
 first DSP generation and once after a supervised restart. A killed DSP service
@@ -352,6 +354,13 @@ only a mount namespace, so no network namespace can be created to originate
 genuine non-allowlisted traffic, and packets addressed to a local address
 traverse loopback and would match the accept rule instead. Confirming the drop
 behaviour therefore requires a separate host on the same WLAN.
+
+This kernel also sets `pid_max` to 4096, and the PID counter was observed
+wrapping within 132 seconds of ordinary supervision churn. PID reuse is a
+routine event here, so nothing may treat a recorded PID as proof of identity.
+The MCU pairing control resolves `/proc/<pid>/exe` and refuses to signal a
+mismatched executable, which keeps a recycled PID from receiving a control
+signal intended for the pairing agent.
 
 Entering yellow mode requires the recovery button held at power-on, so cold-boot
 gates cannot be driven from software and need the operator present.
