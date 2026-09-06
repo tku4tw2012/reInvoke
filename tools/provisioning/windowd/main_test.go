@@ -803,3 +803,105 @@ func TestHostapdLoaderCommandIsFixed(t *testing.T) {
 		t.Fatalf("arguments = %q, want %q", actual, expected)
 	}
 }
+
+type stubFileInfo struct {
+	os.FileInfo
+	mode os.FileMode
+	stat syscall.Stat_t
+}
+
+func (info stubFileInfo) Mode() os.FileMode { return info.mode }
+func (info stubFileInfo) Sys() any          { return &info.stat }
+
+// The RC7 sta-uap boot crash-looped because /opt/reinvoke directories ship as
+// root:root 0775, which the old flat 0022 mask read as untrusted write access.
+// Group write is only reachable by root when the group is root.
+func TestUntrustedWriteMaskTrustsRootGroup(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		gid      uint32
+		perm     os.FileMode
+		writable bool
+	}{
+		{"root group 0775 is trusted", 0, 0775, false},
+		{"root group 0755 is trusted", 0, 0755, false},
+		{"root group 0777 is world writable", 0, 0777, true},
+		{"root group 0757 is world writable", 0, 0757, true},
+		{"non-root group 0775 is untrusted", 1000, 0775, true},
+		{"non-root group 0755 is trusted", 1000, 0755, false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			info := stubFileInfo{
+				mode: testCase.perm,
+				stat: syscall.Stat_t{Gid: testCase.gid},
+			}
+			mask, err := untrustedWriteMask(info)
+			if err != nil {
+				t.Fatalf("untrusted write mask: %v", err)
+			}
+			if writable := testCase.perm.Perm()&mask != 0; writable != testCase.writable {
+				t.Fatalf("writable = %v, want %v (mask %#o)",
+					writable, testCase.writable, mask)
+			}
+		})
+	}
+}
+
+func TestValidateLibraryPathRejectsUnsafeInput(t *testing.T) {
+	if err := validateLibraryPath(""); err == nil {
+		t.Fatal("empty library path must be rejected")
+	}
+	if err := validateLibraryPath("relative/lib"); err == nil {
+		t.Fatal("relative library path must be rejected")
+	}
+	if err := validateLibraryPath("/opt/reinvoke/lib:relative"); err == nil {
+		t.Fatal("relative library path entry must be rejected")
+	}
+}
+
+// Exercises the real filesystem predicate end to end. Only root can create the
+// root-owned inputs the validators require, so this is skipped otherwise.
+func TestValidateRootPathsAcceptRootGroupWrite(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skip("requires root to create root-owned fixtures")
+	}
+	directory := filepath.Join(t.TempDir(), "lib")
+	if err := os.Mkdir(directory, 0755); err != nil {
+		t.Fatalf("create directory: %v", err)
+	}
+	if err := os.Chmod(directory, 0775); err != nil {
+		t.Fatalf("chmod directory: %v", err)
+	}
+	if err := validateLibraryPath(directory); err != nil {
+		t.Fatalf("root:root 0775 library path must be accepted: %v", err)
+	}
+	if err := os.Chmod(directory, 0777); err != nil {
+		t.Fatalf("chmod directory: %v", err)
+	}
+	if err := validateLibraryPath(directory); err == nil {
+		t.Fatal("world writable library path must be rejected")
+	}
+
+	executable := filepath.Join(directory, "loader")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\n"), 0775); err != nil {
+		t.Fatalf("write executable: %v", err)
+	}
+	if err := os.Chmod(executable, 0775); err != nil {
+		t.Fatalf("chmod executable: %v", err)
+	}
+	if err := validateRootExecutable(executable); err != nil {
+		t.Fatalf("root:root 0775 executable must be accepted: %v", err)
+	}
+	if err := os.Chmod(executable, 0777); err != nil {
+		t.Fatalf("chmod executable: %v", err)
+	}
+	if err := validateRootExecutable(executable); err == nil {
+		t.Fatal("world writable executable must be rejected")
+	}
+	if err := os.Chmod(executable, 0644); err != nil {
+		t.Fatalf("chmod executable: %v", err)
+	}
+	if err := validateRootExecutable(executable); err == nil {
+		t.Fatal("non-executable file must be rejected")
+	}
+}

@@ -1095,6 +1095,28 @@ func fileOwnerUID(info os.FileInfo) (uint32, error) {
 	return status.Uid, nil
 }
 
+func fileOwnerGID(info os.FileInfo) (uint32, error) {
+	status, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, errors.New("filesystem does not expose Unix ownership")
+	}
+	return status.Gid, nil
+}
+
+// untrustedWriteMask reports which write bits would grant a non-root principal
+// write access. Group write is only reachable by root when the group is root,
+// so gid 0 entries are trusted; every other group, and world write, is not.
+func untrustedWriteMask(info os.FileInfo) (os.FileMode, error) {
+	gid, err := fileOwnerGID(info)
+	if err != nil {
+		return 0, err
+	}
+	if gid == 0 {
+		return 0002, nil
+	}
+	return 0022, nil
+}
+
 func validateRootDirectory(
 	path string,
 	rootOnly bool,
@@ -1114,8 +1136,14 @@ func validateRootDirectory(
 	if rootOnly && info.Mode().Perm()&0077 != 0 {
 		return errors.New("directory is not root-only")
 	}
-	if !rootOnly && info.Mode().Perm()&0022 != 0 {
-		return errors.New("directory is writable by an untrusted user")
+	if !rootOnly {
+		mask, maskErr := untrustedWriteMask(info)
+		if maskErr != nil {
+			return maskErr
+		}
+		if info.Mode().Perm()&mask != 0 {
+			return errors.New("directory is writable by an untrusted user")
+		}
 	}
 	if requireRAM {
 		var filesystem syscall.Statfs_t
@@ -1142,7 +1170,14 @@ func validateRootExecutable(path string) error {
 		return errors.New("executable is not a regular file")
 	}
 	uid, err := fileOwnerUID(info)
-	if err != nil || uid != 0 || info.Mode().Perm()&0022 != 0 ||
+	if err != nil {
+		return errors.New("executable is not root-controlled")
+	}
+	mask, err := untrustedWriteMask(info)
+	if err != nil {
+		return errors.New("executable is not root-controlled")
+	}
+	if uid != 0 || info.Mode().Perm()&mask != 0 ||
 		info.Mode().Perm()&0111 == 0 {
 		return errors.New("executable is not root-controlled")
 	}
