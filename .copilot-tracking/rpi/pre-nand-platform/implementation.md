@@ -618,8 +618,39 @@ value. It would have read as five clean passes. A restart test is only evidence
 when the process ID is shown to change, and the corrected run above asserts
 exactly that.
 
-### Candidate discipline
+### Router restart recovery
 
+The WAMP router had never been fault-tested, and it is the service every other
+component depends on. Killing it produced a genuinely new process, confirmed by
+the listening socket changing owner and by the pid file advancing, while the MCU
+and DSP services kept their original process IDs throughout.
+
+Both clients logged `WAMP session ended: EOF; reconnecting in 5s`, retried once
+against a router that was not listening yet and logged `connection refused`,
+then re-established. The DSP logged `registered 7 procedures` ten seconds after
+the kill, and both services answered `getmcustatus`, `getVer`, and a Mic-Mute
+round trip afterwards.
+
+The property that matters is what did not happen. Because neither client
+restarted, the DSP image was not downloaded again, so a router fault does not
+disturb DSP hardware state. The pin function stayed at `0x0138D249`, the boot
+marker stayed present, and the retained privacy state was untouched. Recovery
+from a router fault costs a reconnect, not a DSP reboot.
+
+`runWithReconnect` in `tools/dsp-interface/lifecycle.go` is the mechanism, and
+the supervisor restarts the router itself.
+
+### Log growth is bounded
+
+The runtime log is written by `syslogd -s 256 -b 1`. Rotation was exercised
+rather than assumed: the log was driven past the threshold, `runtime.log.0`
+appeared holding 262,150 bytes, and the active log restarted near 37 KB. Total
+log residency stays near 300 KB, which matters because this platform is RAM-only
+with no swap. Memory held at roughly 160 MB free and per-service descriptor
+counts stayed between four and thirteen after about twenty service restarts, so
+the churn above leaked neither memory nor descriptors.
+
+### Candidate discipline
 No further candidate is warranted. The only commit after the `pre-nand-rc2` pin
 is documentation, and no image-affecting path differs, so rebuilding would
 produce the same artifact under a new name. The provenance chain is closed:
