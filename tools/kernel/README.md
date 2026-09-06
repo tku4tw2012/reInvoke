@@ -92,6 +92,11 @@ than reconstructing it from the source archive and applying every patch in a
 new work directory, so the input is content-locked but the clean-room extraction
 step remains future work.
 
+A fresh full build through the gated path reproduced the accepted
+`d29a0075...` kernel, supplied DTB, and all four module digests exactly. That
+third independent deployable set is retained under
+`build/artifacts/reinvoke-kernel-v14-9-provenance-20260906/`.
+
 The GCC 9/11 compatibility patch `0001-modern-host-toolchain.patch` is
 deliberately absent from this NDK GCC 4.9 path. The hardware kernel uses
 `HOSTCFLAGS=-fcommon` for its host-side DTC instead, and applying patch 1 would
