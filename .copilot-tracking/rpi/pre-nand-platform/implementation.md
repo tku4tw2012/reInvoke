@@ -1065,9 +1065,13 @@ MCU, DSP, kernel, BlueZ, BlueALSA, and all other runtime artifacts are unchanged
 
 The pairing agent, runtime bundle, and initramfs were each built twice and agree
 byte for byte. The pairing agent's source-to-binary provenance remains only
-partially hermetic: the builder pins the compiler and strip tool, and the two
-outputs match, but its built D-Bus static library and ARM sysroot are not
-independently checksum-gated.
+partially hermetic. Its builder now gates the compiler driver, cc1, collect2,
+assembler, linker, strip tool, D-Bus archive, D-Bus headers, and the full
+resolved ARM sysroot. It reproduces the RC6 digest and rejects a deliberately
+altered sysroot. The sysroot itself still resolves into host
+`/usr/arm-linux-gnueabihf` packages rather than a retained archive, so the
+environment is locked but cannot yet be reconstructed cleanly from the
+archive alone.
 
 The exact binary was tested live on RC5 before packaging. A target-side
 ObjectManager capture showed `Device1` arriving with `Connected=true` in
