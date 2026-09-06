@@ -345,6 +345,17 @@ clients, no NAND mount, and full self-cleanup at the 300 second bound. IPv6 is
 not a supported feature; the kernel enables it, so the gate asserts its
 forwarding stays off rather than relying on it being absent.
 
+The NAND phase is not open. A read-only survey of the running unit shows the
+replacement kernel exposes the flash as a single unpartitioned device,
+`mtd1 "mv_nand"`, 256 MiB with a 128 KiB erase block, on a Toshiba part with a
+2048 byte page and 64 byte OOB. No partition map is published by this kernel, so
+there is no offset table to write against, and the layout recorded in the
+acquisition notes describes a 512 MiB device that U-Boot rejects on this unit.
+Yellow mode has only ever been entered while the original flash is intact, so it
+is not yet established as an escape hatch after a failed write. Until the real
+offsets, the boot-slot semantics, and recovery from a bad image are all
+established, this platform stays RAM only.
+
 Holding Mic-Mute opens the provisioning window. This is a reInvoke decision,
 not donor behaviour: the original speaker was provisioned from the vendor phone
 application, and reInvoke has none. The top action button publishes
