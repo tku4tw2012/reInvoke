@@ -140,7 +140,7 @@ func TestLiveExpanderValueIsPreservedByInitialization(t *testing.T) {
 	}
 }
 
-func TestInitializationPreservesDSPResetDirection(t *testing.T) {
+func TestInitializationRestoresDonorExpanderDirections(t *testing.T) {
 	hardware := newRecordingHardware(0)
 	hardware.registers[[2]byte{expanderAddress, expanderConfig}] = 0xff
 	control := newController(hardware, mutePolicy{})
@@ -150,8 +150,27 @@ func TestInitializationPreservesDSPResetDirection(t *testing.T) {
 		t.Fatal(err)
 	}
 	value := hardware.registers[[2]byte{expanderAddress, expanderConfig}]
-	if value != 0xe1 {
-		t.Fatalf("expander configuration = 0x%02x, want 0xe1", value)
+	if value != 0x00 {
+		t.Fatalf("expander configuration = 0x%02x, want donor value 0x00", value)
+	}
+}
+
+func TestInitializationNeverReleasesDSPReset(t *testing.T) {
+	hardware := newRecordingHardware(0x00)
+	control := newController(hardware, mutePolicy{})
+	control.sleep = func(time.Duration) {}
+
+	if err := control.initialize(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, operation := range hardware.operations {
+		if operation.kind == "write" &&
+			operation.address == expanderAddress &&
+			operation.register == expanderOutput &&
+			operation.value&0x01 != 0 {
+			t.Fatalf("MCU initialization released DSP reset: %#v", operation)
+		}
 	}
 }
 
