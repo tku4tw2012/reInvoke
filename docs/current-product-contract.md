@@ -249,21 +249,13 @@ opcode `0x0e`, first-chunk flag `0x01`, and three zero 13-byte frames. Generic
 LED calls cannot extinguish the red privacy indication while microphone mute is
 required.
 
-Every row in this table is currently unobservable on the bench unit. The MCU
-holds its GPIO3 interrupt low from a few seconds into every boot, so no button
-or rotary event reaches the services, and no indicator lights even though
-`com.harman.ledSet` accepts the write. This is not a platform regression: the
-preserved v16 image, whose indicator behaviour was physically validated, fails
-identically with a different MCU binary and a different pinmux register value,
-and the behaviour survives a full power cycle including a long mains-off
-interval.
-
-The MCU itself is alive. It still completes the write-then-read startup
-exchange on demand in this state, and it returns six zero bytes to a bare read
-because nothing is queued. Silencing the bus does not release the line either.
-The three pin and port registers the donor writes hold donor-equivalent values,
-confirmed against the donor binary rather than assumed. Until the line clears,
-the physical control and indicator gates cannot be exercised on this unit.
+RC3 and RC4 exposed a v13 regression that held GPIO3 low, preventing every
+physical input and indicator. The MCU remained alive, but the partial expander
+direction mask left a cold-initialization state different from the donor. A live
+donor service released the line, and the owned service kept it high when handed
+the donor-initialized hardware. RC5 restores the donor `0x03=0x00` direction
+value while leaving DSP reset output bit 0 exclusively owned by the DSP
+service. Its first cold boot restored the physical controls and indicators.
 
 ## Factory reset
 
@@ -331,20 +323,28 @@ accepted image is not a released persistent firmware.
 
 Remaining gates are:
 
-1. confirm Bluetooth short-press pair/cancel, retained long-press reopen, and
-   authoritative rear pairing/connected/off transitions;
+1. package and re-gate the reviewed Bluetooth ObjectManager connected-state
+   fix, then physically confirm the rear connected indication;
 2. confirm the WAMP allowlist closes ports 9998 and 9999 to non-allowlisted
    sources on a live network;
 3. complete one attended playback-continuity run on that image; and
 4. finish physical-button orchestration for an isolated provisioning window.
 
-The `pre-nand-rc1` cold-boot gate is met, and `pre-nand-rc2` has since cleared
-the same gate twice on its own cold boot, including once after deliberate fault
-injection. It remains the last fully gated candidate. `pre-nand-rc5` is the
-current experimental candidate; it restores the donor expander-direction
-initialization after a controlled donor/owned A/B isolated the v13 regression,
-and it must clear the same gate before superseding RC2. On a cold boot from
-power-off the accepted image selected download mode, restored message mode, and reported
+`pre-nand-rc5` is the current fully gated candidate. Its first cold boot
+restored GPIO3 high and recovered rotary input, Mic-Mute privacy, Bluetooth
+short-toggle, Bluetooth long reopen, and the rear pairing indication. The
+operator observed both rear slow blink and top red privacy, while the evidence
+bundle recorded 18 rotary publications, both microphone directions, and
+`pairing -> off -> pairing`. The full collector exited zero with DSP version
+`25688` and no structural failures.
+
+RC5 restores the donor expander-direction value that v13 replaced with a
+speculative partial mask. A live donor/owned handoff isolated that change, and
+the first cold boot confirmed it. The candidate is archived as a bound
+kernel/initramfs pair with its source revisions and evidence manifests.
+
+On a cold boot from power-off the accepted image selected download mode,
+restored message mode, and reported
 `EVENT_DSP_VERSION=0.0.64.58`, and the full
 `collect-native-acceptance.sh` gate passed twice with no failures, once on the
 first DSP generation and once after a supervised restart. A killed DSP service
@@ -362,8 +362,10 @@ outside its single-device allowlist, so an unattended replacement cannot admit
 an unexpected peer.
 
 Physical button presses reach the services as MCU publications and cannot be
-injected over WAMP, so the remaining control and indicator gates need the
-operator and are not claimed here.
+injected over WAMP. RC5 now proves those publications and their policies. A
+patched pairing agent also proved `pairing -> connected -> off` against a
+persistent RAM-only bond, but that binary is not packaged in RC5, and the
+operator was absent for the rear connected light.
 
 The WAMP firewall was verified structurally on the running image. Both ports
 accept loopback and the single allowlisted host and drop every other source,

@@ -987,6 +987,64 @@ byte for byte. RC5 is not accepted until a cold boot proves GPIO3 begins high,
 physical input publications return, and the full RC2 acceptance gate still
 passes.
 
+## `pre-nand-rc5` cold-boot results
+
+RC5 cleared every criterion on its first cold boot.
+
+* GPIO3 read high at 13 seconds, and `EXT_PORTA` bit 3 agreed at the SoC pad.
+* The running MCU binary matched
+  `c4c1cd15e98fc90e3389ba981480056cec3db7328e7223ed91a8af7ee03edb6f`.
+* The operator observed the rear Bluetooth slow blink and the top red
+  microphone-privacy indication.
+* The control capture recorded 18 rotary publications in both directions.
+* Mic-Mute short presses at 45 and 55 seconds produced real MCU key
+  publications, DSP `09 01` and `09 00` acknowledgements, and confirmed
+  microphone state changes.
+* Bluetooth short presses cancelled the pairing window and reopened it, with
+  authoritative `pairing -> off -> pairing` state transitions.
+* Bluetooth long press published `bluetooth-long` and reopened the bounded
+  window.
+* `collect-native-acceptance.sh` exited zero. Every status file was zero, DSP
+  version event was `25688`, and structural acceptance reported no failures.
+
+The root cause is therefore the v13 expander-direction change, not a timing
+hypothesis. Restoring the donor `0x03=0x00` direction value releases the MCU
+interrupt during cold initialization. A later live `0xe1 <-> 0x00` toggle does
+not change the line because the affected hardware state is latched during
+initialization, which explains why the single-variable live test initially
+looked negative.
+
+RC5 is retained as an explicit boot pair rather than an inferred association.
+Its archive contains `81_IMAGE`, two identical initramfs images, `CANDIDATE`,
+and a verified `SHA256SUMS`. The manifest binds the kernel, module tree,
+runtime, MCU/DSP binaries, source revisions, and three evidence directories.
+
+### RC5 Bluetooth and playback
+
+The Mac mini can create a persistent RAM-only bond when `bluetoothctl` runs
+with an explicit `NoInputNoOutput` agent. Earlier one-shot calls without a host
+agent requested HCI auth requirement `0x00` (no bonding), briefly printed
+`Pairing successful`, then disconnected and removed the pairing. Target HCI
+capture proved the temporary session still completed SSP, generated a link key,
+and enabled encryption; the host then terminated it. With the explicit agent,
+the target created its bond `info` file and both sides retained `Paired: yes`.
+The transient result was a host test setup error, not target storage failure.
+
+A 25-second generated sine stream at three-percent host volume held ALSA
+`RUNNING` and the authenticated playback lease continuously. A second pass
+captured `hw_ptr` advancing from 87,040 to 264,192 in four seconds while
+`appl_ptr` advanced from 95,232 to 272,384. After the stream drained, ALSA
+closed and the lease disappeared. Host volume was restored to 40 percent. This
+passes machine continuity but does not claim attended audible quality.
+
+The existing pairing agent misses the initial connected state because BlueZ
+creates the peer with `Connected=true` inside
+`ObjectManager.InterfacesAdded`; no later Connected `PropertiesChanged` is
+emitted. A patched agent was tested live: closing the pairing window changed
+`pairing -> connected`, and host disconnect changed `connected -> off`.
+That patch is not part of RC5 and must be reviewed and packaged before the next
+candidate.
+
 Reproducing an owned service binary requires the checked-in `build.sh` for that
 service rather than hand-assembled flags. It pins `-trimpath`, `-buildvcs=false`,
 `-mod=readonly`, `-ldflags="-s -w"`, and the archived Go 1.18.1 toolchain.

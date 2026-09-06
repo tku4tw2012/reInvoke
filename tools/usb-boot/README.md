@@ -232,11 +232,13 @@ tools/usb-boot/collect-physical-controls.sh \
   --output-dir "${REINVOKE_ARCHIVE}/hardware/usb-attempts/<timestamp>/controls"
 ```
 
-It records button publications, every Bluetooth state the file reports during
-the window, indicator and pairing log lines, and the runtime log for that window
-only. It presses nothing and calls no state-changing procedure. Its summary
-counts published events rather than subscription confirmations, so a window with
-no presses reports `button_publications=0` instead of appearing to observe one.
+It records rotary `com.harman.test.inputEvent` publications, key
+`com.harman.vui.keypress` publications, every Bluetooth state the file reports
+during the window, indicator and pairing log lines, and the runtime log for
+that window only. It presses nothing and calls no state-changing procedure. Its
+summary counts published events rather than subscription confirmations, so a
+window with no presses reports `button_publications=0` instead of appearing to
+observe one.
 
 After a capture session reports the live `MV88DE3100|>` prompt, stage and boot
 a reviewed native pair with elapsed progress and a bounded USB criterion:
