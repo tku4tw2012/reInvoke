@@ -1241,6 +1241,81 @@ lives in the initramfs rather than the runtime.
 RC8's purpose is narrow and its destination is explicit: boot it, then run
 `collect-provisioning-window.sh` to close the final pre-NAND gate.
 
+## The sta-uAP provisioning window on real hardware
+
+Closing this gate took three distinct defects, none of which any earlier boot
+could have reached because every prior boot was station-only and never executed
+the uAP branch.
+
+The first was the `windowd` crash loop described above. Fixing it let the window
+start, and it immediately failed again.
+
+The second was invisible at first because the daemon logged
+`provisioning window closed after an error` while discarding the error itself.
+Every error `Run` returns is already a sanitized constant, so the detail is safe
+to log and is the only way to diagnose a failure that only appears on hardware.
+With the detail restored the failure read `access point did not become ready`.
+
+hostapd itself was silent too. The donor binary links `liblog.so` and logs
+through `__android_log_print`, but this kernel has no Android logger and
+`/dev/log` is the BusyBox syslog socket, so every hostapd diagnostic was written
+into a void. Preloading a small shim that implements `__android_log_print` and
+`__android_log_buf_vprint` on top of `stderr` made hostapd's own reasoning
+visible, which is what turned guesswork into diagnosis.
+
+That revealed the real constraint. The donor hostapd drops root before it reads
+its configuration:
+
+```
+mov.w r0, #1008 ; 0x3f0
+blx   setgid
+mov.w r0, #1008 ; 0x3f0
+blx   setuid
+```
+
+The uid is hard-coded in the binary, so this is not configurable. A process
+running as uid 1008 cannot traverse the root-only `0700` window runtime and
+cannot read a `0600` root-owned configuration, which is exactly what `windowd`
+was handing it. Rather than relax `/run/reinvoke`, hostapd now gets
+`/run/reinvoke-hostapd`, mode `0700` and owned by uid 1008, holding only its
+configuration and control directory. The passphrase file stays `0600`, so it is
+readable by hostapd and by root and by nobody else, and the window runtime keeps
+its original posture. `windowd` refuses to start if that directory is inside the
+window runtime.
+
+With the layout corrected hostapd reached `AP-ENABLED`, yet the window still
+reported `access point did not become ready`. The third defect was in the
+readiness probe. `waitForHostapd` binds a local unixgram socket and asks hostapd
+to reply to it, but a unixgram reply requires write access to the target socket
+file, and that socket was owned by root. hostapd, as uid 1008, could never
+deliver a single `STATUS` response, so a healthy access point looked dead. The
+reply socket is now chowned to the hostapd uid.
+
+The full lifecycle then worked end to end. The window opened, `p2p0` came up on
+`192.168.43.1`, hostapd reached `AP-ENABLED`, and `udhcpd`, `reinvoke-wifi-applyd`
+and `reinvoke-provisiond` all started, with the provisioning service listening on
+`192.168.43.1:8443` rather than a wildcard address. The descriptor carried a URL,
+a token, a certificate digest and a 300 second expiry. IPv4 and IPv6 forwarding
+both stayed `0`, no NAND partition was mounted, and the six WAMP firewall rules
+were untouched, so an access-point client in `192.168.43.0/24` still falls
+through to the unconditional `DROP` on both control ports. At exactly the 300
+second bound the window closed on its own, every child stopped, the access-point
+address was removed, and both runtime directories were deleted.
+
+The operator's long press was verified separately: holding Mic-Mute published
+`com.harman.vui.keypress ["micmute-long"]` and opened a window. The top button
+publishes `action-long` and is correctly ignored, which is worth recording
+because it is a reInvoke decision rather than donor behaviour. The original unit
+was provisioned from the vendor phone application, so there is no donor
+precedent for a physical provisioning gesture.
+
+A review of the packaging change also showed that normalizing only
+`/opt/reinvoke` left the staging root, which becomes the archive's `.` entry,
+still dependent on the building host's umask. Setting `umask 022` before the
+staging tree is created closes that, and directories extracted from the donor
+archive keep their recorded modes rather than being flattened. The image is now
+built under umask `002`, `022` and `077` and is byte identical in all three.
+
 ## Change log
 
 Iterations land on the `feat/native-ram-platform` branch as they complete.

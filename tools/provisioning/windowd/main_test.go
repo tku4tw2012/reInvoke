@@ -813,42 +813,31 @@ func TestHostapdLoaderCommandIsFixed(t *testing.T) {
 
 type stubFileInfo struct {
 	os.FileInfo
-	mode os.FileMode
 	stat syscall.Stat_t
 }
 
-func (info stubFileInfo) Mode() os.FileMode { return info.mode }
-func (info stubFileInfo) Sys() any          { return &info.stat }
+func (info stubFileInfo) Sys() any { return &info.stat }
 
 // The RC7 sta-uap boot crash-looped because /opt/reinvoke directories ship as
 // root:root 0775, which the old flat 0022 mask read as untrusted write access.
 // Group write is only reachable by root when the group is root.
 func TestUntrustedWriteMaskTrustsRootGroup(t *testing.T) {
 	for _, testCase := range []struct {
-		name     string
-		gid      uint32
-		perm     os.FileMode
-		writable bool
+		name string
+		gid  uint32
+		want os.FileMode
 	}{
-		{"root group 0775 is trusted", 0, 0775, false},
-		{"root group 0755 is trusted", 0, 0755, false},
-		{"root group 0777 is world writable", 0, 0777, true},
-		{"root group 0757 is world writable", 0, 0757, true},
-		{"non-root group 0775 is untrusted", 1000, 0775, true},
-		{"non-root group 0755 is trusted", 1000, 0755, false},
+		{"root group trusts group write", 0, 0002},
+		{"non-root group rejects group write", 1000, 0022},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			info := stubFileInfo{
-				mode: testCase.perm,
-				stat: syscall.Stat_t{Gid: testCase.gid},
-			}
+			info := stubFileInfo{stat: syscall.Stat_t{Gid: testCase.gid}}
 			mask, err := untrustedWriteMask(info)
 			if err != nil {
 				t.Fatalf("untrusted write mask: %v", err)
 			}
-			if writable := testCase.perm.Perm()&mask != 0; writable != testCase.writable {
-				t.Fatalf("writable = %v, want %v (mask %#o)",
-					writable, testCase.writable, mask)
+			if mask != testCase.want {
+				t.Fatalf("mask = %#o, want %#o", mask, testCase.want)
 			}
 		})
 	}
