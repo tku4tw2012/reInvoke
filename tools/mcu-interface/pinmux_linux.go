@@ -14,6 +14,7 @@ import (
 const (
 	mcuPinmuxRegister  = int64(0xf7ea8008)
 	mcuPinmuxGPIO3Mask = uint32(0x00200000)
+	mcuPinmuxLockPath  = "/run/reinvoke/pinmux.lock"
 )
 
 func applyRegisterMasks(before, setMask, clearMask uint32) uint32 {
@@ -62,6 +63,20 @@ func updateMappedRegister32(
 }
 
 func configureMCUInterruptPin(path string) error {
+	lockFile, err := os.OpenFile(
+		mcuPinmuxLockPath,
+		os.O_CREATE|os.O_RDWR,
+		0o600,
+	)
+	if err != nil {
+		return fmt.Errorf("open pinmux lock: %w", err)
+	}
+	defer lockFile.Close()
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("lock pinmux: %w", err)
+	}
+	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+
 	file, err := os.OpenFile(path, os.O_RDWR|syscall.O_SYNC, 0)
 	if err != nil {
 		return fmt.Errorf("open physical register device: %w", err)

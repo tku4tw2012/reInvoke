@@ -220,6 +220,7 @@ main() {
   local console_offset
   local bootargs
   local header
+  local loader_lock
 
   repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   firmware_dir="${INVOKE_FIRMWARE_DIR:-${repo_root}/../invoke-boot}"
@@ -326,9 +327,13 @@ main() {
     err "unsafe staging file is present: ${firmware_dir}/99_IMAGE"
 
   for command_name in \
-    adb grep install lsusb mkimage mv sha256sum stat tail timeout; do
+    adb flock grep id install lsusb mkimage mv sha256sum stat tail timeout; do
     require_command "${command_name}"
   done
+  loader_lock="${XDG_RUNTIME_DIR:-/tmp}/reinvoke-native-loader-$(id -u).lock"
+  exec 8>"${loader_lock}"
+  flock -n 8 ||
+    err "another native RAM loader is already staging, waiting, or injecting"
 
   validate_sha256 "${kernel_sha256}" "${kernel_path}" "kernel"
   validate_sha256 "${initramfs_sha256}" "${initramfs_path}" "initramfs"

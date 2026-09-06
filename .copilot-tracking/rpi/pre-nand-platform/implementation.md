@@ -8,13 +8,11 @@ ms.topic: overview
 ## Status
 
 Implementation is 99 percent complete for this RPI cycle. LED clearing,
-playback continuity, fail-closed microphone routing, service fault injection,
-and reproducible ARM artifacts are implemented and machine-tested in RAM.
-Four boot cycles are complete. Every yellow-mode cycle included power removal,
-so DSP command failure is not a warm-reset artifact. The final cycle must test
-`getVer` before Mic-Mute to reproduce the earlier successful order. Final
-DSP/Bluetooth fault confirmation, physical indicator observation, and attended
-playback remain.
+playback continuity, microphone privacy, service fault injection, and
+reproducible ARM artifacts are implemented and machine-tested in RAM. The DSP
+command blocker was the omitted GPIO5 pinmux lifecycle, not timing or command
+order. Final RC cold-boot, Bluetooth state, and attended playback acceptance
+remain.
 
 ## Completed in iteration 1
 
@@ -385,12 +383,11 @@ attended audible output, and microphone correlation.
 * Traced the owned client under the same conditions. Diagnostic tracing
   stretched nominal 10 ms waits to 18-19 ms; `getVer` and Mic-Mute then both
   succeeded.
-* Increased the owned handshake and release waits to the verified untraced
-  20 ms envelope. Without tracing, startup mute restore, `getVer`, unmute, and
-  mute all completed and returned the matching DSP events.
-* Added a cancellable one-second post-boot settle before restoring persisted
-  microphone mute. An immediate acknowledged startup mute had later been
-  overwritten by DSP initialization; the settled restore persisted.
+* Provisionally attributed the result to a 20 ms timing envelope. Packaged and
+  repeated detached tests later disproved that conclusion.
+* Added a conservative cancellable one-second post-boot settle before restoring
+  persisted microphone mute. It remains a readiness barrier, not the DSP
+  command root fix.
 * Repeated the attended DMA test at stereo 48 kHz `S32_LE`, 256-frame periods,
   and 16 periods:
   * unmuted: 244,163 of 244,224 samples nonzero, RMS 88,026,326;
@@ -417,12 +414,9 @@ attended audible output, and microphone correlation.
   * 120 ms could miss `EVENT_DSP_BOOTUP`;
   * response-turnaround 1, 5, 10, and 20 ms still failed; and
   * sleeping 50, 100, or 200 ms after the pump claimed a command still failed.
-* Identified the scheduling contract. Deferring a newly observed command for one
-  complete idle pump cycle, before claiming it or entering any GPIO phase, made
-  detached `getVer` and Mic-Mute pass at the donor-compatible 10 ms waits.
-* Validated the minimal configuration across 10/20 ms and with/without a
-  turnaround delay. All passed once one-cycle deferral was present; 10 ms with
-  no extra turnaround was selected.
+* Provisionally attributed isolated passes to one idle pump-cycle deferral.
+  Ten identical detached trials later produced zero command passes, disproving
+  that conclusion. The deferral was removed.
 * Corrected the capture privacy claim. A raw ALSA `hw_params` after startup can
   overwrite an earlier DSP mute route. Reasserting mute after configuration
   produced 244,736 zero samples. A future capture owner must not consume raw
@@ -433,6 +427,7 @@ attended audible output, and microphone correlation.
   `aca3a532ea971482d88442669637e99dea3097a43e8fdf49cafbb572dd79c9de`.
 * Built two byte-identical 32,388,952-byte v21 initramfs images at SHA-256
   `9b88112e5425c4095098d492d3e3b4bbc4319804d8ee786e079616d38c167c94`.
+  These are experiment artifacts, not an accepted candidate.
 
 ## Completed in iteration 22
 
@@ -453,6 +448,40 @@ attended audible output, and microphone correlation.
 * Built two byte-identical 32,393,417-byte v23 initramfs images at SHA-256
   `77a3d9ee37d6f16e6fad2b3f016d7290da85e83606cf8005505eff3eafefd45e`.
   Physical short/cancel and rear-state validation remain.
+
+## Completed in root-cause iteration
+
+* Re-ran identical detached trials and rejected the one-off timing and scheduling
+  passes rather than producing another candidate.
+* Read the live SoC pinmux register after owned boot:
+  `0xF7EA8008=0x0038D249`.
+* Recovered the donor's required lifecycle: select GPIO5 manual chip-select mode
+  before image download and restore its SPI message function afterward.
+* Set only GPIO5's `0x01000000` bit. The resulting `0x0138D249` preserves the
+  MCU GPIO3 bit `0x00200000` and made the unchanged detached DSP service return
+  `EVENT_DSP_VERSION=0.0.64.58` immediately.
+* Implemented a shared interprocess pinmux lock across MCU and DSP. DSP now
+  clears only GPIO5's bit before every download, sets it afterward, and verifies
+  readback. Message mode is restored even after download failure.
+* Hardware-tested two consecutive DSP generations from message mode. Each
+  downloaded 40,121 transfers, restored `0x0138D249`, received the boot event,
+  and completed `getVer`. Persisted mute restoration and subsequent `getVer`
+  also passed.
+* Removed the disproved idle-cycle deferral and retained donor-compatible 10 ms
+  waits plus the conservative readiness barrier.
+* Classified the 23-check target script as structural smoke. The full host
+  collector now requires `getVer`, version `25688`, Mic-Mute confirmation,
+  initial-state restoration, and post-probe logs.
+* Added a singleton loader lock so only one process may stage, wait, and inject.
+* Built the first post-retrospective release candidate twice:
+  * MCU SHA-256
+    `2911c0cc0d8c13f069e65914fff58cf15761b4581b7bc759918b07e7637f1274`;
+  * DSP SHA-256
+    `32d0bd0b027ff0396c29d6eb523fc5b128051db75af2f70989a966f2e58f8f48`;
+  * runtime manifest SHA-256
+    `30f63fda4b6a2ee0f6472b9e6fb7ff80d3fb46695acb63ec5bd8bc6739d892ff`;
+  * 32,440,707-byte initramfs SHA-256
+    `11fed5e1e625dffc242f8e5f2b2dbb6294ec2fa93830d8d129b07e284078a831`.
 
 ## Change log
 

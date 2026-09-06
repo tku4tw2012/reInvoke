@@ -7,12 +7,12 @@ ms.topic: concept
 
 ## Status
 
-Review is 98 percent complete. No high-severity source-level blockers remain.
-The complete host and race suites pass, service fault injection preserves
-microphone privacy, and the final BlueALSA pair is reproducible. Final review
-waits for accepted-image cold-boot validation, the pairing-agent generation
-guard, and one attended playback run. WAMP setup interleaving remains tracked
-as medium-priority hardening.
+Review is 98 percent complete. The complete host and race suites pass and the
+final BlueALSA pair is reproducible. DSP response acceptance previously remained
+open despite a passing structural smoke test; the proven blocker was omitted
+GPIO5 pinmux lifecycle. The release-candidate review now waits for full
+collector validation, the pairing-agent generation guard, and one attended
+playback run.
 
 ## Required review areas
 
@@ -573,11 +573,45 @@ and DSP health calls succeeded. The final capture contained 1,573,376 samples,
 all zero. Unit tests, race tests, the complete native-platform suite, and
 reproducible builds passed.
 
-One medium-priority review item remains: WAMP registration helpers assume setup
-responses are not interleaved with invocations. The router behaved
-deterministically in every live run, but a future hardening iteration should
-use one correlated reader during registration.
+WAMP setup correlation was subsequently hardened: both clients match replies by
+request ID and queue interleaved traffic for the session loop.
 
-The accepted image is not yet cold-boot accepted. The new pairing-agent
-generation guard and complete startup order require validation from that image
-before the review phase can close.
+## DSP response retrospective
+
+The v13-v23 DSP-response thread mixed real fixes with prematurely promoted
+hypotheses. Passing under strace or an attached console changed execution
+conditions and was not a valid treatment/control comparison. Increasing timing,
+adding inter-byte and GPIO delays, thread locking, response turnaround, and idle
+deferral all failed repeated detached testing. Those workarounds are removed.
+
+The actual blocker was hidden mutable MMIO state. Image download and
+`EVENT_DSP_BOOTUP` worked while GPIO5 remained in download pinmux mode, so the
+omitted donor restore was incorrectly declared unnecessary. Direct A/B testing
+proved:
+
+1. `0xF7EA8008=0x0038D249`: download and boot event succeed; command responses
+   are all zero.
+2. Set only GPIO5 function bit `0x01000000`, yielding `0x0138D249`: unchanged
+   detached `getVer` and Mic-Mute succeed.
+3. Force the bad value and start the fixed service: it selects download mode,
+   downloads, restores message mode, verifies readback, and commands succeed.
+4. Restart from message mode: the second generation repeats the transition and
+   succeeds.
+
+The initial whole-register fix was rejected because it cleared MCU GPIO3.
+Final MCU and DSP pinmux operations use the same interprocess lock and
+read-modify-write only their owned bits.
+
+The 23-check target script was also misreported as platform acceptance. It is
+structural smoke only. The full host collector is the release gate and now
+requires MCU status, DSP `getVer`, version event `25688`, Mic-Mute confirmation,
+initial-state restoration, and post-probe logs.
+
+Context compaction amplified recency bias but did not cause the failure. The
+pinmux evidence was already in this repository and had been interpreted
+incorrectly. The corrective control is executable acceptance and A/B discipline,
+not a larger context window.
+
+The remaining review gate is one immutable pre-NAND RC passing the full
+collector, two DSP generations, Bluetooth physical state transitions, attended
+playback, and soak without code changes.

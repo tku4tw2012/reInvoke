@@ -70,6 +70,28 @@ ms.topic: overview
 5. Correct stale documentation, add evidence sidecars, and prepare the draft
    pull request for review.
 
+### Candidate discipline
+
+Experiments are not candidates. Name them for the hypothesis, such as
+`DSP-PINMUX-AB-01`, and record the control, treatment, MMIO state, exact binary
+hash, repetitions, and evidence path. Do not assign a `vN`, update release
+claims, or repin the runtime for an isolated pass.
+
+Create one `pre-nand-rcN` only after the same immutable build passes:
+
+1. GPIO5 download/message pinmux readback with MCU GPIO3 preserved;
+2. exact 40,121-transfer DSP download and boot event;
+3. `getVer` plus version event `25688`;
+4. Mic-Mute `1 -> 0 -> 1`, state confirmation, and initial-state restoration;
+5. a second supervised DSP generation with the same command probes;
+6. the complete host collector, not only the structural target smoke test;
+7. full host and race tests; and
+8. two byte-identical runtime and initramfs builds.
+
+One loader owns stage, wait, and injection under a singleton lock. After the
+operator is asked to enter yellow mode, the loader injects immediately at the
+verified prompt; no second authorization message is required.
+
 ## Management interface boundary
 
 A Cortana-like application is not required. The optional future management

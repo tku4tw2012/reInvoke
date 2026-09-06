@@ -482,14 +482,14 @@ this old kernel.
 
 Tracing the owned client made its nominal 10 ms waits take 18-19 ms. Under that
 delay it immediately completed `getVer`, then completed Mic-Mute with
-`EVENT_MIC_MUTE`. The untraced 20 ms build reproduced both successes, proving a
-timing envelope rather than a frame-format problem.
+`EVENT_MIC_MUTE`. An isolated untraced 20 ms run also passed, which was
+provisionally treated as a timing result. Packaged and repeated trials later
+disproved that attribution.
 
-Startup mute had a second timing edge. A mute acknowledged immediately after
-`EVENT_DSP_BOOTUP` did not persist into a later first capture. Waiting one
-second after the boot event, then restoring persisted mute, produced a first
-five-second capture with all 244,736 samples zero. That WAV is byte-identical to
-the later attended muted capture.
+Startup mute was retained behind a conservative one-second readiness barrier.
+A later first capture was confounded by raw ALSA `hw_params`, which can
+reconfigure the DSP route after any earlier mute. Reasserting mute after capture
+configuration produced all 244,736 samples zero.
 
 The attended pair is conclusive:
 
@@ -514,7 +514,7 @@ Evidence is outside Git under
 and
 `reinvoke-archive/hardware/usb-attempts/20260905T180300Z-v17-cold-boot-5/privacy/`.
 
-The final v19 DSP binary is
+The v19 experiment DSP binary is
 `95c223f94594ab8658043e491434b6d206da5dfbc5be7052fd82676b8173b548`,
 the runtime manifest is
 `47343f69a1398e0dcd87abb97d716731001747e52719c9d033e4ab0e8e7959f5`,
@@ -534,16 +534,11 @@ then changed one phase at a time under `start-stop-daemon`:
 | Handshake/release 120 ms | Could miss boot event |
 | Post-Active-low turnaround 1, 5, 10, 20 ms | All-zero command response |
 | Sleep after pump claim 50, 100, 200 ms | All-zero command response |
-| One complete idle pump cycle before claim | `getVer` and Mic-Mute pass |
+| One complete idle pump cycle before claim | Isolated passes, later 0/9 repeat |
 
-The distinction is GPIO phase. Sleeping after claim leaves the command in a
-partially entered pump iteration. Deferring before claim returns no work, takes
-the normal 200 ms idle sleep, and starts the next iteration from its first GPIO
-operation. Each queued message carries a one-use deferral flag and is requeued
-at the front, so order is preserved and cancellation is checked again.
-
-With deferral, all minimized variants passed. The selected configuration is the
-donor-compatible 10 ms handshake/release with no invented turnaround delay.
+The isolated deferral passes were false positives. Ten identical detached
+trials later produced zero command passes and one boot-event miss. Deferral was
+removed; donor-compatible 10 ms handshake/release remains.
 
 The DMA sequence also refined the privacy boundary:
 
@@ -557,10 +552,41 @@ capture consumer. A future voice service must own that raw node contract: do not
 open/read while muted, or configure first, reassert mute, wait for
 confirmation, and discard all pre-confirmation samples.
 
-The final v21 DSP binary is
+The v21 experiment DSP binary is
 `667beeee278ee3692855e60a039de89d8d1e9b168f16e3609e55952a7ab44901`,
 the runtime manifest is
 `aca3a532ea971482d88442669637e99dea3097a43e8fdf49cafbb572dd79c9de`,
 and the 32,388,952-byte initramfs is
 `9b88112e5425c4095098d492d3e3b4bbc4319804d8ee786e079616d38c167c94`.
 Each was reproduced independently.
+
+## Root-cause correction: GPIO5 pinmux lifecycle
+
+The churn ended when the hidden mutable precondition was measured directly.
+After owned image download, register `0xF7EA8008` read `0x0038D249`. Donor
+analysis had already recorded that GPIO5 is switched for manual image-download
+chip select and restored afterward, but earlier work incorrectly dismissed the
+write because download and the unsolicited boot event still worked.
+
+Setting only GPIO5's `0x01000000` function bit produced `0x0138D249`. The
+unchanged, detached, no-deferral service immediately returned
+`EVENT_DSP_VERSION=0.0.64.58` and completed Mic-Mute in both directions.
+Forcing the bad value, then starting the fixed service, proved the service
+itself performs the correction.
+
+The full lifecycle is now:
+
+1. acquire `/run/reinvoke/pinmux.lock`;
+2. read-modify-write only GPIO5's function bit clear for download mode;
+3. download all 40,121 transfers;
+4. read-modify-write only GPIO5's function bit set for message mode;
+5. verify readback before starting the message pump.
+
+MCU GPIO3 uses the same lock and its `0x00200000` bit is preserved. Two
+consecutive DSP generations starting from message mode each downloaded,
+restored `0x0138D249`, received `EVENT_DSP_BOOTUP`, and completed `getVer`.
+Persisted Mic-Mute restore also passed before readiness.
+
+Timing, inter-byte pacing, response-turnaround, thread-affinity, synchronous vs
+asynchronous response, and idle-deferral experiments were rejected and are not
+part of the release candidate.
