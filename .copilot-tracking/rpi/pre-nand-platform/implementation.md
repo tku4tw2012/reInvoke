@@ -1045,6 +1045,38 @@ emitted. A patched agent was tested live: closing the pairing window changed
 That patch is not part of RC5 and must be reviewed and packaged before the next
 candidate.
 
+## `pre-nand-rc6` candidate
+
+RC6 packages only the reviewed BlueZ ObjectManager connected-state fix. RC5's
+MCU, DSP, kernel, BlueZ, BlueALSA, and all other runtime artifacts are unchanged.
+
+* pairing-agent SHA-256
+  `0e2e17763fb9f9212aee30226d2399f2ca7a4a93f7fb275c0fd6e7af6fe54a57`;
+* MCU SHA-256 unchanged at
+  `c4c1cd15e98fc90e3389ba981480056cec3db7328e7223ed91a8af7ee03edb6f`;
+* DSP SHA-256 unchanged at
+  `4a7882d4f463b6a6adf84f38e868faf1b2e17a0a0303d0c6c2246ecf07ef4c95`;
+* runtime manifest SHA-256
+  `0866b8f9b4ed3b81f4571d975cc672f3d0905cd98651294e11889ab774110eea`;
+* 32,440,521-byte initramfs SHA-256
+  `1bdc0045a25ba2839932ce5edc7a59d068ab9792bfda578055323fc62de03eb4`;
+* kernel unchanged at
+  `d29a007535794d74d8ed900da366f02631a9a981356caea707e6b163f6d07746`.
+
+The pairing agent, runtime bundle, and initramfs were each built twice and agree
+byte for byte. The pairing agent's source-to-binary provenance remains only
+partially hermetic: the builder pins the compiler and strip tool, and the two
+outputs match, but its built D-Bus static library and ARM sysroot are not
+independently checksum-gated.
+
+The exact binary was tested live on RC5 before packaging. A target-side
+ObjectManager capture showed `Device1` arriving with `Connected=true` in
+`InterfacesAdded`. Closing the pairing window changed state to `connected`;
+disconnect changed it to `off`. Review then found that an unrelated
+`MediaControl1` removal could be mistaken for device removal. The final parser
+checks the interface array and was re-tested through target `RemoveDevice`,
+persistent bonded pairing, connect, and disconnect.
+
 Reproducing an owned service binary requires the checked-in `build.sh` for that
 service rather than hand-assembled flags. It pins `-trimpath`, `-buildvcs=false`,
 `-mod=readonly`, `-ldflags="-s -w"`, and the archived Go 1.18.1 toolchain.
