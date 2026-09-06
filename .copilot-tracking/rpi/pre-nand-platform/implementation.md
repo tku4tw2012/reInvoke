@@ -694,6 +694,36 @@ service process is running and answering WAMP. Every earlier statement in this
 session that the MCU "still works" after a restart should be read with that
 limit in mind, and a genuine MCU health probe is still missing.
 
+### Next experiment: boot the known-good v16 image
+
+Before building another candidate, the more useful question is whether this is a
+regression in our own software or a change in the hardware's behaviour. Physical
+indicator validation was recorded against the v16 image, and that artifact is
+preserved and still hashes to
+`fef5f412fd0d5589f5a1cf739c9b131127f9e788147574c4388ef7122eea4453`. The kernel it
+was built against, `d29a0075`, is the kernel in use now, so it can be booted
+unchanged.
+
+The discriminator does not need an operator to press anything. If GPIO3 leaves
+its stuck-low state on v16, the fault arrived with a later change and can be
+bisected against a known-good anchor. If GPIO3 is stuck low on v16 as well, then
+every candidate behaves identically and the cause lies in the MCU or the board
+rather than in the platform software.
+
+A diagnostic build was written and tested but deliberately not released. It
+reports a bounded set of distinct undecodable frames when a drain hits its
+limit, which discriminates between the MCU repeating one status frame and a real
+queue being mis-decoded. That question only becomes worth a boot once the v16
+comparison has narrowed the search, so releasing it first would have spent a
+reset on the less informative experiment.
+
+Two alternative explanations were tested and rejected rather than carried
+forward. The GPIO3 pin function is not responsible, because clearing that bit
+live left the line low for eight seconds before the register was restored. The
+service is also not talking to the wrong I2C bus or address: the boot handshake
+requires frames whose leading byte matches opcodes `0x01` and `0x23`, and it
+completed, which a wrong device would not satisfy.
+
 ### D-Bus restart recovery
 
 
