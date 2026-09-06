@@ -522,6 +522,42 @@ running candidate. Re-measuring capture privacy would require adding one and
 opening raw PCM while muted, which the capture-owner contract forbids, so the
 existing attended measurement stands rather than being weakened.
 
+## `pre-nand-rc2` candidate
+
+A functional review of the `pre-nand-rc1` delta found that the DSP service
+reused the process context for its message-mode pinmux restore. Because that
+context is cancelled by `SIGTERM`, `exec.CommandContext` would refuse to run the
+restore during shutdown, leaving GPIO5 in download mode for the rest of the boot
+with no supervisor restart to repair it. The cleanup was disabled by exactly the
+condition that triggers it. The restore now runs on a bounded detached context,
+and a failed download-mode selection also attempts a restore before exiting.
+
+That change alters the DSP binary, so the candidate was rebuilt rather than
+relabelled. `pre-nand-rc1` remains the only build with a passing hardware gate.
+
+* MCU SHA-256 unchanged at
+  `2911c0cc0d8c13f069e65914fff58cf15761b4581b7bc759918b07e7637f1274`;
+* DSP SHA-256
+  `4a7882d4f463b6a6adf84f38e868faf1b2e17a0a0303d0c6c2246ecf07ef4c95`;
+* runtime manifest SHA-256
+  `2d9e8ffcb10e63849f8cae6f45317d83c21ce629d7664f420004b58ee25aedfe`;
+* 32,442,827-byte initramfs SHA-256
+  `60da1c7427f65fb9cb384197a3fcbb2f08225907a49fecbbb350ac63fd81fc35`;
+* kernel unchanged at
+  `d29a007535794d74d8ed900da366f02631a9a981356caea707e6b163f6d07746`.
+
+The runtime bundle and the initramfs were each built twice and agree byte for
+byte. `pre-nand-rc2` is unproven on hardware until it clears the same gate
+`pre-nand-rc1` cleared, which needs an operator-driven cold boot.
+
+Reproducing an owned service binary requires the checked-in `build.sh` for that
+service rather than hand-assembled flags. It pins `-trimpath`, `-buildvcs=false`,
+`-mod=readonly`, `-ldflags="-s -w"`, and the archived Go 1.18.1 toolchain.
+Omitting `-buildvcs=false` stamps the commit and a dirty-tree flag into the
+binary, and omitting `-trimpath` embeds absolute build paths, so either one
+silently breaks reproduction. `pre-nand-rc1` was re-derived byte for byte from
+its commit this way, which confirms the artifact's provenance.
+
 ## Change log
 
 Iterations land on the `feat/native-ram-platform` branch as they complete.
