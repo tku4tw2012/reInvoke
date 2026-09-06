@@ -1072,8 +1072,19 @@ altered sysroot. The sysroot itself still resolves into host
 `/usr/arm-linux-gnueabihf` packages. It was subsequently archived twice with
 normalized metadata; both 8.6 MB archives have SHA-256
 `f1f13d539bc70049d77dbf6583ca0819bb90d5f0800c0397ae9145bea3b7e2c1`, and
-extract to the gated sysroot manifest. The GCC/binutils Debian packages remain
-identified but unretained, so compiler reconstruction is still open.
+extract to the gated sysroot manifest. At that point the GCC/binutils Debian
+packages were identified but unretained, so compiler reconstruction was still
+open.
+
+That remaining statement was subsequently closed for the pairing-agent build.
+The exact GCC, binutils, C-library-development, and Linux-header Debian packages
+are retained under `toolchains/armhf-gcc11-debs/` with a verified
+`SHA256SUMS`. The 14 MB built D-Bus tree was normalized and archived twice;
+both 1.6 MB archives have SHA-256
+`658cdbcfae37f6aad12067c88b7aca78183cfdc31fce57a3e8d8ebff09f75a00`, and
+extract to the gated `libdbus-1.a` and header manifests. RC6's pairing agent can
+therefore be reconstructed from retained inputs on a compatible Ubuntu 22.04
+host. Source-rebuilding the D-Bus archive remains a deeper, separate layer.
 
 The exact binary was tested live on RC5 before packaging. A target-side
 ObjectManager capture showed `Device1` arriving with `Connected=true` in
