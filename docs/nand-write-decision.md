@@ -137,17 +137,27 @@ again. **(V)** Three sources, three numbers, none reconciled.
 
 **Status: unresolved, and it must be settled before any write.**
 
-### 3. Bad blocks already exist on this device
+### 3. Bad blocks already exist, and the two boot stages disagree about how many
 
-The device already has bad blocks, including at `0x0c000000` and `0x0c020000`,
-and an uncorrectable ECC page at `0x0fe40800`. **(V)**
+The device already has bad blocks. Today's boot log records them directly:
+`nand_read_bbt: bad block at 0x00000c000000` and `0x00000c020000`. **(V)**
+
+A U-Boot `nandbad 0 2048` scan reported those same two blocks plus one
+uncorrectable ECC page at `0x0FE40800`. **(V)**
+
+But Linux, in the same boot log, reports `mtdblock0: 6 bad block(s) found`.
+**(V)** U-Boot found two, Linux counts six. That is a third disagreement between
+the two boot stages about the state of the same flash, alongside the OOB width
+conflict, and it points at the same underlying cause: the two stages do not share
+a view of the OOB area where bad-block markers live.
 
 Whether a writer would consult the BBT, skip bad blocks, or fail on them is not
 established, nor is whether the BBT itself is stored in OOB. Since the backup has
 no OOB, a BBT rebuilt incorrectly after an erase could mark good blocks bad or,
 worse, hand out blocks that are actually failing.
 
-**Status: unknown handling, on a device already known to have defects.**
+**Status: unknown handling, on a device already known to have defects, where the
+two boot stages cannot even agree how many.**
 
 ## What a safe write would require
 
