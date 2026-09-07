@@ -42,3 +42,12 @@ __pycache__/
 # identify a particular machine, so it must never be committed. The tracked
 # sample alongside it documents every supported value.
 tools/usb-boot/local.conf
+
+# Locally built service binaries. Release artifacts live in the archive and are
+# pinned by checksum in the build scripts.
+tools/mcu-interface/mcu-interface
+tools/dsp-interface/dsp-interface
+tools/provisioning/provisioning
+tools/provisioning/networkd/networkd
+tools/provisioning/windowd/windowd
+tools/provisioning/applyd/applyd
