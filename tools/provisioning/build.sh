@@ -16,7 +16,8 @@ Usage: build.sh --output PATH [options]
 
 Options:
   --archive-root PATH  External reInvoke archive root
-  --component NAME     provisiond or wifi-applyd (default: provisiond)
+  --component NAME     provisiond, wifi-applyd, networkd, or windowd
+                       (default: provisiond)
   --output PATH        New ARMv7 binary path
   --help               Show this help
 EOF
@@ -86,8 +87,14 @@ main() {
     wifi-applyd)
       package_path="./applyd"
       ;;
+    networkd)
+      package_path="./networkd"
+      ;;
+    windowd)
+      package_path="./windowd"
+      ;;
     *)
-      err "--component must be provisiond or wifi-applyd"
+      err "--component must be provisiond, wifi-applyd, networkd, or windowd"
       ;;
   esac
   output_path="$(realpath --canonicalize-missing "${output_path}")"

@@ -1,0 +1,37 @@
+{
+  "id": "P1-048",
+  "kind": "owned_mcu_service",
+  "retrieved_utc": "2026-09-03T20:05:24Z",
+  "status": "HARDWARE_VALIDATED_RAM_ONLY",
+  "artifact": {
+    "path": "build/artifacts/reinvoke-mcu-interface-20260903/reinvoke-mcu-interface-v3",
+    "sha256": "db346674788b0ea73938d8e34f0c65a9157473e44c1e7bcdaa605bb84df9033b",
+    "target": "linux/arm/v7",
+    "linkage": "static"
+  },
+  "source": [
+    "tools/mcu-interface/main.go",
+    "tools/mcu-interface/controller.go",
+    "tools/mcu-interface/i2c_linux.go",
+    "tools/mcu-interface/events_linux.go",
+    "tools/mcu-interface/heartbeat.go",
+    "tools/mcu-interface/wamp.go"
+  ],
+  "safety": [
+    "Hardware initialization configures the IO expander and asserts amplifier and DAC mute before powering the DSP or initializing the DAC.",
+    "Unmute requests are denied unless the process is explicitly started with --allow-unmute.",
+    "Shutdown attempts to remute both physical outputs.",
+    "The service exposes no MCU upgrade, flash, MTD, or persistent-storage path."
+  ],
+  "validation": [
+    "Pinned Go 1.18 tests and go vet passed.",
+    "Two static ARMv7 builds were byte-identical.",
+    "The live service initialized the physical expander and DAC and remained muted.",
+    "com.harman.vui.getmcustatus returned 000116.",
+    "Amplifier and DAC mute procedures succeeded; an unmute request was rejected by default policy.",
+    "Static analysis of the donor heartbeat handler proved opcode 0x24 is sent every five seconds and leaves the other five frame bytes unspecified.",
+    "Sending 24 00 00 00 00 00 every five seconds prevented the reset observed when the heartbeat was absent.",
+    "The physical rotary ring produced volumeup step 1 and volumedown steps 2 and 1 through the owned WAMP service.",
+    "The target remained connected over USB after the bidirectional rotary test."
+  ]
+}

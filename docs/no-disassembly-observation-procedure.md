@@ -1,11 +1,17 @@
 ---
-title: No-disassembly observation procedure
-description: Safe physical observations for an Invoke that remains closed
-ms.date: 2026-09-02
+title: Historical no-disassembly observation procedure
+description: Pre-RAM-boot physical observation procedure retained as evidence
+ms.date: 2026-09-05
 ms.topic: how-to
 ---
 
-Operator procedure for a physical Invoke that will not be opened. The procedure
+> [!IMPORTANT]
+> **Historical procedure.** These steps preceded successful U-Boot access and
+> owned RAM boot. Do not use them as current project status. Use
+> [U-Boot console access](uboot-access.md) for the verified procedure and the
+> [current contract](current-product-contract.md) for current behavior.
+
+This was the operator procedure for a physical Invoke that would not be opened. The procedure
 does not flash firmware or write raw storage. Bluetooth pairing can update
 ordinary device settings and is called out separately.
 
@@ -18,8 +24,9 @@ Static analysis established that Harman's final firmware, `Barracuda_libre-12.21
 shipped in the OTA2 bundle, removes Cortana and Spotify and adds a `wifi-blocker`
 service. See `docs/bundle-contents/invoke-ota2/ota2-analysis.md`.
 
-The unit's Bluetooth-only behavior is consistent with this firmware line, but
-the exact installed version has not been read from the device.
+At this planning checkpoint the installed version had not been read. It was
+later identified as `Barracuda_libre-12.2050.3`, not Harman's final
+`12.2134.0` image.
 
 The device is already the Bluetooth speaker its last firmware was built to be.
 The open questions are no longer about what it is, but about what can be

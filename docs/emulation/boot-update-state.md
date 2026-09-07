@@ -1,12 +1,17 @@
 ---
-title: Boot and update state
-description: Recovered persistent update markers and unresolved boot-slot behavior
-ms.date: 2026-09-02
+title: Historical donor boot and update state
+description: Recovered vendor persistent-update markers and unresolved boot-slot behavior
+ms.date: 2026-09-05
 ms.topic: reference
 ---
 
 Static disassembly of the final firmware establishes how its persistent update
 marker changes. It does not yet establish active-slot selection.
+
+> [!NOTE]
+> This evidence describes Harman's persistent update path. The current reInvoke
+> target is RAM-only, does not run the updater, and does not write NAND. See the
+> [current contract](../current-product-contract.md).
 
 ## Evidence classification
 

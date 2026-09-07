@@ -133,35 +133,39 @@ ensure_rootfs_mount() {
   local mounted_release
 
   mounted_release="$(
-    adb_shell \
-      "busybox cat '${MOUNT_POINT}/etc/version.txt' 2>/dev/null" |
-      grep -F "Barracuda_libre-12.2050.3" |
-      tail -1
+    adb_shell "busybox cat '${MOUNT_POINT}/etc/version.txt' 2>/dev/null" ||
+      true
   )"
-  if [[ "${mounted_release}" == "Barracuda_libre-12.2050.3" ]]; then
+  if grep -qF "Barracuda_libre-12.2050.3" <<<"${mounted_release}"; then
     printf "Reviewed donor rootfs is already mounted\n"
-    return
+  else
+    adb -s "${ADB_SERIAL}" push "${ROOTFS_PATH}" "${DEVICE_ROOTFS}" >/dev/null
+    adb_shell "
+      actual=\$(busybox sha256sum '${DEVICE_ROOTFS}' | busybox cut -d' ' -f1)
+      busybox test \"\${actual}\" = '${ROOTFS_SHA256}' || exit 41
+      busybox mkdir -p '${MOUNT_POINT}'
+      busybox mknod /dev/loop0 b 7 0 2>/dev/null || true
+      busybox losetup -d /dev/loop0 2>/dev/null || true
+      busybox losetup -r /dev/loop0 '${DEVICE_ROOTFS}' || exit 42
+      busybox mount -t squashfs -r /dev/loop0 '${MOUNT_POINT}' || exit 43
+    " || err "failed to mount the reviewed donor rootfs from RAM"
   fi
 
-  adb -s "${ADB_SERIAL}" push "${ROOTFS_PATH}" "${DEVICE_ROOTFS}" >/dev/null
   adb_shell "
-    actual=\$(busybox sha256sum '${DEVICE_ROOTFS}' | busybox cut -d' ' -f1)
-    busybox test \"\${actual}\" = '${ROOTFS_SHA256}' || exit 41
-    busybox mkdir -p '${MOUNT_POINT}'
-    busybox mknod /dev/loop0 b 7 0 2>/dev/null || true
-    busybox losetup -d /dev/loop0 2>/dev/null || true
-    busybox losetup -r /dev/loop0 '${DEVICE_ROOTFS}' || exit 42
-    busybox mount -t squashfs -r /dev/loop0 '${MOUNT_POINT}' || exit 43
     for path in dev proc sys tmp; do
-      busybox mount --bind \"/\${path}\" '${MOUNT_POINT}'/\"\${path}\" ||
-        exit 44
+      if ! busybox mount | busybox grep -q \" on ${MOUNT_POINT}/\${path} \"; then
+        busybox mount --bind \"/\${path}\" '${MOUNT_POINT}'/\"\${path}\" ||
+          exit 44
+      fi
     done
     busybox mkdir -p \
       /tmp/reinvoke-lsync/data1/bluetooth \
       /tmp/reinvoke-lsync/data1/crash \
       /tmp/reinvoke-lsync/data1/misc/bluedroid
-    busybox mount --bind /tmp/reinvoke-lsync '${MOUNT_POINT}/lsync' ||
-      exit 45
+    if ! busybox mount | busybox grep -q \" on ${MOUNT_POINT}/lsync \"; then
+      busybox mount --bind /tmp/reinvoke-lsync '${MOUNT_POINT}/lsync' ||
+        exit 45
+    fi
     echo REINVOKE_ROOTFS_READY
   " | grep -qF REINVOKE_ROOTFS_READY ||
     err "failed to mount the reviewed donor rootfs from RAM"

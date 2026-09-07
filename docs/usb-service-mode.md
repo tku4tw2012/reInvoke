@@ -1,26 +1,29 @@
 ---
 title: USB service mode and the RAM boot path
-description: Hardware observations and evidence limits for the Invoke Micro-USB boot endpoint
-ms.date: 2026-09-02
+description: Historical Micro-USB investigation that preceded verified yellow-mode U-Boot access
+ms.date: 2026-09-05
 ms.topic: troubleshooting
 ---
 
-Status: superseded in part on 2026-09-02. An interactive U-Boot console **has
-been reached** on unit `myInvoke-1` through the yellow service mode. See
-[uboot-access.md](uboot-access.md) for the verified procedure and the board,
-NAND, and SPI facts read from the prompt.
+> [!IMPORTANT]
+> **Historical investigation, superseded for procedure.** An interactive U-Boot
+> console and owned RAM Linux are now verified through yellow service mode. Use
+> [U-Boot console access](uboot-access.md) for the current procedure and
+> [Native RAM platform](native-ram-platform.md) for the current outcome. The
+> failed attempts below are retained as evidence.
 
 The sections below remain accurate for the ordinary power-on path, where the
 device requests `08_IMAGE` and no console appears. The earlier conclusion that
 subclass `0xFE` blocks progress was incomplete: the decisive variable is the
 image-request sequence the device issues, not the subclass alone.
 
-The installed firmware version has still not been read from the device. Its
-Bluetooth-only behavior is consistent with the final firmware line.
+The installed sample was later read from a RAM-only environment and identified
+as `Barracuda_libre-12.2050.3`. Harman's separate final 2021 firmware is
+`Barracuda_libre-12.2134.0`; neither is the reInvoke target.
 
 This document records what the Micro-USB port actually exposes, how far the
-download path can be driven without opening the enclosure, where that path
-currently stops, and where the safe boundary sits.
+download path was driven without opening the enclosure, where those attempts
+stopped, and where the safe boundary sat.
 
 ## What the port exposes
 
@@ -28,11 +31,11 @@ The unit presents `1286:8174` for approximately four seconds on every power-on,
 then disconnects and continues booting from NAND.
 
 ```text
-usb 3-1.2: New USB device found, idVendor=1286, idProduct=8174
-usb 3-1.2: Product: BG2CD S/N:12345678A
-usb 3-1.2: Manufacturer: Marvell
+usb <usb-path>: New USB device found, idVendor=1286, idProduct=8174
+usb <usb-path>: Product: BG2CD S/N:<device-serial>
+usb <usb-path>: Manufacturer: Marvell
 [4 seconds later]
-usb 3-1.2: USB disconnect
+usb <usb-path>: USB disconnect
 ```
 
 This identifier is the Marvell BG2CDP boot/download endpoint, not a runtime
@@ -123,7 +126,8 @@ The device requests image type `0x08`, receives it, disconnects, and boots from
 NAND. It never requests `bcm_erom.bin.usb`, `bootloader.img`, or `sysinit.img`.
 
 The numbered files are a mix of protocol data and payloads, not firmware.
-`06_IMAGE` is written by the tool on every run and holds the USB path (`3-1.2`);
+`06_IMAGE` is written by the tool on every run and holds the host USB path
+(`<usb-path>`);
 its mtime updates each session. `07_IMAGE` holds an image size as a
 little-endian `uint32` and is likewise tool-written; the copy in the bundle
 reads 107,934,810, exactly the size of `83_IMAGE`, so it is a leftover from the
@@ -182,10 +186,10 @@ console:
 
 ```text
 one target device connected.
- 424091892ef47412 target device disconnected.
+ <stable-device-id> target device disconnected.
 ```
 
-`424091892ef47412` was byte-identical across every attempt, so it is a stable
+The redacted `<stable-device-id>` was byte-identical across every attempt, so it is a stable
 identifier rather than a per-boot nonce. The exchange is therefore not a
 randomised challenge.
 
@@ -208,11 +212,11 @@ to dump the descriptor automatically on attach. Captured 2026-09-01:
 
 ```text
 idVendor=1286  idProduct=8174  bcdDevice=0001  speed=480  version=2.00
-manufacturer=Marvell   product=BG2CD S/N:12345678A   serial=S/N:12345678A
+manufacturer=Marvell   product=BG2CD S/N:<device-serial>   serial=S/N:<device-serial>
 bDeviceClass=ff   bDeviceSubClass=fe   bDeviceProtocol=ff
 bNumConfigurations=1   bNumInterfaces=1
 
-interface 3-1.2:1.0
+interface <usb-path>:1.0
   bInterfaceNumber=00   bAlternateSetting=0
   bInterfaceClass=ff    bInterfaceSubClass=fe   bInterfaceProtocol=ff
   bNumEndpoints=04
@@ -276,7 +280,7 @@ The first word is 1 in both. The second differs: `0x0003e76a` in `08_IMAGE` and
 `0x1300c237` in `09_IMAGE`. The remainder is high-entropy binary consistent with
 several possible encrypted or authenticated formats.
 
-The unit's announced identifier `424091892ef47412` does not appear in
+The unit's announced `<stable-device-id>` does not appear in
 `08_IMAGE` in either byte order, and no four-byte or eight-byte prefix of it
 matches at any offset. The copy being served is the vendor's unmodified blob.
 This plaintext comparison does not exclude hashing, derivation, family binding,
@@ -355,14 +359,19 @@ the causal difference remains unknown.
 USB topology is another concrete difference. The ARM success used a direct
 Raspberry Pi 4 USB-A 2.0 port. Its author reports that an Ubuntu-hosted Dell
 behind a USB-C adapter sent the initial bootstrap and then stalled, while docks,
-virtual machines, and USB passthrough were less reliable. This Mac mini exposes
-the external port through one internal EHCI hub. That may matter after iROM
-starts, but it does not explain why the initial descriptor is subclass 254.
+virtual machines, and USB passthrough were less reliable. The test workstation
+exposed the external port through an internal EHCI hub. That may matter after
+iROM starts, but it does not explain why the initial descriptor is subclass 254.
 The ARM executable was reviewed but was not run on Raspberry Pi hardware here.
 It is now compiled natively on this x86-64 host, so testing its implementation
 does not require moving the project session to a Pi.
 
-## Untested next steps
+## Historical next hypotheses
+
+This section records the state before the successful yellow-mode run. The
+questions below no longer block USB access: the successful sequence requested
+`09_IMAGE`, `sysinit.img`, `bootloader.img`, `drm_erom.img`, and `79_IMAGE`
+rather than `08_IMAGE`.
 
 Direct measurement establishes three narrower constraints:
 
@@ -378,8 +387,8 @@ them with normal and service-mode attempts, but the descriptor log itself does
 not label each physical sequence. Observed tool sessions requested image type
 `0x08`; no capture showed `0xFF`, and no U-Boot prompt appeared.
 
-The relationship among NAND state, firmware version, button state, and subclass
-selection remains unresolved. Discussion #11 records this unit's failure
+At that checkpoint the relationship among NAND state, firmware version, button
+state, and subclass selection was unresolved. Discussion #11 records the failure
 signature on a normally booting Cortana unit, while other reports omit the
 starting boot state or raw descriptors. Destructive NAND changes are not a
 valid way to test the hypothesis.

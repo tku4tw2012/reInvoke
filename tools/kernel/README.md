@@ -82,8 +82,27 @@ tools/kernel/build-native-kernel.sh \
 
 The `baseline`, `spi-gpio`, and `audio` profiles all start from
 `berlin2cdp_amp_defconfig`, use the explicit NDK BFD linker, checksum-gate the
-source, compiler, NDK archive, and supplied DTB, and build modules with
-`-fno-pic -fno-pie`.
+source archive, complete patched source-tree manifest, compiler, linker, NDK
+archive, SPI and reproducibility patches, `lzop`, `mkimage`, and supplied DTB,
+and build modules with `-fno-pic -fno-pie`.
+
+The source-tree gate prevents a modified extracted tree from silently producing
+a candidate. The builder still consumes that retained extracted tree rather
+than reconstructing it from the source archive and applying every patch in a
+new work directory, so the input is content-locked but the clean-room extraction
+step remains future work.
+
+A fresh full build through the gated path reproduced the accepted
+`d29a0075...` kernel, supplied DTB, and all four module digests exactly. That
+third independent deployable set is retained under
+`build/artifacts/reinvoke-kernel-v14-9-provenance-20260906/`.
+
+The GCC 9/11 compatibility patch `0001-modern-host-toolchain.patch` is
+deliberately absent from this NDK GCC 4.9 path. The hardware kernel uses
+`HOSTCFLAGS=-fcommon` for its host-side DTC instead, and applying patch 1 would
+also change target ARM `uaccess` code. A scratch reconstruction from the
+original 521 MB source archive plus patches 2–4 produced the exact 42,321-file
+source manifest above, with no remaining file differences.
 
 The separate `audio-sd8887` profile disables the recovery-compatible SD8801
 module and builds the disclosed native SD8887 STA/uAP pair. It is not the
@@ -109,13 +128,40 @@ The script:
 1. Verifies the archived source SHA-256.
 2. Copies the preserved source to a disposable work directory.
 3. Applies the pinned compatibility patch.
-4. Loads the ACast defconfig.
-5. Enables the Marvell UDC and Android USB composite gadget.
-6. Builds the appended-DTB U-Boot image and modules.
-7. Writes an artifact manifest and SHA-256 file.
+4. Applies the pinned fail-fast SPI GPIO patch and the two reproducibility
+   patches.
+5. Loads the ACast defconfig.
+6. Enables the Marvell UDC and Android USB composite gadget.
+7. Builds the appended-DTB U-Boot image and modules.
+8. Writes an artifact manifest and SHA-256 file.
 
 It refuses an existing output directory and a work directory with a different
 patch marker.
+
+## Reproducibility
+
+The builder pins `KBUILD_BUILD_TIMESTAMP`, `KBUILD_BUILD_USER`,
+`KBUILD_BUILD_HOST`, and `SOURCE_DATE_EPOCH`. Two further patches remove build
+timestamps the kernel embeds on its own:
+
+| Patch | Removes |
+|---|---|
+| `0003-reproducible-yaffs-build-id.patch` | `__DATE__` and `__TIME__` strings compiled into the YAFFS driver |
+| `0004-reproducible-lzo-piggy.patch` | The lzop header modification time in the compressed kernel payload |
+
+The LZO case is worth knowing about, because it hides well. `vmlinux` and
+`System.map` can be byte-identical while `zImage` still differs. `cmd_lzo`
+originally piped the payload into lzop, and lzop reading a pipe has no source
+file to take a modification time from, so it stored the current clock and the
+header checksum covering it. That produced six differing bytes at a constant
+image size. The patch compresses the input as a named file with its mode and
+modification time pinned first.
+
+Nothing the kernel reads changes. `parse_header` in `lib/decompress_unlzo.c`
+skips the mode, both mtime words, the file name, and the header checksum.
+
+Confirm reproducibility by building twice into separate output and work
+directories and comparing `81_IMAGE.*`.
 
 ## Verified first build
 

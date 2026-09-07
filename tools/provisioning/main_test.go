@@ -24,6 +24,21 @@ type recordingApplier struct {
 	err     error
 }
 
+type blockingApplier struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (a *blockingApplier) Apply(ctx context.Context, _ wifiRequest) error {
+	close(a.started)
+	select {
+	case <-a.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (a *recordingApplier) Apply(
 	_ context.Context,
 	request wifiRequest,
@@ -175,6 +190,93 @@ func TestProvisioningHandler(t *testing.T) {
 	}
 }
 
+func TestProvisioningHandlerDoesNotBlockStatusDuringApply(t *testing.T) {
+	t.Parallel()
+
+	applier := &blockingApplier{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	handler := &provisioningHandler{
+		applier:      applier,
+		token:        "test-token",
+		expiresAt:    time.Now().Add(time.Minute),
+		applied:      make(chan struct{}, 1),
+		applyTimeout: time.Second,
+	}
+	applyRequest := httptest.NewRequest(
+		http.MethodPost,
+		"https://127.0.0.1/v1/wifi",
+		bytes.NewBufferString(
+			`{"ssid":"test","passphrase":"test-password","security":"wpa2-psk"}`,
+		),
+	)
+	applyRequest.Header.Set("Authorization", "Bearer test-token")
+	applyRequest.Header.Set("Content-Type", "application/json")
+	applyResponse := httptest.NewRecorder()
+	applyDone := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(applyResponse, applyRequest)
+		close(applyDone)
+	}()
+	<-applier.started
+
+	statusRequest := httptest.NewRequest(
+		http.MethodGet,
+		"https://127.0.0.1/v1/status",
+		nil,
+	)
+	statusRequest.Header.Set("Authorization", "Bearer test-token")
+	statusResponse := httptest.NewRecorder()
+	statusDone := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(statusResponse, statusRequest)
+		close(statusDone)
+	}()
+	select {
+	case <-statusDone:
+	case <-time.After(time.Second):
+		t.Fatal("status request blocked during apply")
+	}
+	if statusResponse.Code != http.StatusOK {
+		t.Fatalf("status = %d", statusResponse.Code)
+	}
+	var status struct {
+		Ready bool `json:"ready"`
+	}
+	if err := json.NewDecoder(statusResponse.Body).Decode(&status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.Ready {
+		t.Fatal("status reported ready while apply was in progress")
+	}
+
+	secondRequest := httptest.NewRequest(
+		http.MethodPost,
+		"https://127.0.0.1/v1/wifi",
+		bytes.NewBufferString(
+			`{"ssid":"test","passphrase":"test-password","security":"wpa2-psk"}`,
+		),
+	)
+	secondRequest.Header.Set("Authorization", "Bearer test-token")
+	secondRequest.Header.Set("Content-Type", "application/json")
+	secondResponse := httptest.NewRecorder()
+	handler.ServeHTTP(secondResponse, secondRequest)
+	if secondResponse.Code != http.StatusConflict {
+		t.Fatalf("second status = %d", secondResponse.Code)
+	}
+
+	close(applier.release)
+	select {
+	case <-applyDone:
+	case <-time.After(time.Second):
+		t.Fatal("apply request did not complete")
+	}
+	if applyResponse.Code != http.StatusAccepted {
+		t.Fatalf("apply status = %d", applyResponse.Code)
+	}
+}
+
 func TestRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
 
@@ -319,6 +421,63 @@ func TestUnixApplier(t *testing.T) {
 	}
 }
 
+func TestUnixApplierHonorsCancellationDuringResponseRead(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0700); err != nil {
+		t.Fatalf("restrict Unix socket directory: %v", err)
+	}
+	socketPath := filepath.Join(directory, "wifi-apply.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen on Unix socket: %v", err)
+	}
+	defer listener.Close()
+	if err := os.Chmod(socketPath, 0600); err != nil {
+		t.Fatalf("restrict Unix socket: %v", err)
+	}
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		connection, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			accepted <- connection
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	applier := unixApplier{
+		socketPath:  socketPath,
+		timeout:     10 * time.Second,
+		expectedUID: uint32(os.Geteuid()),
+	}
+	applyDone := make(chan error, 1)
+	go func() {
+		applyDone <- applier.Apply(ctx, wifiRequest{
+			SSID:       "test-network",
+			Passphrase: "test-password",
+			Security:   "wpa2-psk",
+		})
+	}()
+
+	var connection net.Conn
+	select {
+	case connection = <-accepted:
+	case <-time.After(time.Second):
+		t.Fatal("adapter did not accept connection")
+	}
+	defer connection.Close()
+	cancel()
+	select {
+	case err := <-applyDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("apply error = %v, want context canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("apply did not stop after cancellation")
+	}
+}
 func TestUnixApplierRejectsWritableDirectory(t *testing.T) {
 	t.Parallel()
 

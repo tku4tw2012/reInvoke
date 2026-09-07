@@ -1,0 +1,895 @@
+// Copyright (c) 2026 tku4tw2012
+// SPDX-License-Identifier: MIT
+
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"sync"
+	"time"
+)
+
+const (
+	wampHello      = 1
+	wampWelcome    = 2
+	wampError      = 8
+	wampPublish    = 16
+	wampSubscribe  = 32
+	wampSubscribed = 33
+	wampEvent      = 36
+	wampRegister   = 64
+	wampRegistered = 65
+	wampInvocation = 68
+	wampYield      = 70
+
+	wampReconnectDelay = 5 * time.Second
+
+	// maxDeferredSetupMessages bounds what one setup step will queue before
+	// treating the router as unresponsive.
+	maxDeferredSetupMessages = 256
+	dspSessionTopic          = "com.reinvoke.dsp.session"
+	dspBootTopic             = "com.harman.dsp.bootup"
+)
+
+var procedures = []string{
+	"com.harman.vui.getmcustatus",
+	"com.harman.vui.mutedaccontrol",
+	"com.harman.vui.muteampcontrol",
+	"com.harman.volumeGet",
+	"com.harman.volumeSet",
+	"com.harman.volumeAdjust",
+	"com.harman.musicMuteSet",
+	"com.harman.musicMuteToggle",
+	"com.harman.ledAnimate",
+	"com.harman.ledSet",
+	"com.harman.ledOff",
+	"com.harman.dsp.micMute",
+}
+
+type wampService struct {
+	address       string
+	realm         string
+	controller    *controller
+	media         *blueALSAController
+	lights        *ledPlayer
+	indicatorLEDs *indicatorLEDController
+	events        eventSource
+	version       string
+	flushEvents   bool
+	privacy       *microphonePrivacyController
+	logf          func(string, ...interface{})
+}
+
+type wampConnection struct {
+	connection net.Conn
+	writeMu    sync.Mutex
+	idMu       sync.Mutex
+	nextID     uint64
+}
+
+func (service *wampService) run(ctx context.Context) error {
+	connection, err := net.DialTimeout("tcp", service.address, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("connect WAMP router: %w", err)
+	}
+	defer connection.Close()
+	connectionDone := make(chan struct{})
+	defer close(connectionDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = connection.Close()
+		case <-connectionDone:
+		}
+	}()
+	client := &wampConnection{connection: connection, nextID: 1}
+	sessionContext, stopSession := context.WithCancel(ctx)
+
+	if err := client.negotiate(service.realm); err != nil {
+		stopSession()
+		return err
+	}
+	var deferredSetup [][]interface{}
+	registrations, err := client.register(procedures, &deferredSetup)
+	if err != nil {
+		stopSession()
+		return err
+	}
+	dspSessionSubscription, err := client.subscribe(
+		dspSessionTopic,
+		&deferredSetup,
+	)
+	if err != nil {
+		stopSession()
+		return err
+	}
+	dspBootSubscription, err := client.subscribe(dspBootTopic, &deferredSetup)
+	if err != nil {
+		stopSession()
+		return err
+	}
+
+	messages := make(chan []interface{})
+	readErrors := make(chan error, 1)
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		defer close(messages)
+		for _, message := range deferredSetup {
+			select {
+			case messages <- message:
+			case <-sessionContext.Done():
+				return
+			}
+		}
+		for {
+			message, err := client.readFrame()
+			if err != nil {
+				readErrors <- err
+				return
+			}
+			select {
+			case messages <- message:
+			case <-sessionContext.Done():
+				return
+			}
+		}
+	}()
+	var events <-chan inputEvent
+	if service.events != nil {
+		events = service.events.Events(sessionContext)
+		if service.flushEvents {
+			events = discardPendingInputEvents(events)
+		}
+	}
+	invocationErrors := make(chan error, 1)
+	var invocations sync.WaitGroup
+	defer func() {
+		stopSession()
+		_ = connection.Close()
+		<-readerDone
+		invocations.Wait()
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-readErrors:
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		case err := <-invocationErrors:
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		case event, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			topic, args := event.publication()
+			if err := client.publish(topic, args); err != nil {
+				return err
+			}
+		case message, ok := <-messages:
+			if !ok {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return errors.New("WAMP connection closed")
+			}
+			handled, err := service.handleDSPSessionEvent(
+				sessionContext,
+				client,
+				dspSessionSubscription,
+				message,
+			)
+			if err != nil {
+				return err
+			}
+			if handled {
+				continue
+			}
+			handled, err = service.handleDSPSessionEvent(
+				sessionContext,
+				client,
+				dspBootSubscription,
+				message,
+			)
+			if err != nil {
+				return err
+			}
+			if handled {
+				continue
+			}
+			if messageType(message) != wampInvocation {
+				continue
+			}
+			invocations.Add(1)
+			go func(message []interface{}) {
+				defer invocations.Done()
+				if err := service.handleInvocation(
+					sessionContext,
+					client,
+					registrations,
+					message,
+				); err != nil {
+					select {
+					case invocationErrors <- err:
+					default:
+					}
+				}
+			}(message)
+		}
+	}
+}
+
+func (service *wampService) handleDSPSessionEvent(
+	ctx context.Context,
+	_ *wampConnection,
+	subscription uint64,
+	message []interface{},
+) (bool, error) {
+	if messageType(message) != wampEvent || len(message) < 4 {
+		return false, nil
+	}
+	subscriptionID, ok := unsigned(message[1])
+	if !ok || subscriptionID != subscription {
+		return false, nil
+	}
+
+	if service.privacy == nil {
+		return true, nil
+	}
+	if err := service.privacy.Reconcile(ctx); err != nil {
+		service.privacy.RequestReconcile()
+		if service.logf != nil {
+			service.logf("restore DSP microphone mute: %v", err)
+		}
+	}
+	return true, nil
+}
+
+func discardPendingInputEvents(
+	events <-chan inputEvent,
+) <-chan inputEvent {
+	for {
+		select {
+		case _, ok := <-events:
+			if !ok {
+				return nil
+			}
+		default:
+			return events
+		}
+	}
+}
+
+func (service *wampService) handleInvocation(
+	ctx context.Context,
+	client *wampConnection,
+	registrations map[uint64]string,
+	message []interface{},
+) error {
+	if messageType(message) != wampInvocation || len(message) < 4 {
+		return nil
+	}
+	requestID, ok := unsigned(message[1])
+	if !ok {
+		return errors.New("WAMP invocation has invalid request ID")
+	}
+	registrationID, ok := unsigned(message[2])
+	if !ok {
+		return errors.New("WAMP invocation has invalid registration ID")
+	}
+	procedure, ok := registrations[registrationID]
+	if !ok {
+		return nil
+	}
+	args := []interface{}{}
+	if len(message) > 4 {
+		args, _ = message[4].([]interface{})
+	}
+	kwargs := map[string]interface{}{}
+	kwargsValid := true
+	if len(message) > 5 {
+		kwargs, kwargsValid = message[5].(map[string]interface{})
+	}
+
+	var result []interface{}
+	resultKwargs := map[string]interface{}{}
+	var events []mediaEvent
+	var invocationError error
+	switch procedure {
+	case "com.harman.vui.getmcustatus":
+		if len(args) != 0 {
+			invocationError = errors.New("invalid argument format")
+		} else {
+			result = []interface{}{service.version}
+		}
+	case "com.harman.vui.mutedaccontrol":
+		invocationError = applyMuteCommand(
+			args,
+			func(muted bool) error {
+				return service.controller.setDACMuteContext(ctx, muted)
+			},
+		)
+	case "com.harman.vui.muteampcontrol":
+		invocationError = applyMuteCommand(
+			args,
+			func(muted bool) error {
+				return service.controller.setAmpMuteContext(ctx, muted)
+			},
+		)
+	case "com.harman.volumeGet":
+		var snapshot blueALSASnapshot
+		snapshot, invocationError = service.mediaSnapshot(ctx)
+		if invocationError == nil {
+			resultKwargs = mediaVolumeState(snapshot)
+		}
+	case "com.harman.volumeSet":
+		var snapshot blueALSASnapshot
+		var value int
+		value, invocationError = mediaIntegerArgument(args, true)
+		if invocationError == nil && service.media == nil {
+			invocationError = errors.New("media backend is unavailable")
+		}
+		if invocationError == nil {
+			snapshot, invocationError = service.media.SetVolume(ctx, value)
+		}
+		if invocationError == nil {
+			result = []interface{}{snapshot.Volume, "music"}
+			resultKwargs = mediaVolumeState(snapshot)
+			events = mediaVolumeEvents(snapshot, false)
+		}
+	case "com.harman.volumeAdjust":
+		var snapshot blueALSASnapshot
+		var delta int
+		delta, invocationError = mediaIntegerArgument(args, true)
+		if invocationError == nil && service.media == nil {
+			invocationError = errors.New("media backend is unavailable")
+		}
+		if invocationError == nil {
+			snapshot, invocationError = service.media.AdjustVolume(ctx, delta)
+		}
+		if invocationError == nil {
+			result = []interface{}{snapshot.Volume, "music"}
+			resultKwargs = mediaVolumeState(snapshot)
+			events = mediaVolumeEvents(snapshot, false)
+		}
+	case "com.harman.musicMuteSet":
+		var snapshot blueALSASnapshot
+		var muted bool
+		muted, invocationError = mediaMuteArgument(args)
+		if invocationError == nil && service.media == nil {
+			invocationError = errors.New("media backend is unavailable")
+		}
+		if invocationError == nil {
+			snapshot, invocationError = service.media.SetMuted(ctx, muted)
+		}
+		if invocationError == nil {
+			result = []interface{}{snapshot.Muted, "music"}
+			resultKwargs = mediaVolumeState(snapshot)
+			events = mediaVolumeEvents(snapshot, true)
+		}
+	case "com.harman.musicMuteToggle":
+		var snapshot blueALSASnapshot
+		if len(args) != 0 {
+			invocationError = errors.New("invalid argument format")
+		} else if service.media == nil {
+			invocationError = errors.New("media backend is unavailable")
+		}
+		if invocationError == nil {
+			snapshot, invocationError = service.media.ToggleMuted(ctx)
+		}
+		if invocationError == nil {
+			result = []interface{}{snapshot.Muted, "music"}
+			resultKwargs = mediaVolumeState(snapshot)
+			events = mediaVolumeEvents(snapshot, true)
+		}
+	case "com.harman.ledAnimate":
+		var name string
+		var repeat bool
+		name, repeat, invocationError = ledArguments(args)
+		if invocationError == nil && service.lights == nil {
+			invocationError = errors.New("LED player is unavailable")
+		}
+		if invocationError == nil {
+			invocationError = service.lights.Start(ctx, name, repeat)
+		}
+	case "com.harman.ledSet":
+		var target, mode, color string
+		if !kwargsValid {
+			invocationError = errors.New("invalid argument format")
+		} else {
+			target, mode, color, invocationError = indicatorLEDArguments(
+				args,
+				kwargs,
+			)
+		}
+		if invocationError == nil && service.indicatorLEDs == nil {
+			invocationError = errors.New("indicator LED controller is unavailable")
+		}
+		if invocationError == nil {
+			invocationError = service.indicatorLEDs.SetContext(
+				ctx,
+				target,
+				mode,
+				color,
+			)
+		}
+	case "com.harman.ledOff":
+		if len(args) != 0 {
+			invocationError = errors.New("invalid argument format")
+		} else if service.lights == nil {
+			invocationError = errors.New("LED player is unavailable")
+		} else {
+			invocationError = service.lights.StopContext(ctx)
+		}
+	case "com.harman.dsp.micMute":
+		var muted bool
+		muted, invocationError = microphoneMuteArgument(args)
+		if invocationError == nil && service.privacy == nil {
+			invocationError = errors.New("microphone privacy backend is unavailable")
+		}
+		if invocationError == nil {
+			invocationError = service.privacy.Set(ctx, muted)
+		}
+		if invocationError == nil {
+			result = []interface{}{muted}
+		}
+	default:
+		invocationError = errors.New("unsupported procedure")
+	}
+
+	if invocationError != nil {
+		return client.writeFrame([]interface{}{
+			wampError,
+			wampInvocation,
+			requestID,
+			map[string]interface{}{},
+			"com.harman.error",
+			[]interface{}{invocationError.Error()},
+		})
+	}
+	for _, event := range events {
+		if err := client.publish(event.topic, event.args); err != nil {
+			return err
+		}
+	}
+	return client.writeFrame([]interface{}{
+		wampYield,
+		requestID,
+		map[string]interface{}{},
+		result,
+		resultKwargs,
+	})
+}
+
+func microphoneMuteArgument(args []interface{}) (bool, error) {
+	if len(args) != 1 {
+		return false, errors.New("invalid argument format")
+	}
+	switch value := args[0].(type) {
+	case bool:
+		return value, nil
+	case uint64:
+		if value <= 1 {
+			return value == 1, nil
+		}
+	case int64:
+		if value == 0 || value == 1 {
+			return value == 1, nil
+		}
+	case int:
+		if value == 0 || value == 1 {
+			return value == 1, nil
+		}
+	}
+	return false, errors.New("invalid argument format")
+}
+
+type mediaEvent struct {
+	topic string
+	args  []interface{}
+}
+
+func (service *wampService) mediaSnapshot(
+	ctx context.Context,
+) (blueALSASnapshot, error) {
+	if service.media == nil {
+		return blueALSASnapshot{}, errors.New("media backend is unavailable")
+	}
+	return service.media.Snapshot(ctx)
+}
+
+func mediaIntegerArgument(args []interface{}, signed bool) (int, error) {
+	if len(args) != 2 || args[1] != "music" {
+		return 0, errors.New("invalid argument format")
+	}
+	switch value := args[0].(type) {
+	case uint64:
+		if value <= uint64(^uint(0)>>1) {
+			return int(value), nil
+		}
+	case int64:
+		maximum := int64(^uint(0) >> 1)
+		minimum := -maximum - 1
+		if value >= minimum && value <= maximum &&
+			(signed || value >= 0) {
+			return int(value), nil
+		}
+	case int:
+		if signed || value >= 0 {
+			return value, nil
+		}
+	}
+	return 0, errors.New("invalid argument format")
+}
+
+func mediaMuteArgument(args []interface{}) (bool, error) {
+	if len(args) != 2 || args[1] != "music" {
+		return false, errors.New("invalid argument format")
+	}
+	muted, ok := args[0].(bool)
+	if !ok {
+		return false, errors.New("invalid argument format")
+	}
+	return muted, nil
+}
+
+func ledArguments(args []interface{}) (string, bool, error) {
+	if len(args) != 2 {
+		return "", false, errors.New("invalid argument format")
+	}
+	name, ok := args[0].(string)
+	if !ok {
+		return "", false, errors.New("invalid argument format")
+	}
+	state, ok := unsigned(args[1])
+	if !ok || state > 1 {
+		return "", false, errors.New("invalid argument format")
+	}
+	return name, state == 1, nil
+}
+
+func indicatorLEDArguments(
+	args []interface{},
+	kwargs map[string]interface{},
+) (string, string, string, error) {
+	if len(args) == 0 {
+		return "", "", "", errors.New("invalid argument format")
+	}
+	target, ok := args[0].(string)
+	if !ok {
+		return "", "", "", errors.New("invalid argument format")
+	}
+	var mode, color string
+	if value, exists := kwargs["mode"]; exists {
+		mode, ok = value.(string)
+		if !ok {
+			return "", "", "", errors.New("invalid argument format")
+		}
+	}
+	if value, exists := kwargs["color"]; exists {
+		color, ok = value.(string)
+		if !ok {
+			return "", "", "", errors.New("invalid argument format")
+		}
+	}
+	return target, mode, color, nil
+}
+
+func mediaVolumeState(snapshot blueALSASnapshot) map[string]interface{} {
+	mute := uint64(0)
+	if snapshot.Muted {
+		mute = 1
+	}
+	return map[string]interface{}{
+		"music": map[string]interface{}{
+			"mute":   mute,
+			"volume": uint64(snapshot.Volume),
+		},
+		"system": map[string]interface{}{
+			"mute":   uint64(0),
+			"volume": uint64(70),
+		},
+	}
+}
+
+func mediaVolumeEvents(
+	snapshot blueALSASnapshot,
+	includeMute bool,
+) []mediaEvent {
+	volume := snapshot.Volume
+	if snapshot.Muted {
+		volume = 0
+	}
+	events := []mediaEvent{{
+		topic: "com.harman.volumeChanged",
+		args:  []interface{}{"music", volume},
+	}}
+	if includeMute {
+		events = append(events, mediaEvent{
+			topic: "com.harman.musicMuteChanged",
+			args:  []interface{}{snapshot.Muted},
+		})
+	}
+	return events
+}
+
+func applyMuteCommand(
+	args []interface{},
+	apply func(bool) error,
+) error {
+	if len(args) != 1 {
+		return errors.New("invalid argument format")
+	}
+	command, ok := args[0].(string)
+	if !ok || (command != "mute" && command != "unmute") {
+		return errors.New("invalid argument format")
+	}
+	return apply(command == "mute")
+}
+
+func (client *wampConnection) negotiate(realm string) error {
+	if _, err := client.connection.Write([]byte{0x7f, 0xf2, 0, 0}); err != nil {
+		return fmt.Errorf("write RawSocket handshake: %w", err)
+	}
+	handshake := make([]byte, 4)
+	if _, err := io.ReadFull(client.connection, handshake); err != nil {
+		return fmt.Errorf("read RawSocket handshake: %w", err)
+	}
+	if handshake[0] != 0x7f || handshake[1]&0x0f != 2 {
+		return fmt.Errorf("RawSocket handshake rejected: %x", handshake)
+	}
+	if err := client.writeFrame([]interface{}{
+		wampHello,
+		realm,
+		map[string]interface{}{
+			"roles": map[string]interface{}{
+				"callee":     map[string]interface{}{},
+				"caller":     map[string]interface{}{},
+				"publisher":  map[string]interface{}{},
+				"subscriber": map[string]interface{}{},
+			},
+		},
+	}); err != nil {
+		return err
+	}
+	response, err := client.readFrame()
+	if err != nil {
+		return err
+	}
+	if messageType(response) != wampWelcome {
+		return fmt.Errorf("expected WELCOME, received %v", response)
+	}
+	return nil
+}
+
+// awaitSetupResponse reads until the reply to requestID arrives. A router may
+// deliver an event or an invocation between a setup request and its reply, so
+// anything else is queued for the session loop instead of being mistaken for
+// the reply or dropped.
+func (client *wampConnection) awaitSetupResponse(
+	expected uint64,
+	requestID uint64,
+	label string,
+	deferred *[][]interface{},
+) ([]interface{}, error) {
+	for {
+		message, err := client.readFrame()
+		if err != nil {
+			return nil, err
+		}
+		responseRequestID, hasRequestID := uint64(0), false
+		if len(message) > 1 {
+			responseRequestID, hasRequestID = unsigned(message[1])
+		}
+		switch messageType(message) {
+		case expected:
+			if hasRequestID && responseRequestID == requestID {
+				return message, nil
+			}
+		case wampError:
+			// An ERROR carries the failing request type then its id.
+			if len(message) > 2 {
+				if failed, ok := unsigned(message[2]); ok &&
+					failed == requestID {
+					return nil, fmt.Errorf("%s failed: %v", label, message)
+				}
+			}
+		}
+		*deferred = append(*deferred, message)
+		if len(*deferred) > maxDeferredSetupMessages {
+			return nil, fmt.Errorf(
+				"%s: router sent %d messages without replying",
+				label,
+				len(*deferred),
+			)
+		}
+	}
+}
+
+func (client *wampConnection) register(
+	names []string,
+	deferred *[][]interface{},
+) (map[uint64]string, error) {
+	registrations := make(map[uint64]string, len(names))
+	for _, name := range names {
+		requestID := client.requestID()
+		if err := client.writeFrame([]interface{}{
+			wampRegister,
+			requestID,
+			map[string]interface{}{},
+			name,
+		}); err != nil {
+			return nil, err
+		}
+		response, err := client.awaitSetupResponse(
+			wampRegistered,
+			requestID,
+			fmt.Sprintf("registration of %s", name),
+			deferred,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if len(response) < 3 {
+			return nil, fmt.Errorf(
+				"registration failed for %s: %v",
+				name,
+				response,
+			)
+		}
+		registrationID, registrationOK := unsigned(response[2])
+		if !registrationOK {
+			return nil, fmt.Errorf(
+				"invalid registration response for %s",
+				name,
+			)
+		}
+		registrations[registrationID] = name
+	}
+	return registrations, nil
+}
+
+func (client *wampConnection) subscribe(
+	topic string,
+	deferred *[][]interface{},
+) (uint64, error) {
+	requestID := client.requestID()
+	if err := client.writeFrame([]interface{}{
+		wampSubscribe,
+		requestID,
+		map[string]interface{}{},
+		topic,
+	}); err != nil {
+		return 0, err
+	}
+	response, err := client.awaitSetupResponse(
+		wampSubscribed,
+		requestID,
+		fmt.Sprintf("subscription to %s", topic),
+		deferred,
+	)
+	if err != nil {
+		return 0, err
+	}
+	if len(response) < 3 {
+		return 0, fmt.Errorf("subscription failed for %s: %v", topic, response)
+	}
+	subscriptionID, ok := unsigned(response[2])
+	if !ok {
+		return 0, fmt.Errorf("subscription ID is invalid for %s", topic)
+	}
+	return subscriptionID, nil
+}
+
+func (client *wampConnection) publish(
+	topic string,
+	args []interface{},
+) error {
+	return client.writeFrame([]interface{}{
+		wampPublish,
+		client.requestID(),
+		map[string]interface{}{},
+		topic,
+		args,
+	})
+}
+
+func (client *wampConnection) requestID() uint64 {
+	client.idMu.Lock()
+	defer client.idMu.Unlock()
+	id := client.nextID
+	client.nextID++
+	return id
+}
+
+func (client *wampConnection) writeFrame(message []interface{}) error {
+	payload, err := encodeMessagePack(message)
+	if err != nil {
+		return err
+	}
+	if len(payload) > 0xffffff {
+		return errors.New("WAMP frame exceeds RawSocket limit")
+	}
+	header := []byte{
+		0,
+		byte(len(payload) >> 16),
+		byte(len(payload) >> 8),
+		byte(len(payload)),
+	}
+	client.writeMu.Lock()
+	defer client.writeMu.Unlock()
+	if err := writeAll(client.connection, header); err != nil {
+		return err
+	}
+	return writeAll(client.connection, payload)
+}
+
+func (client *wampConnection) readFrame() ([]interface{}, error) {
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(client.connection, header); err != nil {
+		return nil, err
+	}
+	if header[0] != 0 {
+		return nil, fmt.Errorf("unsupported RawSocket frame type %d", header[0])
+	}
+	length := int(header[1])<<16 | int(header[2])<<8 | int(header[3])
+	payload := make([]byte, length)
+	if _, err := io.ReadFull(client.connection, payload); err != nil {
+		return nil, err
+	}
+	decoded, err := decodeMessagePack(payload)
+	if err != nil {
+		return nil, err
+	}
+	message, ok := decoded.([]interface{})
+	if !ok {
+		return nil, errors.New("WAMP message is not an array")
+	}
+	return message, nil
+}
+
+func writeAll(writer io.Writer, buffer []byte) error {
+	for len(buffer) > 0 {
+		written, err := writer.Write(buffer)
+		if err != nil {
+			return err
+		}
+		buffer = buffer[written:]
+	}
+	return nil
+}
+
+func messageType(message []interface{}) uint64 {
+	if len(message) == 0 {
+		return 0
+	}
+	value, _ := unsigned(message[0])
+	return value
+}
+
+func unsigned(value interface{}) (uint64, bool) {
+	switch number := value.(type) {
+	case uint64:
+		return number, true
+	case int64:
+		if number >= 0 {
+			return uint64(number), true
+		}
+	case int:
+		if number >= 0 {
+			return uint64(number), true
+		}
+	}
+	return 0, false
+}

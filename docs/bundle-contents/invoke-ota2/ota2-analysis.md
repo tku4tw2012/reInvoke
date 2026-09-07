@@ -1,5 +1,10 @@
 # Invoke OTA2 Driver Bundle Analysis
 
+> [!NOTE]
+> This is static evidence for Harman's 2021 final Bluetooth firmware,
+> `12.2134.0`. It is a donor and comparison point, not the current reInvoke
+> target. See the [current contract](../../current-product-contract.md).
+
 Static analysis of `Harman.Kardon.INVOKE.Driver.OTA2.zip`. Nothing in this
 bundle was executed. Every claim below traces to a file path, byte offset, or
 SHA-256 recorded during extraction. Inferences are labeled as such.
@@ -7,11 +12,11 @@ SHA-256 recorded during extraction. Inferences are labeled as such.
 ## Source and provenance
 
 The analyzed archive is
-`reinvoke-archive/originals/harman/invoke/Harman.Kardon.INVOKE.Driver.OTA2.zip`,
+`<archive>/originals/harman/invoke/Harman.Kardon.INVOKE.Driver.OTA2.zip`,
 224,985,786 bytes, SHA-256
 `f138fb1ea1175830181ca9e2f20509d3d991e709a52b9a970185b128314052cd`.
 It was extracted read-only into
-`reinvoke-archive/extracted/ota2/`. The originals tree was not modified.
+`<archive>/extracted/ota2/`. The originals tree was not modified.
 
 The zip holds 52 entries in three groups: an `Instructions OTA2.pdf`, a
 Marvell WinUSB driver set (`Mrvl_WinUSB_Driver_040114/`), and the `OTA2/`

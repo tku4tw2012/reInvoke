@@ -1,0 +1,52 @@
+# Sample local configuration for reInvoke host-side tooling.
+#
+# Copy this file to `local.conf` in the same directory and edit the values to
+# match your own machine. `local.conf` is ignored by Git so that host-specific
+# identifiers never reach the repository.
+#
+#   cp tools/usb-boot/local.conf.sample tools/usb-boot/local.conf
+#
+# Every value below is optional. Scripts that read this file fall back to their
+# own defaults, or to an explicit command-line flag, when a value is unset. A
+# command-line flag always wins over a value set here.
+
+# Bluetooth address of the A2DP source you intend to pair with, in the form
+# AA:BB:CC:DD:EE:FF. This is compiled into the runtime image at build time and
+# becomes the sole entry in the pairing allowlist, so the device will refuse to
+# pair with anything else.
+#
+# On a Linux host running BlueZ, find your adapter address with:
+#
+#   bluetoothctl list
+#
+# Note that this is the address of the machine or phone that will *send* audio,
+# not the address of the speaker.
+#REINVOKE_PEER_ADDRESS='AA:BB:CC:DD:EE:FF'
+
+# How long the pairing window stays open, in seconds, from 0 to 300. The window
+# is deliberately short because the device is discoverable and pairable only
+# while it is open. Pairing, trusting and connecting must all complete inside a
+# single window.
+#REINVOKE_PAIR_SECONDS='120'
+
+# IPv4 addresses or CIDR ranges allowed to connect directly to the legacy WAMP
+# ports. Separate multiple entries with spaces. Loopback is always allowed.
+# When unset, every non-loopback source is blocked.
+#
+# Use documentation ranges in shared examples. Put actual local addresses only
+# in the ignored local.conf file.
+#REINVOKE_WAMP_ALLOW_CIDRS='192.0.2.10/32 198.51.100.0/24'
+
+# Root-only files containing the per-install provisioning access-point SSID and
+# WPA2 passphrase. Keep their actual values outside Git. When both are set, a
+# five-second Mic-Mute hold can open the bounded setup network.
+#REINVOKE_PROVISION_AP_SSID_FILE='<private-config>/provision-ap-ssid'
+#REINVOKE_PROVISION_AP_PSK_FILE='<private-config>/provision-ap-psk'
+
+# Directory holding the `usb_boot` tool and the signed bootloader images used to
+# place the device in download mode. This lives outside the repository because
+# it contains vendor binaries that are not ours to redistribute.
+#INVOKE_FIRMWARE_DIR="${HOME}/harman-kardon/invoke-boot"
+
+# ADB serial of the device, only needed when more than one device is attached.
+#REINVOKE_ADB_SERIAL=''
