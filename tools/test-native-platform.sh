@@ -34,6 +34,7 @@ main() {
 
   "${script_dir}/mcu-interface/test.sh" --archive-root "${archive_root}"
   "${script_dir}/dsp-interface/test.sh" --archive-root "${archive_root}"
+  "${script_dir}/mic-capture/test.sh" --archive-root "${archive_root}"
   "${script_dir}/provisioning/test.sh" --archive-root "${archive_root}"
   pairing_policy_test="${repo_root}/.bluez-pairing-policy-test.$$"
   [[ ! -e "${pairing_policy_test}" ]] ||
