@@ -549,3 +549,165 @@ func TestWriteDescriptorPermissions(t *testing.T) {
 		t.Fatal("descriptor token mismatch")
 	}
 }
+
+// orderingApplier records whether the HTTP response was already written when
+// Apply ran.
+type orderingApplier struct {
+	responded func() bool
+	sawWrite  chan bool
+	fail      bool
+}
+
+func (a *orderingApplier) Apply(context.Context, wifiRequest) error {
+	a.sawWrite <- a.responded()
+	if a.fail {
+		return errors.New("adapter refused")
+	}
+	return nil
+}
+
+// The radio is single band, so applying tears down the access point the reply
+// travels over. The acknowledgement must therefore be written before Apply
+// runs, otherwise a successful provisioning is indistinguishable from failure.
+func TestAcknowledgesBeforeApplying(t *testing.T) {
+	written := make(chan struct{})
+	applier := &orderingApplier{
+		responded: func() bool {
+			select {
+			case <-written:
+				return true
+			default:
+				return false
+			}
+		},
+		sawWrite: make(chan bool, 1),
+	}
+	applied := make(chan struct{}, 1)
+	handler := &provisioningHandler{
+		applier:      applier,
+		token:        "test-token",
+		expiresAt:    time.Now().Add(time.Minute),
+		applied:      applied,
+		applyTimeout: time.Second,
+	}
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"https://127.0.0.1/v1/wifi",
+		bytes.NewBufferString(
+			`{"ssid":"test","passphrase":"test-password","security":"wpa2-psk"}`,
+		),
+	)
+	request.Header.Set("Authorization", "Bearer test-token")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", response.Code)
+	}
+	close(written)
+
+	select {
+	case respondedFirst := <-applier.sawWrite:
+		if !respondedFirst {
+			t.Fatal("Apply ran before the client was acknowledged")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Apply was never called")
+	}
+
+	select {
+	case <-applied:
+	case <-time.After(2 * time.Second):
+		t.Fatal("window was not closed after a successful apply")
+	}
+}
+
+// A failed apply must leave the window open so the operator can retry. The
+// access point survives that case because the station never changed channel.
+func TestFailedApplyLeavesTheWindowOpen(t *testing.T) {
+	applier := &orderingApplier{
+		responded: func() bool { return true },
+		sawWrite:  make(chan bool, 1),
+		fail:      true,
+	}
+	applied := make(chan struct{}, 1)
+	handler := &provisioningHandler{
+		applier:      applier,
+		token:        "test-token",
+		expiresAt:    time.Now().Add(time.Minute),
+		applied:      applied,
+		applyTimeout: time.Second,
+	}
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"https://127.0.0.1/v1/wifi",
+		bytes.NewBufferString(
+			`{"ssid":"test","passphrase":"test-password","security":"wpa2-psk"}`,
+		),
+	)
+	request.Header.Set("Authorization", "Bearer test-token")
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+
+	<-applier.sawWrite
+	deadline := time.After(2 * time.Second)
+	for {
+		handler.mu.Lock()
+		applying := handler.applying
+		complete := handler.complete
+		handler.mu.Unlock()
+		if !applying {
+			if complete {
+				t.Fatal("a failed apply must not mark provisioning complete")
+			}
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("failed apply never cleared the in-progress flag")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	select {
+	case <-applied:
+		t.Fatal("a failed apply must not close the window")
+	default:
+	}
+}
+
+// The acknowledgement needs time on the wire before the radio moves.
+func TestApplyDelayRunsBeforeTheAdapter(t *testing.T) {
+	var slept time.Duration
+	applier := &orderingApplier{
+		responded: func() bool { return true },
+		sawWrite:  make(chan bool, 1),
+	}
+	handler := &provisioningHandler{
+		applier:      applier,
+		token:        "test-token",
+		expiresAt:    time.Now().Add(time.Minute),
+		applied:      make(chan struct{}, 1),
+		applyTimeout: time.Second,
+		applyDelay:   defaultApplyDelay,
+		sleep:        func(d time.Duration) { slept = d },
+	}
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"https://127.0.0.1/v1/wifi",
+		bytes.NewBufferString(
+			`{"ssid":"test","passphrase":"test-password","security":"wpa2-psk"}`,
+		),
+	)
+	request.Header.Set("Authorization", "Bearer test-token")
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+
+	<-applier.sawWrite
+	if slept != defaultApplyDelay {
+		t.Fatalf("slept %v, want %v", slept, defaultApplyDelay)
+	}
+}
