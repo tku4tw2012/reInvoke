@@ -105,9 +105,18 @@ After each ALSA configuration:
 2. the owner connects to the MCU privacy authority;
 3. the MCU synchronously fences all delivery and waits for `BLOCKED`;
 4. the MCU forces DSP mute and waits for `EVENT_MIC_MUTE`;
-5. the MCU restores unmute only if the entry policy was known, requested
+5. the MCU requests `DRAIN`, and the owner consumes 64 consecutive all-zero
+   native periods over at least 200 ms before returning `DRAINED`;
+6. the MCU restores unmute only if the entry policy was known, requested
    unmuted, and had no pending mute; and
-6. the MCU returns its random process-lifetime authority epoch and final state.
+7. the MCU returns its random process-lifetime authority epoch and final state,
+   then sends `ALLOW` only for confirmed unmute.
+
+This synchronization creates a brief, honest privacy transition after capture
+configuration. When the entry policy was unmuted, the red privacy indication
+can appear while mute is confirmed and the buffered path is drained, then clear
+after confirmed restore. The implementation does not hide a hardware mute from
+the indication.
 
 For an ordinary physical or API mute, the MCU fences the capture owner before
 persisting `muted` or sending the DSP command. If the owner cannot acknowledge,

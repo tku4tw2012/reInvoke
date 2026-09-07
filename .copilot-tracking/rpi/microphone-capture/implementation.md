@@ -89,3 +89,42 @@ archived after the source commit.
 * The complete native host gate passes.
 * Final security review reports no remaining high-confidence vulnerability.
 * Hardware privacy, restart, and positive-audio acceptance remain pending.
+
+### Iteration 5: whole-candidate hardening
+
+The final candidate review found and corrected:
+
+* a false-positive direct-PCM exclusivity check;
+* stale client headers across redundant authorization;
+* reconnect spin while capture is blocked;
+* a nonfatal listener failure that could remove the service endpoint;
+* an ALLOW race with a new mute request;
+* stale queued requests that could mutate hardware;
+* cancellation sequences that could erase a pending mute;
+* helper descendants that could survive owner shutdown; and
+* a drain counter that could ignore late nonzero input.
+
+The capture protocol now uses an explicit 64-period all-zero drain while DSP
+mute is confirmed, with a minimum 200 ms elapsed barrier. Any nonzero period
+restarts the full drain count. Every terminal generation path fences and waits
+all consumer writers before it stops the capture helper.
+
+### Final reproducible candidate
+
+The reviewed binaries and packages reproduce exactly:
+
+* MCU privacy owner:
+  `dbdf4e59533d3b63414b41f1f5efbf6080dc776843122f64e5b11905f7839699`
+* capture owner:
+  `32f8b403e9462b2a0a3e973d0e9b1a4f64ae2c630a33fd118c71dca597735e87`
+* test client:
+  `d48dc509fdcbd137537cf1278bad932236e4e8e58d19d14330bd26129dec0f91`
+* runtime manifest:
+  `0c8477af9225ee35252fdaf79730473d546ef2101311271a2aa1362ab1c1011d`
+* initramfs:
+  `55d6c306f224e33b863b3d46cb6faca5caea80b86dab14049e05cc84a3b069c3`
+
+The runtime was built independently twice with identical trees and manifests.
+The initramfs was built under umask 022 and 077 with identical bytes.
+
+The candidate remains RAM-only and hardware acceptance is pending.

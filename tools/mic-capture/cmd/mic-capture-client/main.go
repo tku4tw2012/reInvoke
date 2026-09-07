@@ -99,6 +99,10 @@ func run(socket string, duration time.Duration, output string, reconnect bool) e
 		if !reconnect {
 			break
 		}
+		// A blocked capture owner accepts and immediately closes connections.
+		// Back off here just as we do after a failed dial so a muted client
+		// cannot spin on connect/EOF.
+		time.Sleep(100 * time.Millisecond)
 	}
 	return encoder.Encode(streamEvent{
 		Type:    "summary",

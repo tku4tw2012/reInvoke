@@ -90,6 +90,7 @@ func TestSlowClientDoesNotDisableOtherClients(t *testing.T) {
 		if err != nil {
 			return
 		}
+
 		first := make([]byte, recordSize)
 		_, err = io.ReadFull(fastClient, first)
 		firstRecordRead <- err
@@ -126,5 +127,36 @@ func TestSlowClientDoesNotDisableOtherClients(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("slow client blocked the fast client")
+	}
+}
+
+func TestReplaceGenerationDisconnectsExistingClients(t *testing.T) {
+	hub := newClientHub(1)
+	hub.enable(7)
+	server, client := net.Pipe()
+	defer client.Close()
+	if !hub.add(server) {
+		t.Fatal("enabled hub rejected a client")
+	}
+	header := make([]byte, streamHeaderSize)
+	if _, err := io.ReadFull(client, header); err != nil {
+		t.Fatalf("read first header: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := hub.replaceGeneration(ctx, 8); err != nil {
+		t.Fatalf("replace generation: %v", err)
+	}
+	if _, err := client.Write([]byte{1}); err == nil {
+		t.Fatal("old-generation client remained connected")
+	}
+	enabled, generation, clients := hub.state()
+	if !enabled || generation != 8 || clients != 0 {
+		t.Fatalf(
+			"enabled=%v generation=%d clients=%d",
+			enabled,
+			generation,
+			clients,
+		)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -111,5 +112,36 @@ func TestConsumeGenerationTreatsDurationDeadlineAsSuccess(t *testing.T) {
 		&nonzero,
 	); err != nil {
 		t.Fatalf("deadline was not treated as normal completion: %v", err)
+	}
+}
+
+func TestReconnectBacksOffAfterImmediateEOF(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "capture.sock")
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	accepted := make(chan int, 1)
+	go func() {
+		count := 0
+		deadline := time.Now().Add(450 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			_ = listener.(*net.UnixListener).SetDeadline(deadline)
+			connection, err := listener.Accept()
+			if err != nil {
+				break
+			}
+			count++
+			connection.Close()
+		}
+		accepted <- count
+	}()
+	if err := run(path, 350*time.Millisecond, "", true); err != nil {
+		t.Fatalf("reconnecting client: %v", err)
+	}
+	count := <-accepted
+	if count < 2 || count > 5 {
+		t.Fatalf("accepted %d connections, want bounded retry", count)
 	}
 }

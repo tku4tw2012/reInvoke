@@ -66,3 +66,78 @@ The reviewer explicitly confirmed that the original three blocking findings
 were closed. The only compilation issue it observed was a nested test function
 introduced during development; that test file was corrected and the complete
 suite now passes repeatedly under the race detector.
+
+## Holistic candidate review
+
+The whole-candidate review found four additional issues before boot:
+
+1. The direct-PCM exclusivity check accepted any nonzero exit, so a successful
+   capture killed by `timeout` could pass. It now requires exit status 1, the
+   expected busy/resource diagnostic, and zero captured bytes.
+2. A redundant `ALLOW` could change the generation while old clients retained
+   the prior stream header. Every `ALLOW` now synchronously closes old clients
+   before installing a fresh nonzero generation.
+3. A reconnecting test client could spin on immediate EOF while muted. It now
+   backs off 100 ms after every disconnected generation.
+4. Audio-listener failure left the capture loop alive without a public socket.
+   Listener failure now cancels the service context and is process-fatal so PID
+   1 restarts the complete owner.
+
+The same review identified two concurrency races in the MCU policy:
+
+* policy validation was not linearized with `ALLOW`, so a mute could land
+  between the final check and authorization; and
+* an older queued request could mutate hardware after a newer request.
+
+The MCU now holds the policy lock through `ALLOW` and rejects stale requests
+before hardware mutation. The requested-policy implementation was then
+redesigned as an ordered pending-request map with an applied base policy so one
+or multiple canceled unmute calls cannot erase an older pending mute.
+
+The final security pass found two last counterexamples:
+
+* cancellation of an actual pending mute removed the mute; and
+* a nonzero period received after the drain counter reached zero could be
+  ignored while waiting for the minimum drain duration.
+
+Canceled mute now remains pending, fences immediately, and schedules
+process-lifetime reconciliation. Drain processing checks nonzero input before
+the exhausted-count case and resets the full 64-period requirement.
+
+All corresponding regressions run repeatedly under the Go race detector. The
+security reviewer reports no remaining high-confidence privacy vulnerability.
+
+## Accepted residual
+
+Linux 3.8 has no pidfd. If a fenced capture owner does not respond, the MCU
+verifies the peer UID, PID file, executable inode, and process start time
+immediately before `SIGKILL`, but a theoretical PID-reuse race remains between
+verification and signal delivery. This termination is defense in depth:
+confirmed DSP mute still zeros the capture stream even if termination fails.
+The limitation is explicit and does not weaken the stated confirmed-mute
+boundary.
+
+## Final review decision
+
+The holistic reviewer found four candidate-level issues:
+
+* the PCM exclusivity check accepted timeout as success;
+* redundant `ALLOW` could change record generation without replacing clients;
+* the reconnecting test client could spin on immediate EOF; and
+* an audio-listener failure could leave a live capture loop without a public
+  service socket.
+
+All were fixed with bidirectional regression tests. The review then found an
+ALLOW race, stale queued policy requests, canceled mute/unmute combinations,
+terminal teardown ordering, and a drain-counter reset defect. Requested policy
+was redesigned as an ordered pending-request map, policy validation is held
+through ALLOW, every generation exit fences clients before helper shutdown, and
+nonzero input always resets the drain.
+
+The legacy ADB collector was also corrected to parse explicit remote status
+sentinels; a fake ADB that always exits zero proves remote failures are retained.
+
+The final security review reports no remaining high-confidence vulnerability.
+The final holistic decision is **GO for a RAM-only build and boot**. Physical
+capture, mute/unmute, direct-open exclusivity, and DSP restart acceptance remain
+required before the feature can be accepted.

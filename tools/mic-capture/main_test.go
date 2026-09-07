@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -43,7 +44,7 @@ func TestAuthorityStateRequiresMatchingEpochAndUnmutedState(t *testing.T) {
 	if err := os.WriteFile(statePath, []byte("unmuted\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	hub := newClientHub(1)
+	hub := newClientHub(1024)
 	config := serviceConfig{
 		authorityEpoch: epochPath,
 		privacyState:   statePath,
@@ -443,6 +444,15 @@ func TestCaptureGenerationWaitsForAllow(t *testing.T) {
 			t.Fatal("ALLOW did not authorize delivery")
 		}
 	}
+	serverClient, testClient := net.Pipe()
+	defer testClient.Close()
+	if !hub.add(serverClient) {
+		t.Fatal("authorized hub rejected backlogged test client")
+	}
+	header := make([]byte, streamHeaderSize)
+	if _, err := io.ReadFull(testClient, header); err != nil {
+		t.Fatalf("read backlogged client header: %v", err)
+	}
 	if err := os.WriteFile(statePath, []byte("invalid\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -453,6 +463,9 @@ func TestCaptureGenerationWaitsForAllow(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("generation did not stop")
+	}
+	if _, err := testClient.Write([]byte{1}); err == nil {
+		t.Fatal("terminal generation exit left a client connected")
 	}
 	close(releaseServer)
 	if err := <-serverDone; err != nil {
@@ -495,5 +508,13 @@ func TestPrivacyDrainRequiresConsecutiveZeroPeriods(t *testing.T) {
 	}
 	if remaining != 0 {
 		t.Fatalf("drain never completed: %d", remaining)
+	}
+	remaining = advancePrivacyDrain(remaining, nonzero)
+	if remaining != privacyDrainPeriods {
+		t.Fatalf(
+			"nonzero period after count exhaustion left %d, want %d",
+			remaining,
+			privacyDrainPeriods,
+		)
 	}
 }

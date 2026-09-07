@@ -28,6 +28,10 @@ err() {
   exit 1
 }
 
+require_command() {
+  command -v "$1" >/dev/null || err "'$1' is required"
+}
+
 main() {
   local script_dir
   local repo_root
@@ -70,6 +74,9 @@ main() {
 
   [[ -n "${output_path}" ]] || err "--output is required"
   [[ -n "${client_output}" ]] || err "--client-output is required"
+  for command_name in file mkdir mv realpath sha256sum; do
+    require_command "${command_name}"
+  done
   goroot="${archive_root}/toolchains/ubuntu-go-1.18.1/extracted/usr/lib/go-1.18"
   go_binary="${goroot}/bin/go"
   [[ -x "${go_binary}" ]] || err "local Ubuntu Go compiler not found"

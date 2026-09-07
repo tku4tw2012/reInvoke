@@ -51,6 +51,7 @@ main() {
     "${script_dir}/emulation/"*.test.mjs \
     "${script_dir}/provisioning/"*.test.mjs
   "${script_dir}/usb-boot/boot-native-ram-test.sh"
+  "${script_dir}/usb-boot/collect-microphone-capture-test.sh"
   find "${script_dir}" -type f -name "*.sh" -print0 |
     xargs --null --max-args=1 bash -n
   sh -n "${script_dir}/usb-boot/native-ram-init"

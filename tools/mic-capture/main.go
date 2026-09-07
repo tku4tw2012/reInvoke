@@ -36,7 +36,10 @@ const (
 	generationPollInterval  = 50 * time.Millisecond
 	restartDelay            = time.Second
 	privacyDrainPeriods     = 64
+	privacyDrainMinimum     = 200 * time.Millisecond
 )
+
+var errAudioServerStopped = errors.New("microphone audio server stopped")
 
 type serviceConfig struct {
 	runtimeDirectory string
@@ -171,22 +174,31 @@ func run(ctx context.Context, config serviceConfig) error {
 	defer os.RemoveAll(config.runtimeDirectory)
 
 	hub := newClientHub(defaultClientQueuePeriods)
+	serviceContext, stopService := context.WithCancel(ctx)
+	defer stopService()
 	serverReady := make(chan struct{})
 	serverDone := make(chan error, 1)
 	go func() {
-		serverDone <- runAudioServer(
-			ctx,
+		err := runAudioServer(
+			serviceContext,
 			config.audioSocket,
 			hub,
 			serverReady,
 		)
+		serverDone <- err
+		if err != nil {
+			stopService()
+		}
 	}()
 	select {
 	case <-serverReady:
 	case err := <-serverDone:
 		return err
-	case <-ctx.Done():
-		return nil
+	case <-serviceContext.Done():
+		if ctx.Err() != nil {
+			return nil
+		}
+		return errAudioServerStopped
 	}
 
 	for {
@@ -194,10 +206,21 @@ func run(ctx context.Context, config serviceConfig) error {
 			_ = hub.block(context.Background())
 			return nil
 		}
-		err := runCaptureGeneration(ctx, config, hub, serverDone)
+		err := runCaptureGeneration(serviceContext, config, hub, serverDone)
 		_ = hub.block(context.Background())
-		if err == nil || ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return nil
+		}
+		select {
+		case serverErr := <-serverDone:
+			if serverErr == nil {
+				return errAudioServerStopped
+			}
+			return fmt.Errorf("%w: %v", errAudioServerStopped, serverErr)
+		default:
+		}
+		if errors.Is(err, errAudioServerStopped) {
+			return err
 		}
 		log.Printf("capture generation stopped: %v", err)
 		timer := time.NewTimer(restartDelay)
@@ -231,6 +254,14 @@ func runCaptureGeneration(
 		return err
 	}
 	defer source.stop()
+	defer func() {
+		blockCtx, cancel := context.WithTimeout(
+			context.Background(),
+			authorityCommandTimeout,
+		)
+		_ = hub.block(blockCtx)
+		cancel()
+	}()
 
 	// One complete period proves hw_params and trigger completed. It and every
 	// subsequent period stay discarded until the MCU privacy transaction
@@ -266,6 +297,7 @@ func runCaptureGeneration(
 		lastGeneration uint64
 		pendingDrain   *authorityEvent
 		drainRemaining int
+		drainStarted   time.Time
 	)
 	ticker := time.NewTicker(generationPollInterval)
 	defer ticker.Stop()
@@ -299,6 +331,7 @@ func runCaptureGeneration(
 				}
 				pendingDrain = &event
 				drainRemaining = privacyDrainPeriods
+				drainStarted = time.Now()
 				continue
 			}
 			eventErr := handleAuthorityEvent(
@@ -315,7 +348,8 @@ func runCaptureGeneration(
 			}
 			if pendingDrain != nil {
 				drainRemaining = advancePrivacyDrain(drainRemaining, period)
-				if drainRemaining == 0 {
+				if drainRemaining == 0 &&
+					time.Since(drainStarted) >= privacyDrainMinimum {
 					pendingDrain.result <- nil
 					pendingDrain = nil
 				}
@@ -347,7 +381,7 @@ func runCaptureGeneration(
 			_ = hub.block(context.Background())
 			return err
 		case err := <-serverDone:
-			return err
+			return fmt.Errorf("%w: %v", errAudioServerStopped, err)
 		case <-ticker.C:
 			current, err := readDSPGeneration(
 				config.dspPID,
@@ -406,11 +440,11 @@ func periodIsZero(period []byte) bool {
 }
 
 func advancePrivacyDrain(remaining int, period []byte) int {
-	if remaining <= 0 {
-		return 0
-	}
 	if !periodIsZero(period) {
 		return privacyDrainPeriods
+	}
+	if remaining <= 0 {
+		return 0
 	}
 	return remaining - 1
 }
@@ -458,8 +492,9 @@ func handleAuthorityEvent(
 			_ = hub.block(context.Background())
 			return err
 		}
-		hub.enable(deliveryGeneration)
-		return nil
+		replaceCtx, cancel := context.WithTimeout(ctx, authorityCommandTimeout)
+		defer cancel()
+		return hub.replaceGeneration(replaceCtx, deliveryGeneration)
 	default:
 		return errors.New("unsupported privacy authority event")
 	}

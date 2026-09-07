@@ -36,6 +36,42 @@ remote() {
   adb -P "${ADB_SERVER_PORT}" -s "${ADB_SERIAL}" shell "$@"
 }
 
+remote_status() {
+  local output_path="$1"
+  local command="$2"
+  local marker
+  local response
+  local status_line
+  local status
+
+  marker="__REINVOKE_REMOTE_STATUS_${BASHPID}_${RANDOM}__"
+  response="$(
+    remote "
+      (
+        ${command}
+      )
+      status=\$?
+      /bin/busybox echo '${marker}'\${status}
+    "
+  )" || {
+    printf "%s\n" "${response:-}" >"${output_path}"
+    return 255
+  }
+  status_line="$(
+    printf "%s\n" "${response}" |
+      awk -v marker="${marker}" 'index($0, marker) == 1 { value=$0 } END { print value }'
+  )"
+  [[ "${status_line}" =~ ^${marker}([0-9]+)$ ]] || {
+    printf "%s\n" "${response}" >"${output_path}"
+    return 255
+  }
+  status="${BASH_REMATCH[1]}"
+  printf "%s\n" "${response}" |
+    awk -v marker="${marker}" 'index($0, marker) != 1' >"${output_path}"
+  ((status <= 255)) || return 255
+  return "${status}"
+}
+
 remote_line() {
   remote "$1" |
     tr -d '\r' |
@@ -71,12 +107,13 @@ wait_for_confirmation() {
   local elapsed=0
 
   while ((elapsed < timeout_seconds)); do
-    if remote "
+    if [[ "$(remote_line "
       /bin/busybox tail -n +${start_line} \
         /run/reinvoke/logs/runtime.log |
       /bin/busybox grep -q \
-        'confirmed DSP microphone muted=${expected}'
-    "; then
+        'confirmed DSP microphone muted=${expected}' &&
+      /bin/busybox echo MATCH
+    ")" == "MATCH" ]]; then
       return 0
     fi
     sleep 1
@@ -123,9 +160,12 @@ main() {
   local generation_count
   local generation_count_after
   local old_dsp_pid
+  local old_dsp_start
   local new_dsp_pid=""
+  local new_dsp_start=""
   local log_start
   local direct_status=0
+  local direct_size=0
   local cleanup_needed=yes
 
   while (( $# > 0 )); do
@@ -208,13 +248,20 @@ main() {
     err "test client did not start"
   trap '
     if [[ "${cleanup_needed}" == "yes" ]]; then
-      remote "/bin/busybox kill ${client_pid} 2>/dev/null || true" >/dev/null
+      remote "
+        pid=${client_pid}
+        if [ \"\$(/bin/busybox readlink /proc/\${pid}/exe 2>/dev/null)\" = \
+          \"${remote_client}\" ]; then
+          /bin/busybox kill \${pid} 2>/dev/null || true
+        fi
+      " >/dev/null
     fi
   ' EXIT
 
   printf "READY: speak or tap near the microphone for three seconds.\n"
   wait_for_size_change "${remote_raw}" 0 15 ||
     err "unmuted capture did not produce audio"
+  sleep 3
   baseline_size="$(remote_size "${remote_raw}")"
   printf "%s\n" "${baseline_size}" >"${output_dir}/size-before-mute"
   log_start="$(
@@ -234,18 +281,29 @@ main() {
   [[ "${muted_size_after}" == "${muted_size}" ]] ||
     err "consumer received bytes while muted"
 
-  remote '
+  if remote_status "${output_dir}/direct-open.txt" '
     /bin/busybox rm -f /tmp/direct-capture.raw
-    /bin/busybox timeout -t 2 \
+    /bin/busybox timeout -t 5 \
       /opt/reinvoke/lib/ld-linux-armhf.so.3 \
       --library-path /opt/reinvoke/lib \
       /opt/reinvoke/bin/arecord \
       -D hw:1,0 -t raw -f S32_LE -r 48000 -c 2 \
-      --period-size=256 --buffer-size=4096 /tmp/direct-capture.raw
-  ' >"${output_dir}/direct-open.txt" 2>&1 || direct_status=$?
+      --period-size=256 --buffer-size=4096 -d 1 /tmp/direct-capture.raw
+  '; then
+    direct_status=0
+  else
+    direct_status=$?
+  fi
   printf "%s\n" "${direct_status}" >"${output_dir}/direct-open.status"
-  ((direct_status != 0)) ||
-    err "a second process opened the raw capture PCM"
+  [[ "${direct_status}" == "1" ]] ||
+    err "direct PCM probe returned ${direct_status}, not the expected busy error"
+  grep -qiE 'busy|resource unavailable' "${output_dir}/direct-open.txt" ||
+    err "direct PCM probe did not report the expected busy error"
+  direct_size="$(
+    remote_size /tmp/direct-capture.raw
+  )"
+  [[ "${direct_size}" == "0" ]] ||
+    err "direct PCM probe unexpectedly captured ${direct_size} bytes"
 
   log_start="$(
     remote_line '/bin/busybox wc -l < /run/reinvoke/logs/runtime.log'
@@ -258,6 +316,7 @@ main() {
   printf "READY: speak or tap near the microphone for three seconds.\n"
   wait_for_size_change "${remote_raw}" "${muted_size_after}" 20 ||
     err "capture did not resume after physical unmute"
+  sleep 3
   resumed_size="$(remote_size "${remote_raw}")"
   printf "%s\n" "${resumed_size}" >"${output_dir}/size-after-unmute"
 
@@ -270,22 +329,47 @@ main() {
   old_dsp_pid="$(
     remote_line '/bin/busybox cat /run/reinvoke/dsp-interface.pid'
   )"
+  old_dsp_start="$(
+    remote_line "
+      /bin/busybox awk '{print \$22}' /proc/${old_dsp_pid}/stat 2>/dev/null
+    "
+  )"
   [[ "${old_dsp_pid}" =~ ^[1-9][0-9]*$ ]] ||
     err "DSP PID is invalid"
-  remote "/bin/busybox kill '${old_dsp_pid}'"
+  [[ "${old_dsp_start}" =~ ^[1-9][0-9]*$ ]] ||
+    err "DSP process start time is invalid"
+  remote_status "${output_dir}/dsp-kill.txt" "
+    pid='${old_dsp_pid}'
+    expected_start='${old_dsp_start}'
+    [ \"\$(/bin/busybox readlink /proc/\${pid}/exe 2>/dev/null)\" = \
+      /opt/reinvoke/bin/reinvoke-dsp-interface ] &&
+    [ \"\$(/bin/busybox awk '{print \$22}' /proc/\${pid}/stat 2>/dev/null)\" = \
+      \"\${expected_start}\" ] &&
+    /bin/busybox kill \${pid}
+  " || err "DSP process identity changed before restart request"
   for _ in $(seq 1 45); do
     new_dsp_pid="$(
       remote_line \
         '/bin/busybox cat /run/reinvoke/dsp-interface.pid 2>/dev/null'
     )"
-    if [[ "${new_dsp_pid}" =~ ^[1-9][0-9]*$ &&
-          "${new_dsp_pid}" != "${old_dsp_pid}" ]]; then
+    if [[ "${new_dsp_pid}" =~ ^[1-9][0-9]*$ ]]; then
+      new_dsp_start="$(
+        remote_line "
+          /bin/busybox awk '{print \$22}' \
+            /proc/${new_dsp_pid}/stat 2>/dev/null
+        "
+      )"
+    fi
+    if [[ "${new_dsp_start}" =~ ^[1-9][0-9]*$ &&
+          ("${new_dsp_pid}" != "${old_dsp_pid}" ||
+           "${new_dsp_start}" != "${old_dsp_start}") ]]; then
       break
     fi
     sleep 1
   done
-  [[ "${new_dsp_pid}" =~ ^[1-9][0-9]*$ &&
-     "${new_dsp_pid}" != "${old_dsp_pid}" ]] ||
+  [[ "${new_dsp_start}" =~ ^[1-9][0-9]*$ &&
+     ("${new_dsp_pid}" != "${old_dsp_pid}" ||
+      "${new_dsp_start}" != "${old_dsp_start}") ]] ||
     err "DSP service did not restart"
   wait_for_size_change "${remote_raw}" "${resumed_size}" 45 ||
     err "capture did not resume after DSP restart"
@@ -299,7 +383,13 @@ main() {
   ((generation_count_after > generation_count)) ||
     err "DSP restart did not create a new delivery generation"
 
-  remote "/bin/busybox kill '${client_pid}' 2>/dev/null || true"
+  remote "
+    pid='${client_pid}'
+    if [ \"\$(/bin/busybox readlink /proc/\${pid}/exe 2>/dev/null)\" = \
+      '${remote_client}' ]; then
+      /bin/busybox kill \${pid} 2>/dev/null || true
+    fi
+  "
   cleanup_needed=no
   trap - EXIT
   sleep 2
@@ -319,6 +409,8 @@ import sys
 
 path, baseline_text, resumed_start_text, resumed_end_text = sys.argv[1:]
 content = open(path, "rb").read()
+if sys.byteorder != "little" or array.array("i").itemsize != 4:
+    raise SystemExit("sample analysis requires a little-endian 32-bit int host")
 
 
 def analyze(name, start, end):
@@ -345,7 +437,9 @@ PY
     echo 'resumed_size=${resumed_size}'
     echo 'final_size=${final_size}'
     echo 'old_dsp_pid=${old_dsp_pid}'
+    echo 'old_dsp_start=${old_dsp_start}'
     echo 'new_dsp_pid=${new_dsp_pid}'
+    echo 'new_dsp_start=${new_dsp_start}'
     echo 'generations_before_restart=${generation_count}'
     echo 'generations_after_restart=${generation_count_after}'
     echo 'final_state='\$(/bin/busybox cat /run/reinvoke/microphone-state)
@@ -362,4 +456,6 @@ PY
   printf "Microphone capture evidence: %s\n" "${output_dir}"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

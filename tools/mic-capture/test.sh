@@ -13,6 +13,10 @@ err() {
   exit 1
 }
 
+require_command() {
+  command -v "$1" >/dev/null || err "'$1' is required"
+}
+
 main() {
   local script_dir
   local repo_root
@@ -29,6 +33,7 @@ main() {
     shift 2
   fi
   (( $# == 0 )) || err "unknown argument: $1"
+  require_command sha256sum
 
   goroot="${archive_root}/toolchains/ubuntu-go-1.18.1/extracted/usr/lib/go-1.18"
   go_binary="${goroot}/bin/go"

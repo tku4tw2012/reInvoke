@@ -117,6 +117,17 @@ func (hub *clientHub) enable(generation uint64) {
 	hub.mu.Unlock()
 }
 
+func (hub *clientHub) replaceGeneration(
+	ctx context.Context,
+	generation uint64,
+) error {
+	if err := hub.block(ctx); err != nil {
+		return err
+	}
+	hub.enable(generation)
+	return nil
+}
+
 func (hub *clientHub) block(ctx context.Context) error {
 	hub.mu.Lock()
 	hub.enabled = false

@@ -13,6 +13,10 @@ import (
 
 const microphoneReconcileInterval = 5 * time.Second
 
+var errMicrophoneRequestSuperseded = errors.New(
+	"microphone privacy request was superseded",
+)
+
 type microphonePrivacyController struct {
 	mu sync.Mutex
 
@@ -22,8 +26,11 @@ type microphonePrivacyController struct {
 
 	policyMu       sync.Mutex
 	requestedMuted bool
-	policyVersion  uint64
+	baseMuted      bool
+	policyRevision uint64
+	nextVersion    uint64
 	appliedVersion uint64
+	pendingPolicy  map[uint64]bool
 
 	statePath   string
 	controlPath string
@@ -46,8 +53,11 @@ func newMicrophonePrivacyController(
 		desired:        muted,
 		unknown:        muted,
 		requestedMuted: muted,
-		policyVersion:  1,
+		baseMuted:      muted,
+		policyRevision: 1,
+		nextVersion:    1,
 		appliedVersion: 1,
+		pendingPolicy:  make(map[uint64]bool),
 		statePath:      statePath,
 		controlPath:    controlPath,
 		lights:         lights,
@@ -90,29 +100,54 @@ func (controller *microphonePrivacyController) applyRequestedPolicy(
 	controller.mu.Lock()
 	if err := ctx.Err(); err != nil {
 		if muted {
-			controller.requireMutedPolicy()
+			// A mute request remains fail-closed even if its caller
+			// disappears while waiting for the transition mutex.
+			controller.desired = true
+			controller.unknown = true
+			controller.fenceCaptureLocked(controller.lifetime)
+			controller.mu.Unlock()
+			controller.RequestReconcile()
+			return err
+		}
+		effectiveMuted, removed := controller.cancelRequestedPolicy(version)
+		if removed && effectiveMuted {
 			controller.desired = true
 			controller.unknown = true
 			controller.fenceCaptureLocked(controller.lifetime)
 		}
 		controller.mu.Unlock()
-		if muted {
+		if removed && effectiveMuted {
 			controller.RequestReconcile()
 		}
 		return err
 	}
-	if controller.policyWasApplied(version) &&
-		controller.muted == muted && controller.desired == muted &&
-		!controller.unknown {
+	requestState := controller.requestState(version, muted)
+	if requestState == policyRequestSuperseded {
+		effectiveMuted, removed := controller.discardSupersededUnmute(
+			version,
+			muted,
+		)
+		if removed && effectiveMuted {
+			controller.desired = true
+			controller.unknown = true
+			controller.fenceCaptureLocked(controller.lifetime)
+		}
+		controller.mu.Unlock()
+		if removed && effectiveMuted {
+			controller.RequestReconcile()
+		}
+		return errMicrophoneRequestSuperseded
+	}
+	if requestState == policyRequestApplied {
 		controller.mu.Unlock()
 		return nil
 	}
-	err := controller.setLocked(ctx, muted, version)
+	err := controller.setLocked(ctx, muted)
 	if err == nil {
-		controller.markPolicyApplied(version)
+		err = controller.finalizeRequestedPolicyLocked(version, muted)
 	}
 	controller.mu.Unlock()
-	if err != nil {
+	if err != nil && !errors.Is(err, errMicrophoneRequestSuperseded) {
 		controller.RequestReconcile()
 	}
 	return err
@@ -132,9 +167,13 @@ func (controller *microphonePrivacyController) Reconcile(
 		return nil
 	}
 	version := controller.requireMutedPolicy()
-	err := controller.setLocked(ctx, true, version)
+	err := controller.setLocked(ctx, true)
 	if err == nil {
-		controller.markPolicyApplied(version)
+		if !controller.commitPolicy(version, true) {
+			effectiveMuted, _, _ := controller.requestedPolicyState()
+			controller.desired = effectiveMuted
+			controller.unknown = controller.muted != effectiveMuted
+		}
 	}
 	return err
 }
@@ -173,7 +212,6 @@ func (controller *microphonePrivacyController) Run(ctx context.Context) {
 func (controller *microphonePrivacyController) setLocked(
 	ctx context.Context,
 	muted bool,
-	version uint64,
 ) error {
 	controller.desired = true
 	controller.unknown = true
@@ -185,30 +223,6 @@ func (controller *microphonePrivacyController) setLocked(
 	}
 	controller.desired = muted
 	controller.unknown = false
-	if !muted {
-		requestedMuted, currentVersion := controller.requestedPolicy()
-		if requestedMuted || currentVersion != version {
-			if err := controller.transitionHardwareLocked(
-				controller.lifetime,
-				true,
-				true,
-			); err != nil {
-				controller.desired = true
-				controller.unknown = true
-				return fmt.Errorf(
-					"mute superseded microphone unmute: %w",
-					err,
-				)
-			}
-			controller.desired = true
-			controller.unknown = false
-			if requestedMuted {
-				controller.markPolicyApplied(currentVersion)
-			}
-			return errors.New("microphone unmute was superseded")
-		}
-		controller.allowCaptureLocked()
-	}
 	if controller.logf != nil {
 		controller.logf("confirmed DSP microphone muted=%t", muted)
 	}
@@ -224,7 +238,7 @@ func (controller *microphonePrivacyController) restoreMuteLocked(
 		controller.desired = true
 		controller.unknown = false
 		version := controller.requireMutedPolicy()
-		controller.markPolicyApplied(version)
+		controller.commitPolicy(version, true)
 	}
 	if restoreErr != nil {
 		return fmt.Errorf(
@@ -315,7 +329,7 @@ func (controller *microphonePrivacyController) Synchronize(
 	entryMuted := controller.muted
 	entryDesired := controller.desired
 	entryUnknown := controller.unknown
-	entryRequested, entryVersion := controller.requestedPolicy()
+	entryRequested, entryRevision, _ := controller.requestedPolicyState()
 	controller.capture = gate
 
 	if err := gate.Fence(ctx); err != nil {
@@ -349,7 +363,7 @@ func (controller *microphonePrivacyController) Synchronize(
 		version := controller.requireMutedPolicy()
 		controller.desired = true
 		controller.unknown = false
-		controller.markPolicyApplied(version)
+		controller.commitPolicy(version, true)
 		if terminateErr != nil {
 			return controller.muted, fmt.Errorf(
 				"drain capture owner: %v; terminate verified owner: %w",
@@ -362,9 +376,10 @@ func (controller *microphonePrivacyController) Synchronize(
 	controller.desired = entryDesired
 	controller.unknown = entryUnknown
 
-	requestedMuted, policyVersion := controller.requestedPolicy()
+	requestedMuted, policyRevision, effectiveVersion :=
+		controller.requestedPolicyState()
 	restoreUnmuted := !entryMuted && !entryDesired && !entryUnknown &&
-		!entryRequested && !requestedMuted && policyVersion == entryVersion
+		!entryRequested && !requestedMuted && policyRevision == entryRevision
 	if restoreUnmuted {
 		if err := controller.transitionHardwareLocked(ctx, false, false); err != nil {
 			return controller.muted, controller.restoreMuteLocked(
@@ -374,8 +389,9 @@ func (controller *microphonePrivacyController) Synchronize(
 		}
 		controller.desired = false
 		controller.unknown = false
-		requestedMuted, policyVersion = controller.requestedPolicy()
-		if requestedMuted || policyVersion != entryVersion {
+		requestedMuted, policyRevision, effectiveVersion =
+			controller.requestedPolicyState()
+		if requestedMuted || policyRevision != entryRevision {
 			if err := controller.transitionHardwareLocked(
 				controller.lifetime,
 				true,
@@ -391,15 +407,15 @@ func (controller *microphonePrivacyController) Synchronize(
 			controller.desired = requestedMuted
 			controller.unknown = !requestedMuted
 			if requestedMuted {
-				controller.markPolicyApplied(policyVersion)
+				controller.commitPolicy(effectiveVersion, true)
 			}
 			restoreUnmuted = false
 		}
 	} else if requestedMuted {
 		controller.desired = true
 		controller.unknown = false
-		controller.markPolicyApplied(policyVersion)
-	} else if policyVersion != entryVersion {
+		controller.commitPolicy(effectiveVersion, true)
+	} else if policyRevision != entryRevision {
 		controller.desired = false
 		controller.unknown = true
 	}
@@ -417,8 +433,12 @@ func (controller *microphonePrivacyController) Synchronize(
 		)
 	}
 	if restoreUnmuted {
-		requestedMuted, policyVersion = controller.requestedPolicy()
-		if requestedMuted || policyVersion != entryVersion {
+		controller.policyMu.Lock()
+		requestedMuted, effectiveVersion =
+			controller.effectivePolicyLocked()
+		policyRevision = controller.policyRevision
+		if requestedMuted || policyRevision != entryRevision {
+			controller.policyMu.Unlock()
 			if err := controller.transitionHardwareLocked(
 				controller.lifetime,
 				true,
@@ -434,7 +454,7 @@ func (controller *microphonePrivacyController) Synchronize(
 			controller.desired = requestedMuted
 			controller.unknown = !requestedMuted
 			if requestedMuted {
-				controller.markPolicyApplied(policyVersion)
+				controller.commitPolicy(effectiveVersion, true)
 			}
 			if err := gate.State(
 				controller.lifetime,
@@ -447,21 +467,29 @@ func (controller *microphonePrivacyController) Synchronize(
 				)
 			}
 			restoreUnmuted = false
-		}
-	}
-	if restoreUnmuted {
-		if controller.capture != gate || !gate.Live() {
-			controller.capture = nil
-			return controller.muted, errors.New(
-				"capture privacy authority was lost before allow",
-			)
-		}
-		if err := gate.Allow(ctx); err != nil {
-			controller.capture = nil
-			return controller.muted, fmt.Errorf(
-				"allow synchronized capture generation: %w",
-				err,
-			)
+		} else {
+			// Keep the policy lock through ALLOW so a newer mute request
+			// cannot land between the final policy check and authorization.
+			if !controller.commitPolicyLocked(effectiveVersion, false) {
+				controller.policyMu.Unlock()
+				return controller.muted, errMicrophoneRequestSuperseded
+			}
+			if controller.capture != gate || !gate.Live() {
+				controller.policyMu.Unlock()
+				controller.capture = nil
+				return controller.muted, errors.New(
+					"capture privacy authority was lost before allow",
+				)
+			}
+			if err := gate.Allow(ctx); err != nil {
+				controller.policyMu.Unlock()
+				controller.capture = nil
+				return controller.muted, fmt.Errorf(
+					"allow synchronized capture generation: %w",
+					err,
+				)
+			}
+			controller.policyMu.Unlock()
 		}
 	}
 	return controller.muted, nil
@@ -477,14 +505,41 @@ func (controller *microphonePrivacyController) DetachCaptureAuthority(
 	controller.mu.Unlock()
 }
 
+type policyRequestState uint8
+
+const (
+	policyRequestPending policyRequestState = iota
+	policyRequestApplied
+	policyRequestSuperseded
+)
+
+func (controller *microphonePrivacyController) effectivePolicyLocked() (
+	bool,
+	uint64,
+) {
+	version := controller.appliedVersion
+	muted := controller.baseMuted
+	for pendingVersion, pendingMuted := range controller.pendingPolicy {
+		if pendingVersion > version {
+			version = pendingVersion
+			muted = pendingMuted
+		}
+	}
+	controller.requestedMuted = muted
+	return muted, version
+}
+
 func (controller *microphonePrivacyController) recordRequestedPolicy(
 	muted bool,
 ) uint64 {
 	controller.policyMu.Lock()
 	defer controller.policyMu.Unlock()
-	controller.policyVersion++
-	controller.requestedMuted = muted
-	return controller.policyVersion
+	controller.nextVersion++
+	version := controller.nextVersion
+	controller.pendingPolicy[version] = muted
+	controller.policyRevision++
+	controller.effectivePolicyLocked()
+	return version
 }
 
 func (controller *microphonePrivacyController) toggleRequestedPolicy() (
@@ -493,39 +548,185 @@ func (controller *microphonePrivacyController) toggleRequestedPolicy() (
 ) {
 	controller.policyMu.Lock()
 	defer controller.policyMu.Unlock()
-	controller.policyVersion++
-	controller.requestedMuted = !controller.requestedMuted
-	return controller.requestedMuted, controller.policyVersion
+	muted, _ := controller.effectivePolicyLocked()
+	controller.nextVersion++
+	version := controller.nextVersion
+	controller.pendingPolicy[version] = !muted
+	controller.policyRevision++
+	controller.effectivePolicyLocked()
+	return !muted, version
+}
+
+func (controller *microphonePrivacyController) cancelRequestedPolicy(
+	version uint64,
+) (bool, bool) {
+	controller.policyMu.Lock()
+	defer controller.policyMu.Unlock()
+	if _, ok := controller.pendingPolicy[version]; !ok {
+		muted, _ := controller.effectivePolicyLocked()
+		return muted, false
+	}
+	delete(controller.pendingPolicy, version)
+	controller.policyRevision++
+	muted, _ := controller.effectivePolicyLocked()
+	return muted, true
 }
 
 func (controller *microphonePrivacyController) requestedPolicy() (bool, uint64) {
 	controller.policyMu.Lock()
 	defer controller.policyMu.Unlock()
-	return controller.requestedMuted, controller.policyVersion
+	muted, _ := controller.effectivePolicyLocked()
+	return muted, controller.policyRevision
+}
+
+func (controller *microphonePrivacyController) requestedPolicyState() (
+	bool,
+	uint64,
+	uint64,
+) {
+	controller.policyMu.Lock()
+	defer controller.policyMu.Unlock()
+	muted, version := controller.effectivePolicyLocked()
+	return muted, controller.policyRevision, version
 }
 
 func (controller *microphonePrivacyController) requireMutedPolicy() uint64 {
 	controller.policyMu.Lock()
 	defer controller.policyMu.Unlock()
-	if !controller.requestedMuted {
-		controller.policyVersion++
-		controller.requestedMuted = true
+	muted, version := controller.effectivePolicyLocked()
+	if muted {
+		return version
 	}
-	return controller.policyVersion
+	controller.nextVersion++
+	version = controller.nextVersion
+	controller.pendingPolicy[version] = true
+	controller.policyRevision++
+	controller.effectivePolicyLocked()
+	return version
 }
 
-func (controller *microphonePrivacyController) markPolicyApplied(version uint64) {
-	controller.policyMu.Lock()
-	if version > controller.appliedVersion {
-		controller.appliedVersion = version
-	}
-	controller.policyMu.Unlock()
-}
-
-func (controller *microphonePrivacyController) policyWasApplied(
+func (controller *microphonePrivacyController) requestState(
 	version uint64,
+	muted bool,
+) policyRequestState {
+	controller.policyMu.Lock()
+	defer controller.policyMu.Unlock()
+	return controller.requestStateLocked(version, muted)
+}
+
+func (controller *microphonePrivacyController) requestStateLocked(
+	version uint64,
+	muted bool,
+) policyRequestState {
+	pendingMuted, pending := controller.pendingPolicy[version]
+	effectiveMuted, effectiveVersion := controller.effectivePolicyLocked()
+	if pending && pendingMuted == muted &&
+		effectiveVersion == version && effectiveMuted == muted {
+		return policyRequestPending
+	}
+	if version <= controller.appliedVersion && controller.baseMuted == muted {
+		return policyRequestApplied
+	}
+	return policyRequestSuperseded
+}
+
+func (controller *microphonePrivacyController) commitPolicyLocked(
+	version uint64,
+	muted bool,
+) bool {
+	if controller.requestStateLocked(version, muted) == policyRequestApplied {
+		return true
+	}
+	if controller.requestStateLocked(version, muted) != policyRequestPending {
+		return false
+	}
+	controller.baseMuted = muted
+	controller.appliedVersion = version
+	for pendingVersion := range controller.pendingPolicy {
+		if pendingVersion <= version {
+			delete(controller.pendingPolicy, pendingVersion)
+		}
+	}
+	controller.policyRevision++
+	controller.effectivePolicyLocked()
+	return true
+}
+
+func (controller *microphonePrivacyController) commitPolicy(
+	version uint64,
+	muted bool,
 ) bool {
 	controller.policyMu.Lock()
 	defer controller.policyMu.Unlock()
-	return controller.appliedVersion >= version
+	return controller.commitPolicyLocked(version, muted)
+}
+
+func (controller *microphonePrivacyController) finalizeRequestedPolicyLocked(
+	version uint64,
+	muted bool,
+) error {
+	controller.policyMu.Lock()
+	state := controller.requestStateLocked(version, muted)
+	if state == policyRequestPending || state == policyRequestApplied {
+		if !controller.commitPolicyLocked(version, muted) {
+			controller.policyMu.Unlock()
+			return errMicrophoneRequestSuperseded
+		}
+		if !muted {
+			controller.allowCaptureLocked()
+		}
+		controller.policyMu.Unlock()
+		return nil
+	}
+	if !muted {
+		if pendingMuted, ok := controller.pendingPolicy[version]; ok &&
+			!pendingMuted {
+			delete(controller.pendingPolicy, version)
+			controller.policyRevision++
+		}
+	}
+	effectiveMuted, effectiveVersion := controller.effectivePolicyLocked()
+	controller.policyMu.Unlock()
+
+	if !muted {
+		if err := controller.transitionHardwareLocked(
+			controller.lifetime,
+			true,
+			true,
+		); err != nil {
+			controller.desired = true
+			controller.unknown = true
+			return fmt.Errorf("mute superseded microphone unmute: %w", err)
+		}
+
+	}
+	controller.desired = effectiveMuted
+	controller.unknown = controller.muted != effectiveMuted
+	if effectiveMuted && controller.muted {
+		controller.commitPolicy(effectiveVersion, true)
+		controller.desired = true
+		controller.unknown = false
+	}
+	return errMicrophoneRequestSuperseded
+}
+
+func (controller *microphonePrivacyController) discardSupersededUnmute(
+	version uint64,
+	muted bool,
+) (bool, bool) {
+	if muted {
+		requestedMuted, _ := controller.requestedPolicy()
+		return requestedMuted, false
+	}
+	controller.policyMu.Lock()
+	defer controller.policyMu.Unlock()
+	pendingMuted, ok := controller.pendingPolicy[version]
+	if !ok || pendingMuted {
+		effectiveMuted, _ := controller.effectivePolicyLocked()
+		return effectiveMuted, false
+	}
+	delete(controller.pendingPolicy, version)
+	controller.policyRevision++
+	effectiveMuted, _ := controller.effectivePolicyLocked()
+	return effectiveMuted, true
 }
