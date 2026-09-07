@@ -16,6 +16,7 @@ Each row is intentionally atomic. An LLM should prefer the row's `status` and `e
 `observed` means it was directly seen/reported from Invoke hardware but may be third-party.  
 `derived` means the premises are cited and the inference is deterministic.  
 `hypothesis` means do not repeat as fact.  
+`refuted` means evidence contradicts the statement; keep the row so the claim is not made again.
 `unknown` means preserve the unknown.
 
 ## Product / mechanical
@@ -53,6 +54,14 @@ Each row is intentionally atomic. An LLM should prefer the row's `status` and `e
 | HKI-AUD-008 | Exact audio DSP is known. | unknown | UNKNOWN | high | no sufficient evidence |
 | HKI-AUD-009 | Exact codec/ADC/DAC path is known. | unknown | UNKNOWN | high | no sufficient evidence |
 | HKI-AUD-010 | Driver impedances are known. | unknown | UNKNOWN | high | no measurement/source |
+| HKI-AUD-011 | The host drives the audio DSP over `/dev/spidev0.0` in SPI mode 3, 8 bits per word, at 1 MHz. | confirmed | ARTIFACT | high | `dspopen` ioctls and `.data` in donor `usr/bin/dsp-client` `a6ce3ff8…5c72b8`; see [dsp-boundary.md](../emulation/dsp-boundary.md) |
+| HKI-AUD-012 | Frames in both directions are id(2), length(2), 8-bit additive checksum(1), payload, with the wire length rounded up to a multiple of 4. The payload's first byte is the opcode or event code. | confirmed | ARTIFACT+OBS | high | `msgwrite`, `msgproc`, and the receive helper at `0x8dc1c`/`0x8dd14` in donor `dsp-client`; observed on the wire in capture `hardware/software-captures/20260903T191657Z-dsp-ioctl-record/dsp-ioctl.log` (SHA-256 `d867a4dc…7732ab72ba`) as `00 01 00 01 06 04 00 00` for `EVENT_DSP_BOOTUP` and `00 00 00 01 09 08 00 00` for `com.harman.dsp.getVer` |
+| HKI-AUD-013 | The DSP reset line is bit 0 of register `0x01` on the `0x20` I2C expander, the same output port that carries the amplifier and DAC mute lines. | derived | ARTIFACT+OBS | high | `set_dsp_reset_control_pin`/`reset_dsp_reset_control_pin` in `dsp-client`; same address and register in `mcu-interface` mute path, see [mcu-boundary.md](../emulation/mcu-boundary.md) |
+| HKI-AUD-014 | The host sends `usr/share/dsp/dsp-img.ldr` to the DSP verbatim, per-byte bit-reversed, in 40,121 four-byte SPI transfers, on every service start. The DSP program is host-loaded and volatile. | confirmed | OBS | high | capture `hardware/software-captures/20260903T191657Z-dsp-ioctl-record/dsp-ioctl.log` (SHA-256 `d867a4dc…7732ab72ba`): concatenated transmit payloads are 160,484 bytes, SHA-256 `9e3d85f3…b0944f34f2`, the exact bit-reversal of source `e76f6ce7…526a44c8` |
+| HKI-AUD-015 | The DSP part is identified by the `.ldr` layout. | unknown | UNKNOWN | high | 48-bit word width and LSB-first boot are family traits, not a part number; HKI-AUD-008 stands |
+| HKI-AUD-016 | Every message byte is moved by its own `SPI_IOC_MESSAGE(1)`; only the image download uses 4-byte transfers. | confirmed | ARTIFACT | high | transmit and receive loops in `dsp-client` pass length 1 to the shared transfer helper; the image loop passes 4 |
+| HKI-AUD-017 | A captured `SPI_IOC_MESSAGE` log can be diffed byte for byte against the bit-reversed `dsp-img.ldr`. | confirmed | OBS | high | `tools/emulation/spi-capture-label.mjs` run against capture `hardware/software-captures/20260903T191657Z-dsp-ioctl-record/dsp-ioctl.log` (SHA-256 `d867a4dc…7732ab72ba`) reports 40,121 of 40,121 transfers, verdict byte-identical |
+| HKI-AUD-018 | The `.ldr` is staged as a 1536-byte first section sent at a different SPI speed from the rest. | refuted | OBS | high | the loader saves and restores a speed around offset 1536, but both values are 1,000,000 Hz on this unit, and all 40,121 image transfers in capture `hardware/software-captures/20260903T191657Z-dsp-ioctl-record/dsp-ioctl.log` (SHA-256 `d867a4dc…7732ab72ba`) ran at that one speed; only the 10 ms pause has any effect |
 
 ## Microphones / UI
 

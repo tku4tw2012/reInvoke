@@ -1,13 +1,19 @@
 ---
 title: Control-plane emulation
-description: Reproducing the Invoke WAMP control plane safely under qemu-user
-ms.date: 2026-09-02
+description: Historical reproduction of the donor Invoke WAMP control plane under qemu-user
+ms.date: 2026-09-05
 ms.topic: concept
 ---
 
 Results from running the Invoke's own userland binaries on an x86 host under
 `qemu-user` ARM emulation, with the device's WAMP router live and answering
 calls. No physical unit was involved and no hardware was at risk.
+
+> [!NOTE]
+> This is donor-firmware evidence, not the current service graph. reInvoke keeps
+> Bonefish only as a narrow compatibility router and replaces the MCU, DSP,
+> Bluetooth, and media policy services. See the
+> [current contract](../current-product-contract.md).
 
 This document records what was executed, what the device software actually
 did, and which prior claims it corrected.

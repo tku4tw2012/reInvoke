@@ -1,0 +1,43 @@
+diff --git a/utils/aplay/aplay.c b/utils/aplay/aplay.c
+--- a/utils/aplay/aplay.c
++++ b/utils/aplay/aplay.c
+@@ -80,5 +80,6 @@
+ static unsigned int playback_lease_users = 0;
+ static const int pcm_inactive_timeout = 100;
++static const int pcm_prefill_timeout = 500;
+ 
+ static struct ba_dbus_ctx dbus_ctx;
+ static char dbus_ba_service[32] = BLUEALSA_SERVICE;
+@@ -549,6 +550,11 @@
+ 		case 0:
+ 			if (pcm_started && buffered_frames >= pcm_period_frames)
+ 				break;
++			if (!pcm_started && w->pcm != NULL &&
++					buffered_frames >= pcm_period_frames) {
++				pcm_started = true;
++				break;
++			}
+ 			debug("Device marked as inactive: %s", w->addr);
+ 			pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+ 			playback_lease_release(w);
+@@ -665,7 +671,6 @@
+ 		if (ret > 0)
+ 			playback_lease_acquire(w);
+ 		w->active = true;
+-		timeout = pcm_inactive_timeout;
+ 
+ 		if (ret > 0)
+ 			ffb_seek(&buffer, ret / pcm_format_size);
+@@ -676,8 +681,11 @@
+ 		if (!pcm_started) {
+-			if (frames < (snd_pcm_sframes_t)pcm_jitter_frames)
++			if (frames < (snd_pcm_sframes_t)pcm_jitter_frames) {
++				timeout = pcm_prefill_timeout;
+ 				continue;
++			}
+ 			pcm_started = true;
+ 		}
++		timeout = pcm_inactive_timeout;
+ 
+ 		if (frames < (snd_pcm_sframes_t)pcm_period_frames)
+ 			continue;

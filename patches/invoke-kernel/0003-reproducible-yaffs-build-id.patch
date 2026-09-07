@@ -1,0 +1,29 @@
+--- a/fs/yaffs2/yaffs_vfs.c
++++ b/fs/yaffs2/yaffs_vfs.c
+@@ -3127,8 +3127,7 @@ static int yaffs_proc_read(char *page,
+ 	if (step == 0)
+ 		buf +=
+ 		    sprintf(buf,
+-			    "Multi-version YAFFS built:" __DATE__ " " __TIME__
+-			    "\n");
++			    "Multi-version YAFFS built for reInvoke\n");
+ 	else if (step == 1)
+ 		buf += sprintf(buf, "\n");
+ 	else {
+@@ -3326,7 +3325,7 @@ static int __init init_yaffs_fs(void)
+ 	struct file_system_to_install *fsinst;
+ 
+ 	yaffs_trace(YAFFS_TRACE_ALWAYS,
+-		"yaffs built " __DATE__ " " __TIME__ " Installing.");
++		"yaffs built for reInvoke, installing.");
+ 
+ 	mutex_init(&yaffs_context_lock);
+ 
+@@ -3375,7 +3374,7 @@ static void __exit exit_yaffs_fs(void)
+ 	struct file_system_to_install *fsinst;
+ 
+ 	yaffs_trace(YAFFS_TRACE_ALWAYS,
+-		"yaffs built " __DATE__ " " __TIME__ " removing.");
++		"yaffs built for reInvoke, removing.");
+ 
+ 	remove_proc_entry("yaffs", YPROC_ROOT);
