@@ -225,6 +225,9 @@ func TestParseBlueALSAMutedRequiresSynchronizedChannels(t *testing.T) {
 
 // newCeilingFixture builds a controller whose BlueALSA reports pcmPath at the
 // given raw volume, recording every volume write.
+// Tests use the IANA documentation MAC range from RFC 7042 rather than any
+// real adapter address, so no operator hardware identifier enters the history
+// of this public repository.
 func newCeilingFixture(
 	t *testing.T,
 	pcmPath func() string,
