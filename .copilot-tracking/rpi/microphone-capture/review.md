@@ -136,6 +136,14 @@ nonzero input always resets the drain.
 
 The legacy ADB collector was also corrected to parse explicit remote status
 sentinels; a fake ADB that always exits zero proves remote failures are retained.
+The parser accepts both LF and legacy CRLF sentinels.
+
+Two final cancellation combinations were added after review:
+
+* canceled mute remains pending, fences immediately, and is reconciled with the
+  process-lifetime context; and
+* cancellation after a superseded unmute rollback reconciles any unknown or
+  inconsistent hardware state rather than leaving capture fenced indefinitely.
 
 The final security review reports no remaining high-confidence vulnerability.
 The final holistic decision is **GO for a RAM-only build and boot**. Physical

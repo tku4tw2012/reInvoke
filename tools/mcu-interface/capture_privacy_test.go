@@ -1210,3 +1210,66 @@ func TestSupersededUnmuteCannotBecomePolicyAfterNewerCancellation(t *testing.T) 
 		t.Fatal("orphaned unmute replaced the applied mute policy")
 	}
 }
+
+func TestCancelledNewerUnmuteReconcilesSupersededRollback(t *testing.T) {
+	log := &privacyEventLog{}
+	var newerUnmute uint64
+	controller := newTestPrivacyController(t, false, "/unused")
+	controller.capture = &testCaptureGate{live: true, log: log}
+	olderUnmute := controller.recordRequestedPolicy(false)
+
+	// Record the newer request while the older request is inside the DSP
+	// transaction, so the older request must roll hardware back to mute.
+	var once sync.Once
+	controlPath := startRecordingMicControl(
+		t,
+		3,
+		log,
+		func(request string) {
+			if request == "0\n" {
+				once.Do(func() {
+					newerUnmute = controller.recordRequestedPolicy(false)
+				})
+			}
+		},
+	)
+	controller.controlPath = controlPath
+	if err := controller.applyRequestedPolicy(
+		context.Background(),
+		false,
+		olderUnmute,
+	); !errors.Is(err, errMicrophoneRequestSuperseded) {
+		t.Fatalf("older unmute error = %v", err)
+	}
+	if !controller.muted || !controller.unknown {
+		t.Fatalf(
+			"rollback state muted=%v unknown=%v",
+			controller.muted,
+			controller.unknown,
+		)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := controller.applyRequestedPolicy(
+		cancelled,
+		false,
+		newerUnmute,
+	); !errors.Is(err, context.Canceled) {
+		t.Fatalf("newer cancelled unmute error = %v", err)
+	}
+	select {
+	case <-controller.reconcile:
+	default:
+		t.Fatal("inconsistent rollback did not schedule reconciliation")
+	}
+	if err := controller.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile rollback: %v", err)
+	}
+	if !controller.muted || controller.unknown {
+		t.Fatalf(
+			"reconciled state muted=%v unknown=%v",
+			controller.muted,
+			controller.unknown,
+		)
+	}
+}

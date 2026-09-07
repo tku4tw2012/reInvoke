@@ -63,6 +63,27 @@ EOF
   fi
   [[ "$(cat "${output}")" == "success" ]] ||
     err "successful output was not preserved"
+
+  cat >"${temp_dir}/adb" <<'EOF'
+#!/usr/bin/env bash
+while [[ "${1:-}" != "shell" && $# -gt 0 ]]; do
+  shift
+done
+[[ "${1:-}" == "shell" ]] || exit 0
+shift
+bash -c "${1:-}" | sed 's/$/\r/' || true
+exit 0
+EOF
+  chmod 0700 "${temp_dir}/adb"
+  if remote_status "${output}" 'printf "crlf\n"; exit 9'; then
+    status=0
+  else
+    status=$?
+  fi
+  [[ "${status}" == "9" ]] ||
+    err "CRLF remote status = ${status}, want 9"
+  [[ "$(tr -d '\r' <"${output}")" == "crlf" ]] ||
+    err "CRLF remote output was not preserved"
   printf "PASS microphone collector remote status\n"
 }
 

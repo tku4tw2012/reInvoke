@@ -110,13 +110,17 @@ func (controller *microphonePrivacyController) applyRequestedPolicy(
 			return err
 		}
 		effectiveMuted, removed := controller.cancelRequestedPolicy(version)
-		if removed && effectiveMuted {
+		needsReconcile := removed &&
+			(effectiveMuted || controller.unknown ||
+				controller.muted != effectiveMuted ||
+				controller.desired != effectiveMuted)
+		if needsReconcile {
 			controller.desired = true
 			controller.unknown = true
 			controller.fenceCaptureLocked(controller.lifetime)
 		}
 		controller.mu.Unlock()
-		if removed && effectiveMuted {
+		if needsReconcile {
 			controller.RequestReconcile()
 		}
 		return err

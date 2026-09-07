@@ -61,6 +61,7 @@ remote_status() {
     printf "%s\n" "${response}" |
       awk -v marker="${marker}" 'index($0, marker) == 1 { value=$0 } END { print value }'
   )"
+  status_line="${status_line%$'\r'}"
   [[ "${status_line}" =~ ^${marker}([0-9]+)$ ]] || {
     printf "%s\n" "${response}" >"${output_path}"
     return 255

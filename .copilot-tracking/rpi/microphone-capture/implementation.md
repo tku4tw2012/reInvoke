@@ -114,15 +114,15 @@ all consumer writers before it stops the capture helper.
 The reviewed binaries and packages reproduce exactly:
 
 * MCU privacy owner:
-  `dbdf4e59533d3b63414b41f1f5efbf6080dc776843122f64e5b11905f7839699`
+  `96b95f50dc2f31d28841aa7ee4a4c8d4cf4bbc9d0cc52a97e24e00bc50677889`
 * capture owner:
   `32f8b403e9462b2a0a3e973d0e9b1a4f64ae2c630a33fd118c71dca597735e87`
 * test client:
   `d48dc509fdcbd137537cf1278bad932236e4e8e58d19d14330bd26129dec0f91`
 * runtime manifest:
-  `0c8477af9225ee35252fdaf79730473d546ef2101311271a2aa1362ab1c1011d`
+  `117aa5e8cf17b87839231bae8f61ebdd64cf4cd106d583e8a57a3c61a99c3a38`
 * initramfs:
-  `55d6c306f224e33b863b3d46cb6faca5caea80b86dab14049e05cc84a3b069c3`
+  `7b0e23e0aea293be70e5d8fe40c0f199a5857d750a997ede87b1df6bd48694ee`
 
 The runtime was built independently twice with identical trees and manifests.
 The initramfs was built under umask 022 and 077 with identical bytes.
