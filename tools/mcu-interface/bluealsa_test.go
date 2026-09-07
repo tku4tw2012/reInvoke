@@ -414,3 +414,64 @@ func TestConnectCeilingWatcherLogsRealFailuresOnce(t *testing.T) {
 		t.Fatalf("repeated failure logged %d times, want 1", len(logged))
 	}
 }
+
+// BlueALSA reuses the same PCM path for a peer, so a reconnect is only
+// distinguishable by the PCM disappearing in between. Without this the second
+// connection keeps BlueALSA's maximum volume, which is the original defect.
+func TestEnforceConnectCeilingCapsAgainAfterADisconnect(t *testing.T) {
+	var writes []string
+	infoCalls := 0
+	raw := 127
+	present := true
+	const stablePath = "/org/bluealsa/hci0/dev_00_00_5E_00_53_01/a2dpsnk/sink"
+	controller, err := newBlueALSAController(
+		"bluealsa-cli",
+		"00:00:5E:00:53:01",
+		func(_ context.Context, args ...string) ([]byte, error) {
+			switch args[0] {
+			case "list-pcms":
+				if !present {
+					return []byte("\n"), nil
+				}
+				return []byte(stablePath + "\n"), nil
+			case "info":
+				infoCalls++
+				return []byte(fmt.Sprintf(
+					"Volume: L: %d R: %d\nMuted: L: N R: N\n", raw, raw)), nil
+			case "volume":
+				writes = append(writes, args[2])
+				return nil, nil
+			}
+			return nil, errors.New("unexpected command")
+		},
+	)
+	if err != nil {
+		t.Fatalf("new controller: %v", err)
+	}
+
+	if _, lowered, err := controller.EnforceConnectCeiling(
+		context.Background(),
+	); err != nil || !lowered {
+		t.Fatalf("first connect: lowered=%v err=%v", lowered, err)
+	}
+
+	present = false
+	if _, _, err := controller.EnforceConnectCeiling(
+		context.Background(),
+	); !errors.Is(err, errBlueALSAPCMUnavailable) {
+		t.Fatalf("disconnect error = %v", err)
+	}
+
+	present = true
+	raw = 127 // BlueALSA hands the reconnected transport maximum volume again
+	_, lowered, err := controller.EnforceConnectCeiling(context.Background())
+	if err != nil {
+		t.Fatalf("reconnect: %v", err)
+	}
+	if !lowered {
+		t.Fatal("a reconnected peer at maximum volume must be lowered again")
+	}
+	if len(writes) != 2 {
+		t.Fatalf("writes = %v, want two", writes)
+	}
+}
