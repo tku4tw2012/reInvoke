@@ -15,6 +15,32 @@ Every claim is labelled:
 * **(D)** vendor, SoC, or community documentation
 * **(I)** inference, clearly reasoned but not proven
 
+## Session handoff, 2026-09-07
+
+The RAM platform work is closed and merged. Pull requests #1 and #2 are on
+`main`, the working branch is deleted, and the tree is clean. This document is
+the entry point for the NAND question; nothing else is in flight.
+
+Current candidate is `pre-nand-rc11` in
+`build/artifacts/pre-nand-rc11-20260907/`. It is pinned and reproducible but has
+**not** had a cold boot, so it is the one thing a NAND session should not assume
+is proven. `pre-nand-rc10` is the last candidate verified from a cold boot.
+
+The physical unit is currently running binaries hot patched to match rc11
+exactly. A reboot loads rc11 from its pinned image, so nothing is lost, but the
+first boot of rc11 is still unverified.
+
+What the platform can do today, all proven on hardware: cold boot, audio through
+the DSP, Bluetooth pairing and playback with a safe volume ceiling, every
+physical control including the rear indicator, a bounded isolated provisioning
+window, and a complete setup path where an external client joins the speaker's
+own access point and hands over credentials that put the speaker on the home
+network.
+
+Open items that are not NAND are listed under open defects in
+`docs/current-product-contract.md`. The notable one is a media volume observed at
+zero with no explanation.
+
 ## The short version
 
 Writing NAND is not blocked by the replacement platform. The platform is ready.
