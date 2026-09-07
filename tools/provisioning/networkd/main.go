@@ -1516,12 +1516,26 @@ type dhcpChild struct {
 	record  ownerRecord
 }
 
+// errRuntimeDirectoryLost reports that the RAM backed runtime directory
+// disappeared underneath a running service. Every lease, owner record and lock
+// lived there, so the process state is no longer trustworthy.
+var errRuntimeDirectoryLost = errors.New("network runtime directory is missing")
+
 func startDHCP(
 	interfaceName string,
 	scriptPath string,
 	resolverLink string,
 	networkPaths paths,
 ) (*dhcpChild, error) {
+	// The lease lock lives inside the runtime directory, so a missing
+	// directory fails here before anything can recreate it, and every retry
+	// fails permanently. Recreating it in place would leave the supervisor
+	// holding a lock on an unlinked inode while a second supervisor could take
+	// a lock on the new path, so the service reports the loss instead and lets
+	// its supervisor restart it cleanly.
+	if info, err := os.Stat(networkPaths.runtime); err != nil || !info.IsDir() {
+		return nil, errRuntimeDirectoryLost
+	}
 	var child *dhcpChild
 	err := withLeaseLock(networkPaths.lock, func() error {
 		var startErr error
@@ -1924,6 +1938,9 @@ func supervise(
 				resolverLink,
 				networkPaths,
 			)
+			if errors.Is(startErr, errRuntimeDirectoryLost) {
+				return startErr
+			}
 			if startErr != nil {
 				failures++
 				log.Printf("DHCP client start failed attempt=%d", failures)

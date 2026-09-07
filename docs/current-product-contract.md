@@ -332,7 +332,26 @@ Remaining gates are:
 2. complete one attended playback-continuity run; and
 3. finish physical-button orchestration for an isolated provisioning window.
 
-`pre-nand-rc9` is the current fully gated candidate and the first build whose
+`pre-nand-rc11` is the current candidate. It pins the provisioning
+acknowledgement fix and the networkd runtime-directory recovery, and it is
+awaiting a cold boot. `pre-nand-rc10` is the last candidate proven from a cold
+boot; it added the connect volume ceiling.
+
+The end-to-end setup path works. An external client joined the speaker's setup
+access point, received DHCP from the speaker, authenticated over HTTPS,
+delivered credentials, and the speaker joined the home network and stayed
+reachable there. Station state was wiped and verified empty first, so the result
+was not a leftover association.
+
+Two behaviours are worth stating plainly because they are easy to misread.
+Volume has two distinct controls: `com.harman.volumeSet` takes
+`[value, "music"]` and sets the media volume, while `com.harman.dsp.volumeSet`
+takes a single raw byte and sets DSP gain. Calling the second while the first is
+zero produces a confident acknowledgement and silence. Separately, a freshly
+acquired BlueALSA transport starts at maximum volume, so a newly connected peer
+is lowered to a safe ceiling and a quieter one is never raised.
+
+`pre-nand-rc9` was the first build whose
 STA/uAP provisioning window actually works. It passed a clean cold boot from the
 packaged image with no hot patches: `windowd` reported `control socket ready` at
 uptime 5.32 with no crash loop, and the acceptance collector exited zero with DSP
@@ -355,6 +374,37 @@ Yellow mode has only ever been entered while the original flash is intact, so it
 is not yet established as an escape hatch after a failed write. Until the real
 offsets, the boot-slot semantics, and recovery from a bad image are all
 established, this platform stays RAM only.
+
+## Open defects and unexplained observations
+
+These are recorded so a later session does not rediscover them or misdiagnose a
+recurrence.
+
+**Media volume was once observed at zero, cause unknown.** The speaker appeared
+completely dead: the digital path was healthy, ALSA reported `RUNNING` with an
+advancing timestamp, the DSP acknowledged gain changes with `EVENT_NEW_DAC_GAIN`,
+and nothing was muted. `com.harman.volumeGet` reported `music.volume` as `0`
+while `system.volume` was `70`. Setting the media volume restored sound. Two
+explanations were tested and disproven: the host's PulseAudio sink volume does
+not propagate over AVRCP, and changing the host sink during playback does not
+reset it. The connect ceiling does not explain it either, because that lowers a
+new transport to twelve rather than to zero. A speaker that silently drops to
+zero with no indication is a real defect and the cause is still unknown.
+
+**AVRCP absolute volume is not wired up.** BlueALSA logs `Couldn't set BT device
+volume: No such property 'Volume'` and `Couldn't open mixer: Mixer element not
+found`. Volume is handled by the DSP through WAMP instead, so a phone's own
+volume slider does not control the speaker.
+
+**networkd leaves a cosmetic shutdown error if its runtime directory vanishes.**
+The service now detects the loss and exits so its supervisor can restart it from
+a clean state, but the teardown path still logs `open lease lock` on the way out.
+
+**Error and recovery paths have not run on real hardware.** Window readiness
+timeouts, a supplicant that refuses to terminate, DHCP failure recovery, MCU DAC
+and amplifier rollback, and DSP download cancellation are covered only by host
+fault injection. Every hardware defect found so far came from a path executing on
+the device for the first time, so these should not be treated as proven.
 
 Holding Mic-Mute opens the provisioning window. This is a reInvoke decision,
 not donor behaviour: the original speaker was provisioned from the vendor phone
