@@ -9,6 +9,26 @@ set -euo pipefail
 readonly SOURCE_ARCHIVE_SHA256="bd19dff0f8ef8879b82d4cdeec9f127a105905ea0aa47e76de31192a79a79126"
 readonly NDK_ARCHIVE_SHA256="ee5f405f3b57c4f5c3b3b8b5d495ae12b660e03d2112e4ed5c728d349f1e520c"
 readonly COMPILER_SHA256="a838490fd49184f1f104027239f0a46671c743c29c17a33f6d5daad3c2a379a6"
+readonly LINKER_SHA256="a46bcacc5b9a240452305a16d10642f25e9edbed6be5912adfd1aede5d256f25"
+readonly LZOP_SHA256="fbcad458eee62c728e8b5695c82805ef5c8640706b45169d509239b9fe0d1a86"
+readonly MKIMAGE_SHA256="b77cea9537d5432123de6ca42cf88f07b259f815cd16266d9883b57ed27f057e"
+# Host build tools. The kernel drives its own host programs through make and
+# HOSTCC, so these transform build inputs just as much as the cross compiler.
+readonly MAKE_SHA256="92f646030615cd98490a68a94c0aefd87b552be3158b941c02e43b0bfdb576db"
+readonly HOSTCC_SHA256="821af3c74506283c179ca413bb33e6b528805a4dd8a5c09df125e5ad560a9e89"
+readonly HOSTCC1_SHA256="31c2233432d9105001eea158b799f7d403dc5a1944c712283dba251f3ab8eb43"
+readonly HOST_AS_SHA256="4e6b50c3faaa834150db32be778fd7d9440a4e1f5fa8beb8a72277b12159d689"
+readonly HOST_LD_SHA256="58937fc20c21e147883b4fdaa0fc7438a8e8f2bb886cfcaa4896100ca91139e7"
+readonly SOURCE_TREE_MANIFEST_SHA256="6ae65ab02757536de83e489b4db967bd39e0969d40ae5bcce7fb478cadd1b42f"
+readonly SPI_SOURCE_SHA256="684795ce44de9d10133260c3195dfb42b454478bba7e5406decabda3f4edbe9f"
+readonly SPI_PATCHED_SOURCE_SHA256="e02935b6f6d5c715a856d735f7274b3aab1214749686668db75059e659e108e7"
+readonly SPI_PATCH_SHA256="a92b98acb2272575c0497770172d79b104a1377d0083d67943b62681eecb738d"
+readonly YAFFS_SOURCE_SHA256="a8862b2bae267204045d30464b8e98b9cb9d5707ee6cb777cc6dc69401c96914"
+readonly YAFFS_PATCHED_SOURCE_SHA256="c40dcedece786648b2f3c3573ef506fda8b286e6b83f01ac627532b4690c0d35"
+readonly YAFFS_PATCH_SHA256="e520068b84dd8ca3e6592444e1a78f284fcabf5474bae9a4aa718a4ba38d2dd5"
+readonly LZO_SOURCE_SHA256="ab1933ac33d984fe0565b7053502c2b6499260b1fe7f6b37f6883a134c87dffa"
+readonly LZO_PATCHED_SOURCE_SHA256="e0a247828ed4f283043c5ee9f74b3938354f08f4a778c89be873cb11a2f28013"
+readonly LZO_PATCH_SHA256="609b241a5317906a8ae4990e0ef6a8e7641f3817fd8a31416e6384ac213df0d7"
 readonly LOAD_ADDRESS="0x02008000"
 
 usage() {
@@ -36,6 +56,21 @@ EOF
   exit "${exit_code}"
 }
 
+# Host tools are reached through symlinks and wrapper names, so resolve them
+# before hashing.
+verify_host_tool() {
+  local expected="$1"
+  local path="$2"
+  local label="$3"
+  local resolved
+
+  [[ -n "${path}" ]] || err "${label} not found"
+  resolved="$(readlink -f "${path}")"
+  printf "%s  %s\n" "${expected}" "${resolved}" |
+    sha256sum --check --status ||
+    err "${label} checksum mismatch: ${resolved}"
+}
+
 err() {
   printf "ERROR: %s\n" "$1" >&2
   exit 1
@@ -43,6 +78,19 @@ err() {
 
 require_command() {
   command -v "$1" >/dev/null || err "'$1' is required"
+}
+
+tree_manifest_sha256() {
+  local root="$1"
+
+  (
+    cd "${root}"
+    find . -type f -print0 |
+      sort -z |
+      xargs -0 sha256sum
+  ) |
+    sha256sum |
+    cut -d " " -f 1
 }
 
 main() {
@@ -68,7 +116,18 @@ main() {
   local cross_prefix
   local compiler
   local linker
+  local actual_source_manifest
+  local spi_patch
+  local spi_source
+  local spi_source_sha256
+  local yaffs_patch
+  local lzo_patch
+  local lzo_source
+  local lzo_source_sha256
+  local yaffs_source
+  local yaffs_source_sha256
   local module_count
+  local lzop_version
   local mkimage_version
   local bt_module_dir="arch/arm/mach-berlin/modules/bt_sd8887"
   local bt_module_built_separately=0
@@ -179,7 +238,8 @@ main() {
   [[ ! -e "${partial_output}" ]] ||
     err "stale partial output exists: ${partial_output}"
 
-  for command_name in find make mkimage realpath sha256sum; do
+  for command_name in \
+    cut find lzop make mkimage patch realpath sha256sum sort xargs; do
     require_command "${command_name}"
   done
 
@@ -189,6 +249,10 @@ main() {
   linker="${cross_prefix}ld.bfd"
   [[ -x "${compiler}" ]] || err "NDK compiler not found: ${compiler}"
   [[ -x "${linker}" ]] || err "NDK BFD linker not found: ${linker}"
+  export KBUILD_BUILD_TIMESTAMP="Thu Jan  1 00:00:00 UTC 1970"
+  export KBUILD_BUILD_USER="reinvoke"
+  export KBUILD_BUILD_HOST="reinvoke"
+  export SOURCE_DATE_EPOCH=0
 
   printf "%s  %s\n" "${SOURCE_ARCHIVE_SHA256}" "${source_archive}" |
     sha256sum --check --status ||
@@ -199,11 +263,107 @@ main() {
   printf "%s  %s\n" "${COMPILER_SHA256}" "${compiler}" |
     sha256sum --check --status ||
     err "Android NDK r10e compiler checksum mismatch"
+  printf "%s  %s\n" "${LINKER_SHA256}" "${linker}" |
+    sha256sum --check --status ||
+    err "Android NDK r10e linker checksum mismatch"
+  printf "%s  %s\n" "${LZOP_SHA256}" "$(command -v lzop)" |
+    sha256sum --check --status ||
+    err "lzop checksum mismatch"
+  printf "%s  %s\n" "${MKIMAGE_SHA256}" "$(command -v mkimage)" |
+    sha256sum --check --status ||
+    err "mkimage checksum mismatch"
+  verify_host_tool "${MAKE_SHA256}" "$(command -v make)" "make"
+  verify_host_tool "${HOSTCC_SHA256}" "$(command -v gcc)" "HOSTCC driver"
+  verify_host_tool "${HOSTCC1_SHA256}" "$(gcc -print-prog-name=cc1)" "HOSTCC cc1"
+  verify_host_tool "${HOST_AS_SHA256}" "$(command -v as)" "host assembler"
+  verify_host_tool "${HOST_LD_SHA256}" "$(command -v ld)" "host linker"
+
+  spi_patch="${repo_root}/patches/invoke-kernel/0002-bound-spi-gpio-ready-wait.patch"
+  spi_source="${source_dir}/drivers/spi/spi-dw.c"
+  [[ -f "${spi_patch}" ]] || err "SPI timeout patch not found: ${spi_patch}"
+  [[ -f "${spi_source}" ]] || err "DesignWare SPI source not found"
+  printf "%s  %s\n" "${SPI_PATCH_SHA256}" "${spi_patch}" |
+    sha256sum --check --status ||
+    err "SPI timeout patch checksum mismatch"
+  spi_source_sha256="$(sha256sum "${spi_source}" | cut -d " " -f 1)"
+  case "${spi_source_sha256}" in
+    "${SPI_SOURCE_SHA256}")
+      patch --batch --forward --directory="${source_dir}" --strip=1 \
+        < "${spi_patch}"
+      ;;
+    "${SPI_PATCHED_SOURCE_SHA256}")
+      ;;
+    *)
+      err "DesignWare SPI source has unexpected modifications"
+      ;;
+  esac
+  printf "%s  %s\n" "${SPI_PATCHED_SOURCE_SHA256}" "${spi_source}" |
+    sha256sum --check --status ||
+    err "failed to apply the fail-fast SPI GPIO check"
+
+  yaffs_patch="${repo_root}/patches/invoke-kernel/0003-reproducible-yaffs-build-id.patch"
+  yaffs_source="${source_dir}/fs/yaffs2/yaffs_vfs.c"
+  [[ -f "${yaffs_patch}" ]] ||
+    err "YAFFS reproducibility patch not found: ${yaffs_patch}"
+  [[ -f "${yaffs_source}" ]] || err "YAFFS source not found"
+  printf "%s  %s\n" "${YAFFS_PATCH_SHA256}" "${yaffs_patch}" |
+    sha256sum --check --status ||
+    err "YAFFS reproducibility patch checksum mismatch"
+  yaffs_source_sha256="$(sha256sum "${yaffs_source}" | cut -d " " -f 1)"
+  case "${yaffs_source_sha256}" in
+    "${YAFFS_SOURCE_SHA256}")
+      patch --batch --forward --directory="${source_dir}" --strip=1 \
+        < "${yaffs_patch}"
+      ;;
+    "${YAFFS_PATCHED_SOURCE_SHA256}")
+      ;;
+    *)
+      err "YAFFS source has unexpected modifications"
+      ;;
+  esac
+  printf "%s  %s\n" "${YAFFS_PATCHED_SOURCE_SHA256}" "${yaffs_source}" |
+    sha256sum --check --status ||
+    err "failed to apply the YAFFS reproducibility patch"
+
+  lzo_patch="${repo_root}/patches/invoke-kernel/0004-reproducible-lzo-piggy.patch"
+  lzo_source="${source_dir}/scripts/Makefile.lib"
+  [[ -f "${lzo_patch}" ]] ||
+    err "LZO reproducibility patch not found: ${lzo_patch}"
+  [[ -f "${lzo_source}" ]] || err "LZO build rule source not found"
+  printf "%s  %s\n" "${LZO_PATCH_SHA256}" "${lzo_patch}" |
+    sha256sum --check --status ||
+    err "LZO reproducibility patch checksum mismatch"
+  lzo_source_sha256="$(sha256sum "${lzo_source}" | cut -d " " -f 1)"
+  case "${lzo_source_sha256}" in
+    "${LZO_SOURCE_SHA256}")
+      patch --batch --forward --directory="${source_dir}" --strip=1 \
+        < "${lzo_patch}"
+      ;;
+    "${LZO_PATCHED_SOURCE_SHA256}")
+      ;;
+    *)
+      err "LZO build rule has unexpected modifications"
+      ;;
+  esac
+  printf "%s  %s\n" "${LZO_PATCHED_SOURCE_SHA256}" "${lzo_source}" |
+    sha256sum --check --status ||
+    err "failed to apply the LZO reproducibility patch"
+
+  actual_source_manifest="$(tree_manifest_sha256 "${source_dir}")"
+  [[ "${actual_source_manifest}" == "${SOURCE_TREE_MANIFEST_SHA256}" ]] ||
+    err "kernel source-tree manifest mismatch"
 
   actual_dtb_sha256="$(sha256sum "${dtb_path}" | cut -d " " -f 1)"
   [[ "${actual_dtb_sha256}" == "${dtb_sha256}" ]] ||
     err "device-tree checksum mismatch"
 
+  # An incremental kernel rebuild can silently produce a different image than a
+  # clean one. A stale shared build directory once yielded 150275c6... where a
+  # clean tree reproduced the gated d29a0075..., so always start from scratch.
+  if [[ -e "${build_dir}" ]]; then
+    printf "Removing existing kernel build directory: %s\n" "${build_dir}"
+    rm -rf -- "${build_dir}"
+  fi
   mkdir -p "${build_dir}"
   make -C "${source_dir}" \
     O="${build_dir}" \
@@ -284,6 +444,9 @@ main() {
     LD="${linker}" \
     HOSTCFLAGS=-fcommon \
     olddefconfig
+
+  rm -f "${build_dir}/.version" \
+    "${build_dir}/include/generated/compile.h"
 
   make -C "${source_dir}" \
     O="${build_dir}" \
@@ -378,18 +541,35 @@ main() {
 
   module_count="$(find "${partial_output}/modules" -type f -name "*.ko" |
     wc -l)"
+  lzop_version="$(lzop --version | sed -n '1p')"
   mkimage_version="$(mkimage -V)"
   {
     printf "purpose=native RAM kernel profile %s\n" "${profile}"
     printf "source_archive_sha256=%s\n" "${SOURCE_ARCHIVE_SHA256}"
+    printf "source_tree_manifest_sha256=%s\n" \
+      "${SOURCE_TREE_MANIFEST_SHA256}"
     printf "ndk_archive_sha256=%s\n" "${NDK_ARCHIVE_SHA256}"
     printf "device_tree_sha256=%s\n" "${actual_dtb_sha256}"
     printf "kernel_release=%s\n" "${kernel_release}"
     printf "kernel_load_address=%s\n" "${LOAD_ADDRESS}"
     printf "compiler=%s\n" "$("${compiler}" --version | sed -n '1p')"
     printf "compiler_sha256=%s\n" "${COMPILER_SHA256}"
+    printf "linker_sha256=%s\n" "${LINKER_SHA256}"
+    printf "spi_timeout_patch_sha256=%s\n" "${SPI_PATCH_SHA256}"
+    printf "yaffs_reproducibility_patch_sha256=%s\n" "${YAFFS_PATCH_SHA256}"
+    printf "lzo_reproducibility_patch_sha256=%s\n" "${LZO_PATCH_SHA256}"
     printf "linker=%s\n" "$("${linker}" --version | sed -n '1p')"
+    printf "lzop=%s\n" "${lzop_version}"
+    printf "lzop_sha256=%s\n" "${LZOP_SHA256}"
     printf "mkimage=%s\n" "${mkimage_version}"
+    printf "host_make=%s\n" "$(make --version | head -1)"
+    printf "host_make_sha256=%s\n" "${MAKE_SHA256}"
+    printf "host_cc=%s\n" "$(gcc --version | head -1)"
+    printf "host_cc_sha256=%s\n" "${HOSTCC_SHA256}"
+    printf "host_cc1_sha256=%s\n" "${HOSTCC1_SHA256}"
+    printf "host_as_sha256=%s\n" "${HOST_AS_SHA256}"
+    printf "host_ld_sha256=%s\n" "${HOST_LD_SHA256}"
+    printf "mkimage_sha256=%s\n" "${MKIMAGE_SHA256}"
     printf "module_count=%s\n" "${module_count}"
   } >"${partial_output}/build-manifest.txt"
 

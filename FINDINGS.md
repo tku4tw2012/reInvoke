@@ -1,5 +1,12 @@
 # Phase 3 Firmware Findings
 
+> [!IMPORTANT]
+> **Historical snapshot.** This file records conclusions from Phase 3 static
+> firmware analysis. It is retained as evidence and does not describe current
+> reInvoke behavior. See the
+> [current product and architecture contract](docs/current-product-contract.md)
+> and [PLAN.md](PLAN.md) for the normative target and current status.
+
 ## 83_IMAGE format and extraction
 
 The preserved standalone `83_IMAGE` has SHA-256
@@ -112,7 +119,8 @@ The script is consistent with the `gen-cmd.sh` command line, which boots with
 `root=/dev/ram` and supplies `82_IMAGE` as the initrd. This is analysis of
 script contents only; no firmware or binaries were executed.
 
-The normal `83_IMAGE` rootfs includes a RedBend RB_UA OTA installation path.
+The historical vendor `83_IMAGE` rootfs includes a RedBend RB_UA OTA
+installation path.
 `etc/otaconfig/ota_rbua_install.sh` stages the installer into `/data/upgrade`
 and `/lsync/rbua`, installs `rb_ua`, and starts the OTA engine/client. Its
 `rb_recovery.fstab` names `bootimgs` and `rootfs` as MTD update targets. The
@@ -126,7 +134,7 @@ orchestration and RedBend configuration. It does not by itself establish the
 exact boot-slot selection algorithm or prove that every listed installer type
 is used on Invoke hardware.
 
-The rootfs includes `fw_env.config` entries for `/dev/mtd/mtd1`,
+That vendor rootfs includes `fw_env.config` entries for `/dev/mtd/mtd1`,
 `/dev/mtd/mtd13`, and `/dev/mtd/mtd14`, but no preserved script directly maps
 those environment entries to an active/inactive boot slot. The available
 evidence therefore confirms redundant partition names and OTA targets, while

@@ -1,0 +1,71 @@
+{
+  "id": "P1-051",
+  "kind": "fully_reproducible_ram_runtime_candidate",
+  "retrieved_utc": "2026-09-04T15:00:00Z",
+  "status": "V10_HOST_REPRODUCIBLE_HARDWARE_BOOT_PENDING",
+  "supersedes": "P1-049",
+  "summary": "First runtime candidate in which every binary is rebuildable from committed source plus archived, checksummed, GPG-verified upstream inputs. No component depends on an artifact of unknown provenance.",
+  "artifacts": {
+    "initramfs_v10": {
+      "sha256": "38a9021297c38575cb1e753f09d06bb8dc0fcf35d741dd8b6dafc1d1387d2c31",
+      "size": 29217281
+    },
+    "runtime_manifest": {
+      "sha256": "449bf7506661235779d12ac0dc40d21aaa60938ccfc307d7965a58b135c88180"
+    },
+    "owned_mcu_interface": {
+      "sha256": "c9102b23af4ca77d8d27a4e3892e1dfe927c39b7b33adbe6f4de4858f8e79763",
+      "provenance": "rebuilt_from_source"
+    },
+    "owned_dsp_interface": {
+      "sha256": "f5b36cc396a07158ead5ad62d9f6da0899dbef6dc1dcb5e319a5e8b713e989b8",
+      "provenance": "rebuilt_from_source"
+    },
+    "provisiond": {
+      "sha256": "5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07",
+      "provenance": "rebuilt_from_source"
+    },
+    "wifi_applyd": {
+      "sha256": "6697df000d130a6461d1e3f57b6ebe8b1ad1742984a94250bc1e243dca097610",
+      "provenance": "rebuilt_from_source"
+    },
+    "networkd": {
+      "sha256": "cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66",
+      "provenance": "rebuilt_from_source"
+    },
+    "pairing_agent": {
+      "sha256": "faaba0eb1d350ee6210cc629c956a63ca313e65fe91441bfbf5093fbb2dfdbdc",
+      "provenance": "rebuilt_from_source"
+    },
+    "bluealsa_aplay": {
+      "sha256": "4c9978214873589991b995b482b5503fe16b9607e6a8c8896cef251ad3b1d937",
+      "provenance": "archived_artifact_lease_patch_confirmed"
+    }
+  },
+  "inputs": {
+    "donor_rootfs": "extracted/ota2/83_members/rootfs",
+    "source_initramfs": "extracted/ota2/OTA2/82_IMAGE",
+    "kernel_modules": "build/artifacts/invoke-kernel-gcc49-audio-sd8887-spi-timeout-20260903/modules",
+    "dsp_image_sha256": "e76f6ce7c53bb5b508507354fb08523089c136b3731d5ad4f4488a50526a44c8"
+  },
+  "validation": [
+    "The runtime directory was built twice and is byte-for-byte identical across both passes.",
+    "The initramfs was built twice and is byte-for-byte identical across both passes.",
+    "Every owned Go binary rebuilds from committed source to its exact pinned gate digest.",
+    "The pairing agent rebuilds deterministically to its repinned gate digest.",
+    "All four upstream Bluetooth sources are archived, checksum-matched to P1-045, and GPG-verified where upstream publishes signatures.",
+    "All host suites pass: MCU interface, DSP interface, provisioning, and the native platform harness.",
+    "The v10 image has not been booted."
+  ],
+  "corrections": [
+    "The donor rootfs for packaging is the OTA2 83_members rootfs, not the phase3 stockroot. The LED animation manifest gate caught an incorrect donor selection: stockroot carries 28 lights assets, the reviewed set carries 8.",
+    "PAIRING_AGENT_SHA256 was repinned from ae60d800... to faaba0eb.... The prior value matched no archived artifact and its toolchain was never recorded, so it could not be satisfied by any available input."
+  ],
+  "safety": [
+    "No NAND filesystem is mounted.",
+    "Writable raw MTD nodes are removed; only /dev/reinvoke-nand-ro mode 0400 remains.",
+    "External WAMP unmute remains denied.",
+    "Automatic physical unmute requires a live BlueALSA PCM-data lease whose worker TID matches both ALSA owner_pid and the expected executable.",
+    "NAND persistence and boot-slot work remain explicitly excluded."
+  ]
+}

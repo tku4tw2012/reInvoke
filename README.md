@@ -1,13 +1,15 @@
 # reInvoke
 
-Preservation and hardware-research corpus for the **Harman Kardon Invoke**
-(`HKINVOKE`, FCC ID `APIHKINVOKE`) and its Marvell 88DE3006 (BG2CDP) "Berlin" platform.
+Preservation, hardware-research, and owned-runtime project for the **Harman
+Kardon Invoke** (`HKINVOKE`, FCC ID `APIHKINVOKE`) and its Marvell 88DE3006
+(BG2CDP) "Berlin" platform.
 
 ## What this repository is
 
-This repository holds the **small, durable, high-value layer**: research documents,
-evidence ledgers, acquisition manifests, provenance metadata with cryptographic
-hashes, and the extracted configuration/script layer of the firmware bundles.
+This repository holds the **small, durable, high-value layer**: the current
+reInvoke implementation and contract, research documents, evidence ledgers,
+acquisition manifests, provenance metadata with cryptographic hashes, and the
+extracted configuration/script layer of the firmware bundles.
 
 It deliberately does **not** contain the multi-gigabyte binary payloads. Those are
 preserved outside Git. See [Storage policy](docs/acquisition/storage-policy.md).
@@ -16,10 +18,41 @@ The governing rule, inherited from the corpus methodology:
 
 > A claim must be traceable to evidence, or it remains explicitly unknown or hypothetical.
 
-## Status and next steps
+## Product generations
 
-See **[PLAN.md](PLAN.md)** for current state, established hardware facts, and the
-analysis work queued next.
+Three systems appear in this repository and must not be conflated:
+
+1. the **2017 retail Invoke**, preserved as Cortana-era historical evidence;
+2. Harman's **2021 final Bluetooth firmware**, version `12.2134.0`, used as a
+   vendor comparison and donor source; and
+3. the **reInvoke target**, an owned RAM-only Linux runtime with local Bluetooth
+   audio, physical controls, process-lifetime microphone privacy, and optional
+   local networking.
+
+Read the
+**[current product and architecture contract](docs/current-product-contract.md)**
+before treating older research notes as current behavior. See
+**[PLAN.md](PLAN.md)** for completion status and remaining acceptance gates.
+
+## Current reInvoke architecture
+
+The accepted runtime uses:
+
+* `native-ram-init` as owned PID 1, supervising volatile storage, USB, radios,
+  logging, networking, and all product services;
+* `reinvoke-mcu-interface` for MCU input, LEDs, speaker mute/power safety, rotary
+  volume, and the public compatibility Mic-Mute API;
+* `reinvoke-dsp-interface` for DSP loading, SPI/GPIO/reset, seven public DSP
+  WAMP procedures, and a root-only mode-`0600` microphone-control socket;
+* process-lifetime microphone privacy with RAM state, restart reconciliation,
+  fail-safe remute, and a protected red indication;
+* BlueZ 5.55 and patched BlueALSA 4.0.0 for local A2DP Sink playback; and
+* supervised network and authenticated provisioning daemons.
+
+RAM boot, A2DP playback, rotary volume, microphone mute/capture behavior,
+pairing-window control, SD8887 networking, and `ledOff` have been validated at
+least once. The newest accepted image is still non-persistent and needs the final
+multi-cold-boot and attended playback campaign in [PLAN.md](PLAN.md).
 
 ## Layout
 
@@ -29,7 +62,7 @@ reInvoke/
 │   ├── corpus/            Hardware baseline, claim/evidence ledger, FCC inventory, cross-index
 │   ├── acquisition/       Artifact manifest, retention ranking, storage policy
 │   ├── bundle-contents/   Extracted text layer + full listings of firmware bundles
-│   ├── emulation/         Running the device's own userland off-device
+│   ├── emulation/         Donor evidence and current hardware-service boundaries
 │   └── journal.md         Dated record of work, findings, and corrections
 ├── metadata/              Provenance sidecars: source URL, UTC time, SHA-256, size
 └── tools/                 Acquisition tooling
@@ -44,18 +77,19 @@ workstation under emulation, and a third-party client can call its procedures
 and change state. See [control-plane emulation](docs/emulation/control-plane-emulation.md).
 
 Harman's final firmware, `Barracuda_libre-12.2134.0`, removes Cortana and
-Spotify and adds a Wi-Fi blocker, converting the product into a local
-Bluetooth speaker. The repurposed device the project set out to describe was,
-in part, shipped by the vendor. See
-[OTA2 analysis](docs/bundle-contents/invoke-ota2/ota2-analysis.md).
+Spotify and adds a Wi-Fi blocker, converting the vendor product into a local
+Bluetooth speaker. That 2021 donor firmware is not reInvoke. See
+[OTA2 analysis](docs/bundle-contents/invoke-ota2/ota2-analysis.md) for the
+historical evidence and the
+[current contract](docs/current-product-contract.md) for the owned target.
 
 ## Three-tier storage model
 
 | Tier | Contents | Location |
 |---|---|---|
 | 1 | Docs, metadata, hashes, extracted text layer | **This repository** (~480 KB) |
-| 2 | Firmware bundles (569 MB) | [GitHub Releases](../../releases) + Azure cold storage |
-| 3 | Full working set incl. Git mirrors (4.9 GB) | Azure Blob (`<resource-group>`, westus2) |
+| 2 | Firmware bundles (569 MB) | [GitHub Releases](../../releases) + operator-managed cold storage |
+| 3 | Full working set including Git mirrors (4.9 GB) | Private operator-managed archive |
 
 Every artifact held outside Git is indexed here by SHA-256 in [`metadata/`](metadata),
 so this repository remains the authoritative catalogue of the whole archive.
@@ -87,16 +121,63 @@ is a patched variant, not a duplicate of the copy inside the flashing bundle.
 
 ## Safety
 
-Acquisition tooling is authorized only to download, mirror, archive, hash, extract,
-index, and document. **Nothing here should be executed or flashed to a device.**
-Firmware images are retained as research evidence, not as a distribution channel.
+Acquisition tooling downloads, mirrors, archives, hashes, extracts, indexes, and
+documents evidence. RAM-boot tooling may execute only through the reviewed,
+reversible yellow-mode procedure in [docs/uboot-access.md](docs/uboot-access.md).
+It must not erase or write NAND. Firmware images are retained as research
+evidence, not as a distribution channel.
+
+Treat peer addresses, credentials, account names, serial numbers, machine names,
+usernames, and host paths as operator-local data. Documentation examples use
+placeholders such as `<allowlisted-peer>`, `<archive>`, and `<workspace>`.
 
 ## Licensing and attribution
 
+The original work in this repository — documentation, research notes, and the
+tooling under [`tools/`](tools) — is released under the [MIT License](LICENSE).
+
+Third-party material is not covered by that licence and retains its own terms.
 Material originates from multiple parties under differing terms — Harman, Google/Nest,
 Valve, Kinoma, and community researchers. Provenance for each artifact is recorded in
 [`metadata/`](metadata), and per-source attribution and status are documented in
 [docs/acquisition/source-retention-ranking.md](docs/acquisition/source-retention-ranking.md).
+
+### What MIT covers
+
+| Path | Licence |
+|---|---|
+| `tools/`, `docs/` research and analysis written for this project | MIT |
+| `metadata/` provenance sidecars authored here | MIT |
+| `patches/invoke-kernel/` | GPL-2.0 — derivative of the Linux kernel |
+| `patches/bluealsa/` | MIT — derivative of BlueALSA, which is MIT |
+| `docs/bundle-contents/` extracted vendor text, scripts, drivers, PDFs | Proprietary, Harman International |
+
+Adding an MIT licence cannot relicense material this project does not own.
+The vendor-derived and GPL-derived paths above are included as research
+evidence under their own terms.
+
+### Build-time dependencies
+
+The runtime image is built against upstream projects that are **not**
+redistributed by this repository. No binaries are committed here; only build
+instructions, patches, and recorded checksums. Anyone reproducing the build
+fetches these sources themselves.
+
+| Dependency | Version | Licence |
+|---|---|---|
+| [BlueALSA](https://github.com/arkq/bluez-alsa) | 4.0.0 | MIT |
+| [BlueZ](https://www.bluez.org/) | 5.55 | GPL-2.0-or-later (daemon), LGPL-2.1-or-later (libraries) |
+| [SBC](https://www.kernel.org/pub/linux/bluetooth/) | 2.0 | GPL-2.0-or-later |
+| [D-Bus](https://dbus.freedesktop.org/) | 1.12.20 | AFL-2.1 OR GPL-2.0-or-later |
+
+Recorded URLs, checksums, and build flags for each are in
+[metadata/P1-045.json](metadata/P1-045.json).
+
+`patches/bluealsa/` applies to BlueALSA, which is MIT, so the patch is MIT and
+retains upstream copyright. The copyleft dependencies are used unmodified at
+build time and reached over D-Bus at runtime; because this repository conveys
+no binary built from them, their distribution obligations are not triggered
+here. They would apply to anyone who chooses to distribute a built image.
 
 ### Firmware mirror attribution
 

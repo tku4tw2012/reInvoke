@@ -1,0 +1,45 @@
+{
+  "id": "P1-047",
+  "kind": "live_software_bus_capture",
+  "retrieved_utc": "2026-09-03T19:19:53Z",
+  "status": "HARDWARE_VALIDATED_RAM_ONLY",
+  "instrument": {
+    "source": "tools/emulation/invoke-ioctl-shim.c",
+    "artifact_path": "build/artifacts/invoke-ioctl-shim-20260903/invoke-ioctl-shim-safe.so",
+    "sha256": "0e9febaa68525f69a74ebb552859cebfb6881c8800b4a77f07e9f81350401ab0",
+    "target": "linux/arm/v7",
+    "glibc_floor": "GLIBC_2.4",
+    "mode": "INVOKE_IOCTL_MODE=record"
+  },
+  "mcu_capture": {
+    "instrument_sha256": "fcac4b6098e13f9f92d44646cbfd6957c6b6a08f44b07716c86061f8a8cc5076",
+    "path": "hardware/software-captures/20260903T192534Z-mcu-ioctl-complete/mcu-ioctl.log",
+    "sha256": "f5034365949f5da147dfe584d033f8621077dc37cb6cb34781d0bd91b07addab",
+    "service_log_sha256": "d023097b1b0301ce6e2b0921fccddf392296985fa0003328c062fe2367a8c661",
+    "observations": [
+      "The recorder forwarded each real I2C_RDWR call unchanged and logged requests and responses.",
+      "The I2C expander at address 0x20 returned 0xfb for register 0x01 during mute-first startup.",
+      "The donor service completed startup and reported MCU application version 000116."
+    ]
+  },
+  "dsp_capture": {
+    "instrument_sha256": "56447dcc61f5c7d063c717b82899dea2c5c38069ca58f3567fb73abed0d58a4d",
+    "path": "hardware/software-captures/20260903T191657Z-dsp-ioctl-record/dsp-ioctl.log",
+    "sha256": "d867a4dc6e3a99e3ce7d620ed1ec03df55ed072c7541aabe7743517732ab72ba",
+    "service_log_sha256": "9f3f1cb73382b88d954ca7962386761ef674e32f9a51d0620eee60a7d084c3b0",
+    "source_image_sha256": "e76f6ce7c53bb5b508507354fb08523089c136b3731d5ad4f4488a50526a44c8",
+    "wire_image_sha256": "9e3d85f37ac62e191616f558359e7b4ec46ce6499167da991994ea0b944f34f2",
+    "observations": [
+      "The capture contains exactly 40121 four-byte SPI requests totaling 160484 bytes.",
+      "The concatenated transmit payload exactly equals dsp-img.ldr after reversing the bit order of every byte.",
+      "Another 23 one-byte SPI transfers followed the image download.",
+      "The donor service received EVENT_DSP_BOOTUP, and the amplifier and DAC were remuted after capture."
+    ]
+  },
+  "safety": [
+    "The capture ran from the checksum-gated RAM-only platform.",
+    "No NAND filesystem was mounted and no persistent storage command was issued.",
+    "The closed enclosure was not opened or electrically probed.",
+    "The shim records and forwards existing userspace ioctls; it does not synthesize responses in record mode."
+  ]
+}

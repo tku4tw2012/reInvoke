@@ -8,12 +8,15 @@ repository.
 ## Restore
 
 Confirm the target is the sibling archive directory, then download the
-`archive` container:
+private archive container:
 
 ```sh
+STORAGE_ACCOUNT="<storage-account>"
+CONTAINER="<container>"
+
 az storage blob download-batch \
-  --account-name <storage-account> \
-  --source archive \
+  --account-name "${STORAGE_ACCOUNT}" \
+  --source "${CONTAINER}" \
   --destination ~/<workspace>/reinvoke-archive \
   --auth-mode login \
   --overwrite false
@@ -37,6 +40,6 @@ all restored originals and any extracted artifacts required for analysis.
 Investigate mismatches before using an artifact; do not repair a mismatch by
 overwriting the preserved original.
 
-The storage account and container names above are stable archive coordinates,
-not credentials. Azure RBAC must grant only the read permissions needed for a
-restore.
+Resolve the placeholders from private operator configuration. Do not add live
+Azure resource coordinates to this public repository. Azure RBAC must grant
+only the read permissions needed for a restore.

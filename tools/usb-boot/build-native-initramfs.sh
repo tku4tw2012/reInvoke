@@ -7,8 +7,12 @@
 set -euo pipefail
 
 readonly EXPECTED_SOURCE_SHA256="08a8f96a5c476a08ba19441d83637e606f27f442d56c2689dd6b56d2fc72b7a8"
-readonly EXPECTED_PROVISIOND_SHA256="2948300b5be513e57ec26302f3f393b15759344b5e3c5cabdb84061a3b8e1b70"
+readonly EXPECTED_PROVISIOND_SHA256="5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07"
 readonly EXPECTED_WIFI_APPLYD_SHA256="6697df000d130a6461d1e3f57b6ebe8b1ad1742984a94250bc1e243dca097610"
+readonly EXPECTED_NETWORKD_SHA256="27a9af2eb94a857eeb72551512a67dd6782405bd9a0cfb51b3d09aa14cfba6b7"
+readonly EXPECTED_WINDOWD_SHA256="e9b509779eafc4366e46da30e7928ac3ca41f85e27a1f8f3be8c45bcd20cc207"
+readonly EXPECTED_MODULE_TREE_MANIFEST_SHA256="06d7a5f5bc43c3b3d869b9b962e1ef70d7f3c3fc15d934c8dc020332b57b940a"
+readonly MAX_NATIVE_INITRAMFS_BYTES=$((60 * 1024 * 1024))
 
 usage() {
   local exit_code="${1:-0}"
@@ -20,6 +24,9 @@ Usage: build-native-initramfs.sh \
   [--kernel-modules PATH] \
   [--provisiond PATH] \
   [--wifi-applyd PATH] \
+  [--networkd PATH] \
+  [--windowd PATH] \
+  [--runtime-bundle PATH --runtime-manifest-sha256 SHA256] \
   --output PATH
 
 Builds a RAM-only 82_IMAGE derivative. The donor rootfs supplies the Invoke's
@@ -45,7 +52,12 @@ main() {
   local kernel_modules=""
   local provisiond=""
   local wifi_applyd=""
+  local networkd=""
+  local windowd=""
+  local runtime_bundle=""
+  local runtime_manifest_sha256=""
   local output_path=""
+  local output_partial
   local script_dir
   local work_dir
   local rootfs_dir
@@ -58,7 +70,10 @@ main() {
   local module_tree=""
   local module_flavor=""
   local bluetooth_module=""
+  local module_tree_manifest_sha256
+  local output_size
   local -a module_trees=()
+  local -a module_symlinks=()
 
   while (( $# > 0 )); do
     case "$1" in
@@ -87,6 +102,27 @@ main() {
         wifi_applyd="$2"
         shift 2
         ;;
+      --networkd)
+        [[ -n "${2:-}" ]] || err "--networkd requires a path"
+        networkd="$2"
+        shift 2
+        ;;
+      --windowd)
+        [[ -n "${2:-}" ]] || err "--windowd requires a path"
+        windowd="$2"
+        shift 2
+        ;;
+      --runtime-bundle)
+        [[ -n "${2:-}" ]] || err "--runtime-bundle requires a path"
+        runtime_bundle="$2"
+        shift 2
+        ;;
+      --runtime-manifest-sha256)
+        [[ "${2:-}" =~ ^[0-9a-fA-F]{64}$ ]] ||
+          err "--runtime-manifest-sha256 requires 64 hexadecimal characters"
+        runtime_manifest_sha256="${2,,}"
+        shift 2
+        ;;
       --output)
         [[ -n "${2:-}" ]] || err "--output requires a path"
         output_path="$2"
@@ -106,12 +142,36 @@ main() {
   [[ -d "${donor_rootfs}" ]] ||
     err "donor rootfs not found: ${donor_rootfs}"
   [[ -n "${output_path}" ]] || err "--output is required"
-  [[ ! -e "${output_path}" ]] ||
-    err "refusing to overwrite existing output: ${output_path}"
 
-  for command_name in cp cpio find gzip install sha256sum sort; do
+  for command_name in awk cp cpio find gzip install realpath sha256sum sort stat touch xargs; do
     require_command "${command_name}"
   done
+  source_initramfs="$(realpath "${source_initramfs}")"
+  donor_rootfs="$(realpath "${donor_rootfs}")"
+  output_path="$(realpath --canonicalize-missing "${output_path}")"
+  output_partial="${output_path}.partial"
+  [[ ! -e "${output_path}" ]] ||
+    err "refusing to overwrite existing output: ${output_path}"
+  [[ ! -e "${output_partial}" ]] ||
+    err "stale partial output exists: ${output_partial}"
+  if [[ -n "${kernel_modules}" ]]; then
+    kernel_modules="$(realpath "${kernel_modules}")"
+  fi
+  if [[ -n "${provisiond}" ]]; then
+    provisiond="$(realpath "${provisiond}")"
+  fi
+  if [[ -n "${wifi_applyd}" ]]; then
+    wifi_applyd="$(realpath "${wifi_applyd}")"
+  fi
+  if [[ -n "${networkd}" ]]; then
+    networkd="$(realpath "${networkd}")"
+  fi
+  if [[ -n "${windowd}" ]]; then
+    windowd="$(realpath "${windowd}")"
+  fi
+  if [[ -n "${runtime_bundle}" ]]; then
+    runtime_bundle="$(realpath "${runtime_bundle}")"
+  fi
 
   printf "%s  %s\n" \
     "${EXPECTED_SOURCE_SHA256}" \
@@ -160,6 +220,25 @@ main() {
     done
     [[ -n "${bluetooth_module}" ]] ||
       err "kernel module root has no native SD8887 Bluetooth module"
+    mapfile -t module_symlinks < <(
+      find "${module_tree}" -type l -print |
+        LC_ALL=C sort
+    )
+    (( ${#module_symlinks[@]} == 2 )) &&
+      [[ "${module_symlinks[0]}" == "${module_tree}/build" ]] &&
+      [[ "${module_symlinks[1]}" == "${module_tree}/source" ]] ||
+      err "kernel module tree has unexpected symlinks"
+    module_tree_manifest_sha256="$(
+      cd "${kernel_modules}"
+      find . -type f -print0 |
+        LC_ALL=C sort --zero-terminated |
+        xargs --null sha256sum |
+        sha256sum |
+        awk '{print $1}'
+    )"
+    [[ "${module_tree_manifest_sha256}" == \
+      "${EXPECTED_MODULE_TREE_MANIFEST_SHA256}" ]] ||
+      err "kernel module tree checksum mismatch"
 
   fi
   if [[ -n "${provisiond}" ]]; then
@@ -176,13 +255,51 @@ main() {
       sha256sum --check --status ||
       err "Wi-Fi apply daemon checksum mismatch"
   fi
+  if [[ -n "${networkd}" ]]; then
+    [[ -f "${networkd}" ]] ||
+      err "network lifecycle service not found: ${networkd}"
+    printf "%s  %s\n" "${EXPECTED_NETWORKD_SHA256}" "${networkd}" |
+      sha256sum --check --status ||
+      err "network lifecycle service checksum mismatch"
+  fi
+  if [[ -n "${windowd}" ]]; then
+    [[ -f "${windowd}" ]] ||
+      err "provisioning window daemon not found: ${windowd}"
+    printf "%s  %s\n" "${EXPECTED_WINDOWD_SHA256}" "${windowd}" |
+      sha256sum --check --status ||
+      err "provisioning window daemon checksum mismatch"
+  fi
+  if [[ -n "${runtime_bundle}" || -n "${runtime_manifest_sha256}" ]]; then
+    [[ -n "${runtime_bundle}" && -n "${runtime_manifest_sha256}" ]] ||
+      err "runtime bundle and manifest checksum must be supplied together"
+    [[ -d "${runtime_bundle}" ]] ||
+      err "runtime bundle not found: ${runtime_bundle}"
+    [[ -f "${runtime_bundle}/SHA256SUMS" ]] ||
+      err "runtime bundle has no SHA256SUMS"
+    printf "%s  %s\n" \
+      "${runtime_manifest_sha256}" "${runtime_bundle}/SHA256SUMS" |
+      sha256sum --check --status ||
+      err "runtime bundle manifest checksum mismatch"
+    if find "${runtime_bundle}" -type l -print -quit | grep -q .; then
+      err "runtime bundle contains a symbolic link"
+    fi
+    (
+      cd "${runtime_bundle}"
+      sha256sum --check --strict SHA256SUMS
+    ) >/dev/null || err "runtime bundle file checksum mismatch"
+  fi
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/reinvoke-initramfs.XXXXXX")"
-  printf -v cleanup_command 'rm -rf -- %q' "${work_dir}"
+  printf -v cleanup_command \
+    'rm -rf -- %q; rm -f -- %q' \
+    "${work_dir}" "${output_partial}"
   trap "${cleanup_command}" EXIT
   rootfs_dir="${work_dir}/rootfs"
   archive_listing="${work_dir}/archive.list"
+  # The staging root becomes the archive's "." entry, so it must not inherit
+  # the caller's umask.
+  umask 022
   mkdir -p "${rootfs_dir}" "$(dirname "${output_path}")"
 
   gzip --decompress --stdout "${source_initramfs}" |
@@ -198,6 +315,8 @@ main() {
   )
 
   install -m 0755 "${script_dir}/native-ram-init" "${rootfs_dir}/init"
+  install -m 0755 "${script_dir}/native-acceptance.sh" \
+    "${rootfs_dir}/usr/sbin/reinvoke-acceptance"
   install -m 0644 \
     "${firmware_dir}/sd8887_wlan_a2_p78.bin" \
     "${firmware_dir}/sd8887_bt_a2_new.bin" \
@@ -208,6 +327,15 @@ main() {
   if [[ -n "${module_tree}" ]]; then
     cp -a "${module_tree}" "${rootfs_dir}/lib/modules/"
   fi
+  find "${rootfs_dir}/lib/modules" \
+    -mindepth 2 -maxdepth 2 -type l \
+    \( -name build -o -name source \) -delete
+  if find "${rootfs_dir}/lib/modules" \
+    -mindepth 2 -maxdepth 2 -type l \
+    \( -name build -o -name source \) -print -quit |
+    grep -q .; then
+    err "failed to remove host-only kernel module symlinks"
+  fi
   if [[ -n "${provisiond}" ]]; then
     install -m 0755 "${provisiond}" \
       "${rootfs_dir}/usr/sbin/reinvoke-provisiond"
@@ -215,6 +343,25 @@ main() {
   if [[ -n "${wifi_applyd}" ]]; then
     install -m 0755 "${wifi_applyd}" \
       "${rootfs_dir}/usr/sbin/reinvoke-wifi-applyd"
+  fi
+  if [[ -n "${networkd}" ]]; then
+    install -m 0755 "${networkd}" \
+      "${rootfs_dir}/usr/sbin/reinvoke-networkd"
+  fi
+  if [[ -n "${windowd}" ]]; then
+    install -m 0755 "${windowd}" \
+      "${rootfs_dir}/usr/sbin/reinvoke-provision-windowd"
+  fi
+  if [[ -n "${runtime_bundle}" ]]; then
+    mkdir -p "${rootfs_dir}/opt/reinvoke"
+    cp -a "${runtime_bundle}/." "${rootfs_dir}/opt/reinvoke/"
+    rm -rf "${rootfs_dir}/home/galois"
+    # The bundle's directories were created by mkdir -p under the building
+    # host's umask and cp -a preserves them. Left alone they trip windowd's
+    # root-controlled path checks and make the image digest umask-dependent.
+    # Directories extracted from the donor archive keep their recorded modes
+    # and are deliberately not touched here.
+    find "${rootfs_dir}/opt/reinvoke" -type d -exec chmod 0755 {} +
   fi
 
   rm -f \
@@ -234,22 +381,38 @@ main() {
     if [[ -n "${provisiond}" ]]; then
       printf "provisioning daemon: included, manual start only\n"
     fi
+    if [[ -n "${windowd}" ]]; then
+      printf "provisioning window daemon: included\n"
+    fi
     if [[ -n "${wifi_applyd}" ]]; then
       printf "Wi-Fi apply daemon: included, manual start only\n"
+    fi
+    if [[ -n "${networkd}" ]]; then
+      printf "network lifecycle service: included, auto-started\n"
+    fi
+    if [[ -n "${runtime_bundle}" ]]; then
+      printf "autonomous runtime: included, auto-started\n"
+      printf "autonomous runtime manifest: %s\n" \
+        "${runtime_manifest_sha256}"
     fi
     printf "storage policy: no NAND partitions mounted\n"
   } > "${rootfs_dir}/etc/reinvoke-release"
 
   umask 077
+  find "${rootfs_dir}" -exec touch --no-dereference --date="@0" {} +
   (
     cd "${rootfs_dir}"
     find . -print0 |
       LC_ALL=C sort --zero-terminated |
-      cpio --null --create --format=newc --owner=0:0 |
+      cpio --null --create --format=newc --owner=0:0 --reproducible |
       gzip --no-name --best
-  ) > "${output_path}"
+  ) > "${output_partial}"
 
-  gzip --test "${output_path}"
+  gzip --test "${output_partial}"
+  output_size="$(stat --format="%s" "${output_partial}")"
+  ((output_size <= MAX_NATIVE_INITRAMFS_BYTES)) ||
+    err "initramfs exceeds the 60 MiB autonomous-runtime budget"
+  mv "${output_partial}" "${output_path}"
   stat --format="%n %s bytes" "${output_path}"
   sha256sum "${output_path}"
 
