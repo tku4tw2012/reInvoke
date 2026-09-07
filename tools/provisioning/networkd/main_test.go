@@ -809,34 +809,36 @@ func TestValidateEventOwnerRecord(t *testing.T) {
 	}
 }
 
-// The runtime directory is RAM backed and can be removed while the service is
-// running. Without recreating it, every DHCP start attempt fails forever, which
-// was observed on hardware as nine consecutive "DHCP client start failed"
-// attempts after the directory was cleared.
-func TestStartDHCPRecreatesAMissingRuntimeDirectory(t *testing.T) {
+// The runtime directory is RAM backed and can vanish while the service runs.
+// The lease lock lives inside it, so startDHCP fails before reaching any code
+// that could recreate it, and the retry loop then fails forever. An earlier fix
+// recreated the directory inside startDHCPLocked, which this path never
+// reaches; the test for it passed only because it called that helper directly.
+func TestStartDHCPReportsALostRuntimeDirectory(t *testing.T) {
 	root := t.TempDir()
 	runtime := filepath.Join(root, "networkd")
 	networkPaths := paths{
 		runtime: runtime,
+		lock:    filepath.Join(runtime, "lease.lock"),
 		pid:     filepath.Join(runtime, "udhcpc.pid"),
 		owner:   filepath.Join(runtime, "udhcpc.owner"),
 	}
-	if _, err := os.Stat(runtime); !os.IsNotExist(err) {
-		t.Fatalf("fixture should start without the directory: %v", err)
+
+	_, err := startDHCP("mlan0", "/nonexistent", "/nonexistent", networkPaths)
+	if !errors.Is(err, errRuntimeDirectoryLost) {
+		t.Fatalf("error = %v, want errRuntimeDirectoryLost", err)
 	}
 
-	// The start itself cannot succeed in a unit test because it launches
-	// BusyBox, but the directory must exist by the time that is attempted.
-	_, _ = startDHCPLocked("mlan0", "/nonexistent", "/nonexistent", networkPaths)
-
-	info, err := os.Stat(runtime)
-	if err != nil {
-		t.Fatalf("runtime directory was not recreated: %v", err)
+	// A file where the directory should be is equally unusable.
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatalf("prepare root: %v", err)
 	}
-	if !info.IsDir() {
-		t.Fatal("runtime path is not a directory")
+	if err := os.WriteFile(runtime, []byte("not a directory"), 0600); err != nil {
+		t.Fatalf("write file: %v", err)
 	}
-	if info.Mode().Perm() != 0700 {
-		t.Fatalf("mode = %#o, want 0700", info.Mode().Perm())
+	if _, err := startDHCP(
+		"mlan0", "/nonexistent", "/nonexistent", networkPaths,
+	); !errors.Is(err, errRuntimeDirectoryLost) {
+		t.Fatalf("error = %v, want errRuntimeDirectoryLost", err)
 	}
 }
