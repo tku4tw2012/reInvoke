@@ -19,6 +19,64 @@ var errBlueALSAPCMUnavailable = errors.New("BlueALSA PCM is unavailable")
 
 const blueALSACommandTimeout = 3 * time.Second
 
+// defaultConnectCeiling keeps a newly connected peer at a comfortable level.
+// The scale is linear in amplitude rather than perceptual, so this is much
+// lower than an intuitive "percent" reading would suggest.
+const defaultConnectCeiling = 12
+
+// BlueALSA publishes a transport's PCM some time after the peer connects, and
+// the rear-indicator state masks connection while pairing, so the ceiling is
+// driven by polling for the PCM itself.
+const connectCeilingRetryInterval = 250 * time.Millisecond
+
+// runConnectCeilingWatcher polls for a new transport and caps it. Polling is
+// used instead of the rear-indicator state because that state reports
+// "pairing" while a freshly paired phone is already streaming, which is exactly
+// the case that must not play at maximum volume.
+func runConnectCeilingWatcher(
+	ctx context.Context,
+	enforce func(context.Context) (blueALSASnapshot, bool, error),
+	sleep func(context.Context, time.Duration) error,
+	logf func(string, ...interface{}),
+) error {
+	var lastFailure string
+	for {
+		snapshot, lowered, err := enforce(ctx)
+		switch {
+		case err == nil:
+			lastFailure = ""
+			if lowered && logf != nil {
+				logf("lowered new transport volume to %d", snapshot.Volume)
+			}
+		case errors.Is(err, context.Canceled),
+			errors.Is(err, context.DeadlineExceeded):
+			return nil
+		case errors.Is(err, errBlueALSAPCMUnavailable):
+			// No peer connected. This is the normal idle state.
+			lastFailure = ""
+		default:
+			if logf != nil && err.Error() != lastFailure {
+				logf("connect volume ceiling: %v", err)
+				lastFailure = err.Error()
+			}
+		}
+		if sleepErr := sleep(ctx, connectCeilingRetryInterval); sleepErr != nil {
+			return nil
+		}
+	}
+}
+
+func sleepContext(ctx context.Context, duration time.Duration) error {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 type commandRunner func(context.Context, ...string) ([]byte, error)
 
 type blueALSAController struct {
@@ -31,6 +89,15 @@ type blueALSAController struct {
 	cachedVolume int
 	cachedMuted  bool
 	cachedValid  bool
+
+	// connectCeiling is the highest volume a freshly acquired transport may
+	// keep. BlueALSA starts a new PCM at maximum, so without this a phone that
+	// simply connects plays at full output.
+	connectCeiling int
+	// ceilingPath is the PCM the ceiling was last successfully applied to. It
+	// identifies the transport generation so the same one is not re-lowered
+	// while the operator raises the knob.
+	ceilingPath string
 }
 
 type blueALSASnapshot struct {
@@ -55,7 +122,12 @@ func newBlueALSAController(
 			return nil, errors.New("BlueALSA peer must be a Bluetooth address")
 		}
 	}
-	controller := &blueALSAController{command: command, peer: normalized, run: run}
+	controller := &blueALSAController{
+		command:        command,
+		peer:           normalized,
+		run:            run,
+		connectCeiling: defaultConnectCeiling,
+	}
 	if controller.run == nil {
 		controller.run = controller.runCommand
 	}
@@ -363,6 +435,65 @@ func (controller *blueALSAController) setMutedSlowLocked(
 	controller.cachedValid = true
 	snapshot.Muted = muted
 	return snapshot, nil
+}
+
+// EnforceConnectCeiling lowers a newly appeared transport to the safe ceiling.
+//
+// It keys off the BlueALSA PCM path rather than the rear-indicator state,
+// because the indicator reports "pairing" while a freshly paired phone is
+// already streaming, and because a restart or a missed poll must not lose the
+// edge. Enforcement is recorded only after a successful write, so a transport
+// that appears before BlueALSA publishes its PCM is retried rather than lost.
+//
+// It never raises a quieter peer, so a deliberate low level is preserved.
+func (controller *blueALSAController) EnforceConnectCeiling(
+	ctx context.Context,
+) (blueALSASnapshot, bool, error) {
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return blueALSASnapshot{}, false, err
+	}
+	ceiling := controller.connectCeiling
+	if ceiling <= 0 || ceiling > 100 {
+		ceiling = defaultConnectCeiling
+	}
+	pcmPath, snapshot, err := controller.pcmSnapshotLocked(ctx)
+	if err != nil {
+		return blueALSASnapshot{}, false, err
+	}
+	if pcmPath == controller.ceilingPath {
+		return snapshot, false, nil
+	}
+	if snapshot.Volume <= ceiling {
+		controller.ceilingPath = pcmPath
+		return snapshot, false, nil
+	}
+	// Write against the path just observed instead of taking a second
+	// snapshot, so an external change cannot be read as a reason to raise.
+	lowered, err := controller.writeVolumeLocked(ctx, pcmPath, ceiling)
+	if err != nil {
+		return blueALSASnapshot{}, false, err
+	}
+	controller.ceilingPath = pcmPath
+	return lowered, true, nil
+}
+
+func (controller *blueALSAController) writeVolumeLocked(
+	ctx context.Context,
+	pcmPath string,
+	percent int,
+) (blueALSASnapshot, error) {
+	rawVolume := (percent*127 + 50) / 100
+	value := strconv.Itoa(rawVolume)
+	if _, err := controller.run(ctx, "volume", pcmPath, value, value); err != nil {
+		controller.cachedValid = false
+		return blueALSASnapshot{}, err
+	}
+	controller.cachedPath = pcmPath
+	controller.cachedVolume = percent
+	controller.cachedValid = true
+	return blueALSASnapshot{Volume: percent, Muted: controller.cachedMuted}, nil
 }
 
 func (controller *blueALSAController) snapshotLocked(
