@@ -1549,6 +1549,13 @@ func startDHCPLocked(
 	resolverLink string,
 	networkPaths paths,
 ) (*dhcpChild, error) {
+	// The runtime directory holds the DHCP client's pid and lease state. It is
+	// RAM backed and can disappear while the service is running, after which
+	// every start attempt fails forever. Recreating it here keeps a supervised
+	// service able to recover on its own.
+	if err := ensureRuntimeDirectory(networkPaths.runtime); err != nil {
+		return nil, fmt.Errorf("prepare DHCP runtime directory: %w", err)
+	}
 	tokenBytes := make([]byte, 16)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return nil, errors.New("generate DHCP ownership token")
