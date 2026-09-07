@@ -205,6 +205,17 @@ func main() {
 			log.Fatal(err)
 		}
 		inputControls = append(inputControls, media)
+		// A freshly acquired BlueALSA transport starts at maximum volume, so a
+		// phone that simply connects would play at full output.
+		mediaController := media
+		go func() {
+			_ = runConnectCeilingWatcher(
+				ctx,
+				mediaController.EnforceConnectCeiling,
+				sleepContext,
+				log.Printf,
+			)
+		}()
 	}
 	if *mediaControl != "" {
 		inputControls = append(inputControls, &blueZMediaController{
