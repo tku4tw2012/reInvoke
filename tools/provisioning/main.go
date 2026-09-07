@@ -39,6 +39,9 @@ import (
 const (
 	defaultListenAddress = "192.168.43.1:8443"
 	defaultApplySocket   = "/run/reinvoke/wifi-apply.sock"
+	// Time allowed for the acceptance response to leave the interface before
+	// the radio changes channel and the access point disappears.
+	defaultApplyDelay = 1500 * time.Millisecond
 	defaultDescriptor    = "/run/reinvoke/provisioning.json"
 	defaultLifetime      = 5 * time.Minute
 	defaultApplyTimeout  = 25 * time.Second
@@ -83,6 +86,8 @@ type provisioningHandler struct {
 	expiresUTC   *time.Time
 	applied      chan struct{}
 	applyTimeout time.Duration
+	applyDelay   time.Duration
+	sleep        func(time.Duration)
 	mu           sync.Mutex
 	complete     bool
 	applying     bool
@@ -363,18 +368,38 @@ func (h *provisioningHandler) handleWiFi(
 	h.applying = true
 	h.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(request.Context(), h.applyTimeout)
+	// The radio is single band. Associating the station moves it off the
+	// access point's channel, which tears the access point down. Applying
+	// before responding therefore destroys the connection that the reply
+	// would travel over, and a successful provisioning looks like a failure
+	// to the client. Acknowledge first, flush, then apply.
+	writeJSON(writer, http.StatusAccepted, map[string]bool{"accepted": true})
+	if flusher, ok := writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+
+	go h.applyAccepted(wifi)
+}
+
+// applyAccepted performs the network change after the client has already been
+// answered. It deliberately does not use the request context, which is
+// cancelled once the handler returns.
+func (h *provisioningHandler) applyAccepted(wifi wifiRequest) {
+	// Give the acknowledgement time to leave the interface before the radio
+	// changes channel.
+	if h.applyDelay > 0 {
+		h.sleep(h.applyDelay)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), h.applyTimeout)
 	defer cancel()
 	if err := h.applier.Apply(ctx, wifi); err != nil {
+		// Leave the window open so the operator can retry. The access point
+		// survives a failed apply because the station never moved.
 		h.mu.Lock()
 		h.applying = false
 		h.mu.Unlock()
 		log.Printf("provisioning adapter rejected the request")
-		writeError(
-			writer,
-			http.StatusBadGateway,
-			"network adapter rejected the request",
-		)
 		return
 	}
 
@@ -382,7 +407,7 @@ func (h *provisioningHandler) handleWiFi(
 	h.applying = false
 	h.complete = true
 	h.mu.Unlock()
-	writeJSON(writer, http.StatusAccepted, map[string]bool{"accepted": true})
+	log.Printf("provisioning applied; closing window")
 	select {
 	case h.applied <- struct{}{}:
 	default:
@@ -717,6 +742,8 @@ func run() error {
 		expiresAt:    expiresAt,
 		expiresUTC:   expiresUTC,
 		applied:      applied,
+		applyDelay:   defaultApplyDelay,
+		sleep:        time.Sleep,
 		applyTimeout: applyTimeout,
 	}
 	server := &http.Server{

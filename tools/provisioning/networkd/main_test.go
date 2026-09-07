@@ -808,3 +808,35 @@ func TestValidateEventOwnerRecord(t *testing.T) {
 		t.Fatalf("wrong token error = %v", err)
 	}
 }
+
+// The runtime directory is RAM backed and can be removed while the service is
+// running. Without recreating it, every DHCP start attempt fails forever, which
+// was observed on hardware as nine consecutive "DHCP client start failed"
+// attempts after the directory was cleared.
+func TestStartDHCPRecreatesAMissingRuntimeDirectory(t *testing.T) {
+	root := t.TempDir()
+	runtime := filepath.Join(root, "networkd")
+	networkPaths := paths{
+		runtime: runtime,
+		pid:     filepath.Join(runtime, "udhcpc.pid"),
+		owner:   filepath.Join(runtime, "udhcpc.owner"),
+	}
+	if _, err := os.Stat(runtime); !os.IsNotExist(err) {
+		t.Fatalf("fixture should start without the directory: %v", err)
+	}
+
+	// The start itself cannot succeed in a unit test because it launches
+	// BusyBox, but the directory must exist by the time that is attempted.
+	_, _ = startDHCPLocked("mlan0", "/nonexistent", "/nonexistent", networkPaths)
+
+	info, err := os.Stat(runtime)
+	if err != nil {
+		t.Fatalf("runtime directory was not recreated: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("runtime path is not a directory")
+	}
+	if info.Mode().Perm() != 0700 {
+		t.Fatalf("mode = %#o, want 0700", info.Mode().Perm())
+	}
+}
