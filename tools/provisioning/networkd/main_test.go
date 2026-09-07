@@ -808,3 +808,37 @@ func TestValidateEventOwnerRecord(t *testing.T) {
 		t.Fatalf("wrong token error = %v", err)
 	}
 }
+
+// The runtime directory is RAM backed and can vanish while the service runs.
+// The lease lock lives inside it, so startDHCP fails before reaching any code
+// that could recreate it, and the retry loop then fails forever. An earlier fix
+// recreated the directory inside startDHCPLocked, which this path never
+// reaches; the test for it passed only because it called that helper directly.
+func TestStartDHCPReportsALostRuntimeDirectory(t *testing.T) {
+	root := t.TempDir()
+	runtime := filepath.Join(root, "networkd")
+	networkPaths := paths{
+		runtime: runtime,
+		lock:    filepath.Join(runtime, "lease.lock"),
+		pid:     filepath.Join(runtime, "udhcpc.pid"),
+		owner:   filepath.Join(runtime, "udhcpc.owner"),
+	}
+
+	_, err := startDHCP("mlan0", "/nonexistent", "/nonexistent", networkPaths)
+	if !errors.Is(err, errRuntimeDirectoryLost) {
+		t.Fatalf("error = %v, want errRuntimeDirectoryLost", err)
+	}
+
+	// A file where the directory should be is equally unusable.
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatalf("prepare root: %v", err)
+	}
+	if err := os.WriteFile(runtime, []byte("not a directory"), 0600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if _, err := startDHCP(
+		"mlan0", "/nonexistent", "/nonexistent", networkPaths,
+	); !errors.Is(err, errRuntimeDirectoryLost) {
+		t.Fatalf("error = %v, want errRuntimeDirectoryLost", err)
+	}
+}
