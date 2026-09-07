@@ -15,13 +15,20 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
 
 type recordingApplier struct {
+	mu      sync.Mutex
 	request wifiRequest
 	err     error
+	done    chan struct{}
+}
+
+func newRecordingApplier() *recordingApplier {
+	return &recordingApplier{done: make(chan struct{}, 1)}
 }
 
 type blockingApplier struct {
@@ -43,8 +50,28 @@ func (a *recordingApplier) Apply(
 	_ context.Context,
 	request wifiRequest,
 ) error {
+	a.mu.Lock()
 	a.request = request
+	a.mu.Unlock()
+	select {
+	case a.done <- struct{}{}:
+	default:
+	}
 	return a.err
+}
+
+// applied blocks until Apply has run, so the recorded request can be read
+// safely. Apply now runs on its own goroutine after the response is written.
+func (a *recordingApplier) applied(t *testing.T) wifiRequest {
+	t.Helper()
+	select {
+	case <-a.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Apply was never called")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.request
 }
 
 func TestValidateWiFiRequest(t *testing.T) {
@@ -120,7 +147,7 @@ func TestValidateWiFiRequest(t *testing.T) {
 func TestProvisioningHandler(t *testing.T) {
 	t.Parallel()
 
-	applier := &recordingApplier{}
+	applier := newRecordingApplier()
 	handler := &provisioningHandler{
 		applier:      applier,
 		token:        "test-token",
@@ -165,9 +192,10 @@ func TestProvisioningHandler(t *testing.T) {
 	if response.StatusCode != http.StatusAccepted {
 		t.Fatalf("authorized status = %d", response.StatusCode)
 	}
-	if applier.request.SSID != "test-network" ||
-		applier.request.Passphrase != "test-password" {
-		t.Fatalf("unexpected apply request: %#v", applier.request)
+	recorded := applier.applied(t)
+	if recorded.SSID != "test-network" ||
+		recorded.Passphrase != "test-password" {
+		t.Fatalf("unexpected apply request: %#v", recorded)
 	}
 
 	secondRequest, err := http.NewRequest(
@@ -281,7 +309,7 @@ func TestRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
 
 	handler := &provisioningHandler{
-		applier:      &recordingApplier{},
+		applier:      newRecordingApplier(),
 		token:        "test-token",
 		expiresAt:    time.Now().Add(time.Minute),
 		applied:      make(chan struct{}, 1),
@@ -550,7 +578,25 @@ func TestWriteDescriptorPermissions(t *testing.T) {
 	}
 }
 
-// orderingApplier records whether the HTTP response was already written when
+// writeSignallingRecorder reports the moment the response body is actually
+// written, rather than the moment the handler returns.
+type writeSignallingRecorder struct {
+	*httptest.ResponseRecorder
+	wrote chan struct{}
+}
+
+func (w *writeSignallingRecorder) Write(b []byte) (int, error) {
+	n, err := w.ResponseRecorder.Write(b)
+	select {
+	case w.wrote <- struct{}{}:
+	default:
+	}
+	return n, err
+}
+
+func (w *writeSignallingRecorder) Flush() {}
+
+// orderingApplier records whether the response had already been written when
 // Apply ran.
 type orderingApplier struct {
 	responded func() bool
@@ -567,14 +613,19 @@ func (a *orderingApplier) Apply(context.Context, wifiRequest) error {
 }
 
 // The radio is single band, so applying tears down the access point the reply
-// travels over. The acknowledgement must therefore be written before Apply
+// travels over. The acknowledgement must therefore reach the wire before Apply
 // runs, otherwise a successful provisioning is indistinguishable from failure.
+// The check observes the Write call itself, not the handler returning, so it
+// cannot pass merely because of goroutine scheduling.
 func TestAcknowledgesBeforeApplying(t *testing.T) {
-	written := make(chan struct{})
+	recorder := &writeSignallingRecorder{
+		ResponseRecorder: httptest.NewRecorder(),
+		wrote:            make(chan struct{}, 1),
+	}
 	applier := &orderingApplier{
 		responded: func() bool {
 			select {
-			case <-written:
+			case <-recorder.wrote:
 				return true
 			default:
 				return false
@@ -600,26 +651,24 @@ func TestAcknowledgesBeforeApplying(t *testing.T) {
 	)
 	request.Header.Set("Authorization", "Bearer test-token")
 	request.Header.Set("Content-Type", "application/json")
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
+	handler.ServeHTTP(recorder, request)
 
-	if response.Code != http.StatusAccepted {
-		t.Fatalf("status = %d, want 202", response.Code)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", recorder.Code)
 	}
-	close(written)
 
 	select {
 	case respondedFirst := <-applier.sawWrite:
 		if !respondedFirst {
-			t.Fatal("Apply ran before the client was acknowledged")
+			t.Fatal("Apply ran before the response was written")
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("Apply was never called")
 	}
 
 	select {
 	case <-applied:
-	case <-time.After(2 * time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("window was not closed after a successful apply")
 	}
 }
