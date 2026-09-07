@@ -6,8 +6,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestSelectBlueALSAPCMUsesAllowlistedPeer(t *testing.T) {
@@ -218,5 +220,197 @@ func TestParseBlueALSAMutedRequiresSynchronizedChannels(t *testing.T) {
 	}
 	if _, err := parseBlueALSAMuted("Muted: L: Y R: N\n"); err == nil {
 		t.Fatal("mismatched channel mute state was accepted")
+	}
+}
+
+// newCeilingFixture builds a controller whose BlueALSA reports pcmPath at the
+// given raw volume, recording every volume write.
+func newCeilingFixture(
+	t *testing.T,
+	pcmPath func() string,
+	rawVolume func() int,
+	writes *[]string,
+	infoCalls *int,
+) *blueALSAController {
+	t.Helper()
+	controller, err := newBlueALSAController(
+		"bluealsa-cli",
+		"00:00:5E:00:53:01",
+		func(_ context.Context, args ...string) ([]byte, error) {
+			switch args[0] {
+			case "list-pcms":
+				return []byte(pcmPath() + "\n"), nil
+			case "info":
+				*infoCalls++
+				return []byte(fmt.Sprintf(
+					"Volume: L: %d R: %d\nMuted: L: N R: N\n",
+					rawVolume(),
+					rawVolume(),
+				)), nil
+			case "volume":
+				*writes = append(*writes, args[2])
+				return nil, nil
+			}
+			return nil, errors.New("unexpected command")
+		},
+	)
+	if err != nil {
+		t.Fatalf("new controller: %v", err)
+	}
+	return controller
+}
+
+// Connecting a phone must not play at maximum volume.
+func TestEnforceConnectCeilingLowersANewTransport(t *testing.T) {
+	var writes []string
+	infoCalls := 0
+	raw := 127
+	path := "/org/bluealsa/hci0/dev_00_00_5E_00_53_01/a2dpsnk/sink"
+	controller := newCeilingFixture(t,
+		func() string { return path },
+		func() int { return raw },
+		&writes, &infoCalls)
+
+	snapshot, lowered, err := controller.EnforceConnectCeiling(context.Background())
+	if err != nil {
+		t.Fatalf("enforce: %v", err)
+	}
+	if !lowered || snapshot.Volume != defaultConnectCeiling {
+		t.Fatalf("snapshot = %+v lowered = %v", snapshot, lowered)
+	}
+	// 12 percent of the 0-127 BlueALSA scale, written once from a single read.
+	if len(writes) != 1 || writes[0] != "15" {
+		t.Fatalf("writes = %v, want one write of 15", writes)
+	}
+	if infoCalls != 1 {
+		t.Fatalf("info calls = %d, want 1; a second read can raise volume",
+			infoCalls)
+	}
+}
+
+// The knob must win after the ceiling has been applied to a transport.
+func TestEnforceConnectCeilingDoesNotFightTheOperator(t *testing.T) {
+	var writes []string
+	infoCalls := 0
+	raw := 127
+	path := "/org/bluealsa/hci0/dev_00_00_5E_00_53_01/a2dpsnk/sink"
+	controller := newCeilingFixture(t,
+		func() string { return path },
+		func() int { return raw },
+		&writes, &infoCalls)
+
+	if _, _, err := controller.EnforceConnectCeiling(context.Background()); err != nil {
+		t.Fatalf("first enforce: %v", err)
+	}
+	raw = 90 // operator turned it up afterwards
+	_, lowered, err := controller.EnforceConnectCeiling(context.Background())
+	if err != nil {
+		t.Fatalf("second enforce: %v", err)
+	}
+	if lowered {
+		t.Fatal("an already-capped transport must not be lowered again")
+	}
+	if len(writes) != 1 {
+		t.Fatalf("writes = %v, want exactly one", writes)
+	}
+}
+
+// A new transport that is already quiet must be recorded, never raised.
+func TestEnforceConnectCeilingNeverRaisesAQuietTransport(t *testing.T) {
+	var writes []string
+	infoCalls := 0
+	controller := newCeilingFixture(t,
+		func() string { return "/org/bluealsa/hci0/dev_00_00_5E_00_53_01/a2dpsnk/sink" },
+		func() int { return 6 },
+		&writes, &infoCalls)
+
+	snapshot, lowered, err := controller.EnforceConnectCeiling(context.Background())
+	if err != nil {
+		t.Fatalf("enforce: %v", err)
+	}
+	if lowered || len(writes) != 0 {
+		t.Fatalf("quiet transport was written: lowered=%v writes=%v", lowered, writes)
+	}
+	if snapshot.Volume > defaultConnectCeiling {
+		t.Fatalf("volume = %d", snapshot.Volume)
+	}
+}
+
+// A reconnect creates a different PCM, which must be capped again even though
+// the rear indicator may still be reporting "pairing".
+func TestEnforceConnectCeilingCapsEachNewTransport(t *testing.T) {
+	var writes []string
+	infoCalls := 0
+	raw := 127
+	path := "/org/bluealsa/hci0/dev_00_00_5E_00_53_01/a2dpsnk/sink"
+	controller := newCeilingFixture(t,
+		func() string { return path },
+		func() int { return raw },
+		&writes, &infoCalls)
+
+	if _, _, err := controller.EnforceConnectCeiling(context.Background()); err != nil {
+		t.Fatalf("first enforce: %v", err)
+	}
+	path = "/org/bluealsa/hci0/dev_00_00_5E_00_53_01/a2dpsnk/sink2"
+	raw = 127
+	_, lowered, err := controller.EnforceConnectCeiling(context.Background())
+	if err != nil {
+		t.Fatalf("second enforce: %v", err)
+	}
+	if !lowered || len(writes) != 2 {
+		t.Fatalf("new transport not capped: lowered=%v writes=%v", lowered, writes)
+	}
+}
+
+func TestConnectCeilingWatcherToleratesIdleAndStopsOnCancellation(t *testing.T) {
+	calls := 0
+	ctx, cancel := context.WithCancel(context.Background())
+	var logged []string
+	err := runConnectCeilingWatcher(
+		ctx,
+		func(context.Context) (blueALSASnapshot, bool, error) {
+			calls++
+			if calls >= 3 {
+				cancel()
+			}
+			return blueALSASnapshot{}, false, errBlueALSAPCMUnavailable
+		},
+		func(c context.Context, _ time.Duration) error { return c.Err() },
+		func(format string, args ...interface{}) {
+			logged = append(logged, fmt.Sprintf(format, args...))
+		},
+	)
+	if err != nil {
+		t.Fatalf("watcher returned %v", err)
+	}
+	if calls < 3 {
+		t.Fatalf("calls = %d, want at least 3", calls)
+	}
+	// An idle speaker must not fill the log.
+	if len(logged) != 0 {
+		t.Fatalf("idle watcher logged %v", logged)
+	}
+}
+
+func TestConnectCeilingWatcherLogsRealFailuresOnce(t *testing.T) {
+	calls := 0
+	var logged []string
+	ctx, cancel := context.WithCancel(context.Background())
+	_ = runConnectCeilingWatcher(
+		ctx,
+		func(context.Context) (blueALSASnapshot, bool, error) {
+			calls++
+			if calls >= 4 {
+				cancel()
+			}
+			return blueALSASnapshot{}, false, errors.New("bluealsa exploded")
+		},
+		func(c context.Context, _ time.Duration) error { return c.Err() },
+		func(format string, args ...interface{}) {
+			logged = append(logged, fmt.Sprintf(format, args...))
+		},
+	)
+	if len(logged) != 1 {
+		t.Fatalf("repeated failure logged %d times, want 1", len(logged))
 	}
 }

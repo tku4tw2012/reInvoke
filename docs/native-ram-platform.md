@@ -632,6 +632,34 @@ are comparison points, not current runtime dependencies. See the
 [canonical contract](current-product-contract.md) for the complete service and
 safety policy.
 
+## Audio volume model
+
+Two distinct controls affect what comes out of the speaker, and conflating them
+produced a silent unit that looked like a hardware fault.
+
+`com.harman.volumeSet` is the media volume. It takes two arguments, a value and
+an audio domain, as `[value, "music"]`. A bare `[value]` is rejected with
+`invalid argument format`. It maps onto the BlueALSA PCM volume for the
+connected A2DP peer, and `com.harman.volumeGet` reports both the `music` and
+`system` domains along with their mute flags.
+
+`com.harman.dsp.volumeSet` is a different control. It sends DSP opcode `0x04`
+with a single raw byte and changes the DSP gain, which the DSP acknowledges with
+`EVENT_NEW_DAC_GAIN`. It does not set the media volume, so calling it while the
+media volume is zero produces a confident-looking acknowledgement and silence.
+
+The media value is called a percent but is linear in amplitude, not in perceived
+loudness. It is converted with `rawVolume = (percent * 127 + 50) / 100` onto
+BlueALSA's `0-127` scale. The practical consequence is that the useful range sits
+far lower than the name suggests: the operator judged `25` to be relatively loud
+and settled on `10` to `12` for comfortable listening, and `8` was audibly
+quieter than `12`, so the scale is monotonic and behaving correctly.
+
+A freshly acquired BlueALSA transport starts at maximum volume. Without
+intervention, connecting a phone plays at full output. The platform now lowers a
+newly connected peer to a safe ceiling and never raises a quieter one, so a
+deliberate low setting is preserved.
+
 ## Connectivity and provisioning model
 
 SSH is not a product requirement. The platform needs at least one reachable
