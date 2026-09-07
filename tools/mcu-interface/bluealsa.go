@@ -460,6 +460,12 @@ func (controller *blueALSAController) EnforceConnectCeiling(
 	}
 	pcmPath, snapshot, err := controller.pcmSnapshotLocked(ctx)
 	if err != nil {
+		// BlueALSA keeps a stable PCM path per peer, so a reconnect reuses the
+		// same path. Losing the PCM is the only reliable disconnect signal, and
+		// clearing here is what makes the next appearance count as new.
+		if errors.Is(err, errBlueALSAPCMUnavailable) {
+			controller.ceilingPath = ""
+		}
 		return blueALSASnapshot{}, false, err
 	}
 	if pcmPath == controller.ceilingPath {
