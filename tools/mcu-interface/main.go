@@ -231,11 +231,6 @@ func main() {
 			executable: *pairingAgentExecutable,
 		})
 	}
-	if *provisioningSocket != "" {
-		inputControls = append(inputControls, provisioningController{
-			socketPath: *provisioningSocket,
-		})
-	}
 	if *lightsDirectory != "" {
 		lights = &ledPlayer{
 			directory: *lightsDirectory,
@@ -252,6 +247,12 @@ func main() {
 				log.Fatalf("start boot LED animation: %v", err)
 			}
 		}
+	}
+	if *provisioningSocket != "" {
+		inputControls = append(inputControls, provisioningController{
+			socketPath: *provisioningSocket,
+			lights:     lights,
+		})
 	}
 	privacy := newMicrophonePrivacyController(
 		microphoneMuted,
