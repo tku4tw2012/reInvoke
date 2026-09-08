@@ -37,6 +37,8 @@ readonly LIBSSL_SHA256="24361d67c73cee0a21e8bf486c1c8b7fb1ccae8a57542edd44155734
 readonly LIBNL_SHA256="0456df48473aef6666690740199ba2cdac0ba1c1e8e08273cc7eda2356027eb8"
 readonly LIBZ_SHA256="762f40f1e097b757c76e40626c3cac00c50ae657a076af5be977c1ca0cf1070d"
 readonly LIBRT_SHA256="a355777befa4986e79b4759186c0f14b0e5424bd1453145f6b7197932453b140"
+readonly ARECORD_SHA256="6960b67bcf50f9dda6f0081863a62fbaf2d95cec35085380acfaafa024c75fbd"
+readonly LIBASOUND_SHA256="16b698791645a181ba94feedeb8372900b5e5ee68cc263e4da358abc8874698b"
 readonly BLUETOOTHD_SHA256="d3710607908e36ce1b3826ee5cb4154950267ff3828f10c71893c574436f778d"
 readonly BLUEALSA_SHA256="62a3c8c465437240b9c8f1fa41bddbbde8fd98796a51527636c70a5ede605348"
 readonly BLUEALSA_APLAY_SHA256="edc3a6cccb01bf4ac5ab8ab2898fad29e7fbafbebc1e9053aeed8b4c5f006558"
@@ -45,8 +47,9 @@ readonly HCI_INIT_SHA256="72a2a2f188e56213f226794e58ee9f0666ce91e6b7db8d0432841e
 readonly MEDIA_CONTROL_SHA256="c8b864c1a7ded033b43d498821b7d9ff6edebc0bef7889b85ff2f6a2b64f0970"
 # Reproduced twice with the checksum-gated owned build scripts.
 readonly PAIRING_AGENT_SHA256="0e2e17763fb9f9212aee30226d2399f2ca7a4a93f7fb275c0fd6e7af6fe54a57"
-readonly MCU_INTERFACE_SHA256="7bdfc971dfc511f25e7da42a91bcd68d20f0625228d7d61d7ad2fdd7792d3209"
+readonly MCU_INTERFACE_SHA256="8a2e55ba70f2db61e38eb6a696d84e1251ee4e8bfd9bb9c706b2307f7bfa2c4d"
 readonly DSP_INTERFACE_SHA256="81d8057194710976c43404b47fff6b849a890ffa50c57b699a596095d0301c94"
+readonly MIC_CAPTURE_SHA256="fbaa99197d7993ffcc6a468323d890768c5b1524d66519c13ca9f852e9589582"
 readonly DSP_IMAGE_SHA256="e76f6ce7c53bb5b508507354fb08523089c136b3731d5ad4f4488a50526a44c8"
 readonly ARM_STRIP_SHA256="fb5832708c993a6f196aac6fca7593a24c90f7b8316ede91382e5b55a88608dc"
 readonly LIGHTS_MANIFEST_SHA256="7220f194246b53f91db12f22b822710e6f7ffa5fd20f620b71b015c8519a45fa"
@@ -58,6 +61,7 @@ usage() {
 Usage: build-native-runtime.sh \
   --donor-rootfs PATH \
   --mcu-interface PATH --dsp-interface PATH --dsp-image PATH \
+  --mic-capture PATH \
   --bluetoothd PATH --bluealsa PATH --bluealsa-aplay PATH \
   --bluealsa-cli PATH --hci-init PATH --media-control PATH \
   --pairing-agent PATH \
@@ -129,6 +133,7 @@ main() {
   local mcu_interface=""
   local dsp_interface=""
   local dsp_image=""
+  local mic_capture=""
   local bluetoothd=""
   local bluealsa=""
   local bluealsa_aplay=""
@@ -183,6 +188,10 @@ main() {
         ;;
       --dsp-image)
         dsp_image="${2:-}"
+        shift 2
+        ;;
+      --mic-capture)
+        mic_capture="${2:-}"
         shift 2
         ;;
       --bluetoothd)
@@ -295,6 +304,7 @@ main() {
     "${mcu_interface}"
     "${dsp_interface}"
     "${dsp_image}"
+    "${mic_capture}"
     "${bluetoothd}"
     "${bluealsa}"
     "${bluealsa_aplay}"
@@ -310,6 +320,7 @@ main() {
   verify_sha256 "${mcu_interface}" "${MCU_INTERFACE_SHA256}"
   verify_sha256 "${dsp_interface}" "${DSP_INTERFACE_SHA256}"
   verify_sha256 "${dsp_image}" "${DSP_IMAGE_SHA256}"
+  verify_sha256 "${mic_capture}" "${MIC_CAPTURE_SHA256}"
   verify_sha256 "${bluetoothd}" "${BLUETOOTHD_SHA256}"
   verify_sha256 "${bluealsa}" "${BLUEALSA_SHA256}"
   verify_sha256 "${bluealsa_aplay}" "${BLUEALSA_APLAY_SHA256}"
@@ -318,7 +329,7 @@ main() {
   verify_sha256 "${media_control}" "${MEDIA_CONTROL_SHA256}"
   verify_sha256 "${pairing_agent}" "${PAIRING_AGENT_SHA256}"
   for path in \
-    "${mcu_interface}" "${dsp_interface}" "${bluetoothd}" \
+    "${mcu_interface}" "${dsp_interface}" "${mic_capture}" "${bluetoothd}" \
     "${bluealsa}" "${bluealsa_aplay}" "${bluealsa_cli}" \
     "${hci_init}" "${media_control}" "${pairing_agent}"; do
     verify_static_arm "${path}"
@@ -373,7 +384,10 @@ main() {
     "${LIBSSL_SHA256}"
   verify_sha256 "${donor_rootfs}/system/lib/libnl.so" "${LIBNL_SHA256}"
   verify_sha256 "${donor_rootfs}/lib/libz.so" "${LIBZ_SHA256}"
-  verify_sha256 "${donor_rootfs}/lib/librt-2.23.so" "${LIBRT_SHA256}"
+  verify_sha256 "${donor_rootfs}/lib/librt-2.23.so"   "${LIBRT_SHA256}"
+  verify_sha256 "${donor_rootfs}/usr/bin/aplay" "${ARECORD_SHA256}"
+  verify_sha256 \
+  "${donor_rootfs}/usr/lib/libasound.so.2.0.0" "${LIBASOUND_SHA256}"
   lights_manifest_sha256="$(
     cd "${donor_rootfs}/usr/share/lights"
     find . -type f -print0 |
@@ -397,6 +411,8 @@ main() {
     "${partial_dir}/bin/reinvoke-mcu-interface"
   install -m 0755 "${dsp_interface}" \
     "${partial_dir}/bin/reinvoke-dsp-interface"
+  install -m 0755 "${mic_capture}" \
+    "${partial_dir}/bin/reinvoke-mic-capture"
   install -m 0644 "${dsp_image}" "${partial_dir}/share/dsp-img.ldr"
   install -m 0755 "${bluetoothd}" "${partial_dir}/bin/bluetoothd"
   install -m 0755 "${bluealsa}" "${partial_dir}/bin/bluealsa"
@@ -407,6 +423,8 @@ main() {
     "${partial_dir}/bin/bluez-media-control"
   install -m 0755 "${pairing_agent}" \
     "${partial_dir}/bin/bluez-pairing-agent"
+  install -m 0755 "${donor_rootfs}/usr/bin/aplay" \
+    "${partial_dir}/bin/arecord"
   for path in bluetoothd bluealsa bluealsa-aplay bluealsa-cli hci-init \
     bluez-media-control bluez-pairing-agent; do
     "${strip_tool}" --strip-unneeded "${partial_dir}/bin/${path}"
@@ -474,6 +492,8 @@ main() {
     "${partial_dir}/lib/hostapd/libz.so"
   install -m 0644 "${donor_rootfs}/lib/librt-2.23.so" \
     "${partial_dir}/lib/librt.so.1"
+  install -m 0644 "${donor_rootfs}/usr/lib/libasound.so.2.0.0" \
+    "${partial_dir}/lib/libasound.so.2"
 
   install -m 0644 "${script_dir}/dbus-session.conf" \
     "${partial_dir}/etc/dbus-session.conf"
@@ -499,6 +519,7 @@ main() {
     printf "donor_version=%s\n" "${donor_version}"
     printf "peer_address=%s\n" "${peer_address^^}"
     printf "pair_seconds=%s\n" "${pair_seconds}"
+    printf "microphone_capture=mono-48000-s32le-left-dsp-channel\n"
     printf "wamp_allow_cidrs=%s\n" "${wamp_allow_cidrs[*]:-none}"
     if [[ -n "${provision_ap_ssid_file}" ]]; then
       printf "provisioning_ap=configured\n"
