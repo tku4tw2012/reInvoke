@@ -34,6 +34,7 @@ main() {
 
   "${script_dir}/mcu-interface/test.sh" --archive-root "${archive_root}"
   "${script_dir}/dsp-interface/test.sh" --archive-root "${archive_root}"
+  "${script_dir}/mic-capture/test.sh" --archive-root "${archive_root}"
   "${script_dir}/provisioning/test.sh" --archive-root "${archive_root}"
   pairing_policy_test="${repo_root}/.bluez-pairing-policy-test.$$"
   [[ ! -e "${pairing_policy_test}" ]] ||
@@ -50,6 +51,7 @@ main() {
     "${script_dir}/emulation/"*.test.mjs \
     "${script_dir}/provisioning/"*.test.mjs
   "${script_dir}/usb-boot/boot-native-ram-test.sh"
+  "${script_dir}/usb-boot/collect-microphone-capture-test.sh"
   find "${script_dir}" -type f -name "*.sh" -print0 |
     xargs --null --max-args=1 bash -n
   sh -n "${script_dir}/usb-boot/native-ram-init"
