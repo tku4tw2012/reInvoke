@@ -207,7 +207,8 @@ stop_runtime() {
   stop_service mcu-interface
   wait_service_stop mcu-interface
   for stop_attempt in 1 2; do
-    for service_name in provision-windowd dsp-interface pairing-agent-guard \
+    for service_name in mic-capture provision-windowd dsp-interface \
+      pairing-agent-guard \
       bluealsa-aplay bluealsa bluetoothd dbus bonefish networkd; do
       stop_service "${service_name}"
     done
@@ -225,7 +226,10 @@ start_autonomous_runtime() {
 
   if ! ${BB} test -x "${runtime_bin}/reinvoke-mcu-interface" ||
      ! ${BB} test -x "${runtime_bin}/reinvoke-dsp-interface" ||
+     ! ${BB} test -x "${runtime_bin}/reinvoke-mic-capture" ||
+     ! ${BB} test -x "${runtime_bin}/arecord" ||
      ! ${BB} test -x "${runtime_loader}" ||
+     ! ${BB} test -f "${runtime_lib}/libasound.so.2" ||
      ! ${BB} test -f "${runtime_root}/etc/runtime.conf"; then
     log "autonomous runtime bundle is incomplete"
     return
@@ -321,6 +325,20 @@ start_autonomous_runtime() {
       -devmem "${BB}" \
       ${dsp_state_flag} \
       -router-host 127.0.0.1 -router-port 9999
+    if cmdline_has reinvoke.mic_capture=off; then
+      log "microphone capture owner disabled by kernel command line"
+    elif ${BB} test -x "${runtime_bin}/reinvoke-mic-capture" &&
+      ${BB} test -x "${runtime_bin}/arecord" &&
+      ${BB} test -f "${runtime_lib}/libasound.so.2"; then
+      supervise mic-capture \
+        "${runtime_bin}/reinvoke-mic-capture" \
+        -loader "${runtime_loader}" \
+        -library-path "${runtime_lib}" \
+        -arecord "${runtime_bin}/arecord" \
+        -dsp-executable "${runtime_bin}/reinvoke-dsp-interface"
+    else
+      log "microphone capture bundle is incomplete"
+    fi
   fi
   if ! cmdline_has reinvoke.bluetooth=off; then
     supervise dbus \

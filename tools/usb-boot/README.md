@@ -121,11 +121,13 @@ root-controlled station supplicant before acquiring DHCP state. See
 ## Build the autonomous runtime bundle
 
 `build-native-runtime.sh` assembles only the services required by the owned
-RAM speaker path. It checksum-gates owned MCU/DSP binaries, the volatile DSP
-image, BlueZ, BlueALSA, the pairing/HCI helpers, and an isolated Bonefish/D-Bus
-runtime. It never copies the full donor SquashFS. The donor EGLIBC 2.23
-libraries remain under `/opt/reinvoke/lib` and are invoked through their own
-loader, so they cannot replace the recovery image's EGLIBC 2.12 libraries.
+RAM speaker path. It checksum-gates owned MCU/DSP and microphone-capture
+binaries, the volatile DSP image, BlueZ, BlueALSA, the pairing/HCI helpers, and
+an isolated Bonefish/D-Bus runtime. The fixed ALSA capture helper and
+`libasound` are also individually pinned. It never copies the full donor
+SquashFS. The donor EGLIBC 2.23 libraries remain under `/opt/reinvoke/lib` and
+are invoked through their own loader, so they cannot replace the recovery
+image's EGLIBC 2.12 libraries.
 
 The builder requires a peer address because the current pairing agent accepts
 only one reviewed peer during its bounded window. The generated configuration
@@ -136,6 +138,7 @@ tools/usb-boot/build-native-runtime.sh \
   --donor-rootfs "${REINVOKE_ARCHIVE}/hardware/dumps/<snapshot>/rootfs-extracted/primary" \
   --mcu-interface <owned-mcu-binary> \
   --dsp-interface <owned-dsp-binary> \
+  --mic-capture <owned-microphone-capture-binary> \
   --dsp-image <dsp-img.ldr> \
   --bluetoothd <bluez-5.55-bluetoothd> \
   --bluealsa <bluealsa-4.0.0> \
