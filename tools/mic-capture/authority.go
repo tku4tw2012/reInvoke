@@ -133,9 +133,11 @@ func runAuthorityProtocol(
 			return
 		}
 		var response string
+		var eventErr error
 		select {
 		case err := <-event.result:
 			if err != nil {
+				eventErr = err
 				if event.kind == "state" {
 					done <- err
 					return
@@ -165,6 +167,10 @@ func runAuthorityProtocol(
 			authorityCommandTimeout,
 		); err != nil {
 			done <- fmt.Errorf("reply to privacy authority: %w", err)
+			return
+		}
+		if eventErr != nil {
+			done <- eventErr
 			return
 		}
 	}

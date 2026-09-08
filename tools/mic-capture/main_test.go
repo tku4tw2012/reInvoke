@@ -492,6 +492,7 @@ func TestPrivacyDrainRequiresConsecutiveZeroPeriods(t *testing.T) {
 	for index := 0; index < privacyDrainPeriods-1; index++ {
 		remaining = advancePrivacyDrain(remaining, zero)
 	}
+
 	if remaining != 1 {
 		t.Fatalf("remaining = %d, want 1", remaining)
 	}
@@ -516,5 +517,22 @@ func TestPrivacyDrainRequiresConsecutiveZeroPeriods(t *testing.T) {
 			remaining,
 			privacyDrainPeriods,
 		)
+	}
+}
+
+func TestAllowRequiresCompletedDrain(t *testing.T) {
+	drainReady := false
+	if err := validateAuthorityOrder("allow", &drainReady); err == nil {
+		t.Fatal("ALLOW before DRAIN was accepted")
+	}
+	drainReady = true
+	if err := validateAuthorityOrder("allow", &drainReady); err != nil {
+		t.Fatalf("ALLOW after DRAIN was rejected: %v", err)
+	}
+	if err := validateAuthorityOrder("block", &drainReady); err != nil {
+		t.Fatal(err)
+	}
+	if drainReady {
+		t.Fatal("BLOCK did not invalidate prior drain")
 	}
 }

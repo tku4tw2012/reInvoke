@@ -298,6 +298,7 @@ func runCaptureGeneration(
 		pendingDrain   *authorityEvent
 		drainRemaining int
 		drainStarted   time.Time
+		drainReady     bool
 	)
 	ticker := time.NewTicker(generationPollInterval)
 	defer ticker.Stop()
@@ -334,6 +335,13 @@ func runCaptureGeneration(
 				drainStarted = time.Now()
 				continue
 			}
+			if eventErr := validateAuthorityOrder(
+				event.kind,
+				&drainReady,
+			); eventErr != nil {
+				event.result <- eventErr
+				return eventErr
+			}
 			eventErr := handleAuthorityEvent(
 				generationContext,
 				config,
@@ -342,6 +350,12 @@ func runCaptureGeneration(
 				event,
 			)
 			event.result <- eventErr
+			if event.kind == "allow" {
+				if eventErr != nil {
+					return eventErr
+				}
+				drainReady = false
+			}
 		case period, ok := <-source.periods:
 			if !ok {
 				return <-source.done
@@ -350,6 +364,7 @@ func runCaptureGeneration(
 				drainRemaining = advancePrivacyDrain(drainRemaining, period)
 				if drainRemaining == 0 &&
 					time.Since(drainStarted) >= privacyDrainMinimum {
+					drainReady = true
 					pendingDrain.result <- nil
 					pendingDrain = nil
 				}
@@ -428,6 +443,20 @@ func runCaptureGeneration(
 			return nil
 		}
 	}
+}
+
+func validateAuthorityOrder(kind string, drainReady *bool) error {
+	switch kind {
+	case "block":
+		*drainReady = false
+	case "allow":
+		if !*drainReady {
+			return errors.New(
+				"capture authorization arrived before privacy drain",
+			)
+		}
+	}
+	return nil
 }
 
 func periodIsZero(period []byte) bool {

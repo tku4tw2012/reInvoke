@@ -52,6 +52,7 @@ type testCaptureGate struct {
 	fence        func() error
 	drain        func() error
 	allow        func() error
+	terminate    func() error
 	terminations int
 }
 
@@ -114,6 +115,9 @@ func (gate *testCaptureGate) TerminateVerified() error {
 	gate.mu.Unlock()
 	if gate.log != nil {
 		gate.log.add("terminate")
+	}
+	if gate.terminate != nil {
+		return gate.terminate()
 	}
 	return nil
 }
@@ -198,6 +202,77 @@ func TestCaptureSyncStableUnmutedFencesReassertsAndAllows(t *testing.T) {
 	}
 	if string(content) != microphoneUnmutedState {
 		t.Fatalf("final state = %q, want unmuted", content)
+	}
+}
+
+func TestCaptureSyncIgnoresCanceledRedundantUnmuteRevision(t *testing.T) {
+	log := &privacyEventLog{}
+	controlPath := startRecordingMicControl(t, 2, log, nil)
+	controller := newTestPrivacyController(t, false, controlPath)
+	drainStarted := make(chan struct{})
+	releaseDrain := make(chan struct{})
+	gate := &testCaptureGate{
+		log:  log,
+		live: true,
+		drain: func() error {
+			close(drainStarted)
+			<-releaseDrain
+			return nil
+		},
+	}
+
+	syncDone := make(chan error, 1)
+	go func() {
+		_, err := controller.Synchronize(context.Background(), gate)
+		syncDone <- err
+	}()
+	<-drainStarted
+
+	ctx, cancel := context.WithCancel(context.Background())
+	setDone := make(chan error, 1)
+	go func() {
+		setDone <- controller.Set(ctx, false)
+	}()
+	deadline := time.After(time.Second)
+	for {
+		_, revision := controller.requestedPolicy()
+		if revision > 1 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("redundant unmute did not record its policy")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	cancel()
+	close(releaseDrain)
+
+	if err := <-syncDone; err != nil {
+		t.Fatalf("synchronize: %v", err)
+	}
+	if err := <-setDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled unmute error = %v", err)
+	}
+	if controller.muted || controller.desired || controller.unknown {
+		t.Fatalf(
+			"final policy muted=%t desired=%t unknown=%t",
+			controller.muted,
+			controller.desired,
+			controller.unknown,
+		)
+	}
+	select {
+	case <-controller.reconcile:
+		t.Fatal("canceled redundant unmute scheduled forced mute")
+	default:
+	}
+	want := []string{
+		"fence", "dsp:1", "drain", "dsp:0", "state:unmuted", "allow",
+	}
+	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
 	}
 }
 
@@ -341,7 +416,7 @@ func TestOrdinaryUnmuteAllowsOnlyAfterConfirmationAndPersistence(t *testing.T) {
 	for {
 		events := log.snapshot()
 		if len(events) > 0 {
-			if !reflect.DeepEqual(events, []string{"dsp:0"}) {
+			if !reflect.DeepEqual(events, []string{"drain", "dsp:0"}) {
 				t.Fatalf("events before confirmation = %#v", events)
 			}
 			break
@@ -366,7 +441,7 @@ func TestOrdinaryUnmuteAllowsOnlyAfterConfirmationAndPersistence(t *testing.T) {
 	}
 	if got := log.snapshot(); !reflect.DeepEqual(
 		got,
-		[]string{"dsp:0", "allow"},
+		[]string{"drain", "dsp:0", "allow"},
 	) {
 		t.Fatalf("events = %#v", got)
 	}
@@ -423,6 +498,42 @@ func TestDrainFailureLeavesMutedAndTerminatesOwner(t *testing.T) {
 		t.Fatalf("termination count = %d, want 1", gate.terminationCount())
 	}
 	want := []string{"fence", "dsp:1", "drain", "terminate"}
+	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
+	}
+}
+
+func TestUnmuteDrainFailureReconfirmsMute(t *testing.T) {
+	log := &privacyEventLog{}
+	controlPath := startRecordingMicControl(t, 1, log, nil)
+	controller := newTestPrivacyController(t, true, controlPath)
+	controller.capture = &testCaptureGate{
+		log:  log,
+		live: true,
+		drain: func() error {
+			return errors.New("capture backlog did not drain")
+		},
+		terminate: func() error {
+			return errors.New("capture owner did not terminate")
+		},
+	}
+
+	if err := controller.Set(context.Background(), false); err == nil {
+		t.Fatal("unmute accepted a failed capture drain")
+	}
+	if !controller.muted || !controller.desired || controller.unknown {
+		t.Fatalf(
+			"final policy muted=%t desired=%t unknown=%t",
+			controller.muted,
+			controller.desired,
+			controller.unknown,
+		)
+	}
+	requestedMuted, _ := controller.requestedPolicy()
+	if !requestedMuted {
+		t.Fatal("failed drain left an unmute policy pending")
+	}
+	want := []string{"drain", "terminate", "fence", "dsp:1"}
 	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("events = %#v, want %#v", got, want)
 	}
@@ -918,6 +1029,187 @@ func TestCancelledUnmuteDoesNotCorruptNextPhysicalToggle(t *testing.T) {
 	}
 }
 
+func TestCanceledUnmuteDoesNotSupersedeSurvivingUnmute(t *testing.T) {
+	log := &privacyEventLog{}
+	controlPath := startRecordingMicControl(t, 1, log, nil)
+	controller := newTestPrivacyController(t, true, controlPath)
+	controller.capture = &testCaptureGate{live: true, log: log}
+
+	survivingVersion := controller.recordRequestedPolicy(
+		context.Background(),
+		false,
+	)
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	canceledVersion := controller.recordRequestedPolicy(canceledCtx, false)
+	cancel()
+
+	if err := controller.applyRequestedPolicy(
+		canceledCtx,
+		false,
+		canceledVersion,
+	); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled unmute error = %v", err)
+	}
+	select {
+	case <-controller.reconcile:
+		t.Fatal("canceled unmute scheduled mute over a surviving unmute")
+	default:
+	}
+	if err := controller.applyRequestedPolicy(
+		context.Background(),
+		false,
+		survivingVersion,
+	); err != nil {
+		t.Fatalf("apply surviving unmute: %v", err)
+	}
+	if controller.muted || controller.desired || controller.unknown {
+		t.Fatalf(
+			"final policy muted=%t desired=%t unknown=%t",
+			controller.muted,
+			controller.desired,
+			controller.unknown,
+		)
+	}
+	want := []string{"drain", "dsp:0", "allow"}
+	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
+	}
+}
+
+func TestCancellationDuringDSPUnmuteRestoresPriorMute(t *testing.T) {
+	log := &privacyEventLog{}
+	ctx, cancel := context.WithCancel(context.Background())
+	controlPath := startRecordingMicControl(
+		t,
+		2,
+		log,
+		func(request string) {
+			if request == "0\n" {
+				cancel()
+			}
+		},
+	)
+	controller := newTestPrivacyController(t, true, controlPath)
+	controller.capture = &testCaptureGate{live: true, log: log}
+
+	if err := controller.Set(ctx, false); !errors.Is(err, context.Canceled) {
+		t.Fatalf("unmute error = %v, want context cancellation", err)
+	}
+	if !controller.muted || !controller.desired || controller.unknown {
+		t.Fatalf(
+			"final policy muted=%t desired=%t unknown=%t",
+			controller.muted,
+			controller.desired,
+			controller.unknown,
+		)
+	}
+	requestedMuted, _ := controller.requestedPolicy()
+	if !requestedMuted {
+		t.Fatal("cancelled unmute replaced the prior mute policy")
+	}
+	if state, err := os.ReadFile(controller.statePath); err != nil {
+		t.Fatal(err)
+	} else if string(state) != microphoneMutedState {
+		t.Fatalf("persisted state = %q, want %q", state, microphoneMutedState)
+	}
+	want := []string{"drain", "dsp:0", "fence", "dsp:1"}
+	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
+	}
+}
+
+func TestCanceledQueuedUnmuteCannotAuthorizeOverCommittedMute(t *testing.T) {
+	log := &privacyEventLog{}
+	unmuteStarted := make(chan struct{})
+	releaseUnmute := make(chan struct{})
+	controlPath := startRecordingMicControl(
+		t,
+		2,
+		log,
+		func(request string) {
+			if request == "0\n" {
+				close(unmuteStarted)
+				<-releaseUnmute
+			}
+		},
+	)
+	controller := newTestPrivacyController(t, true, controlPath)
+	controller.capture = &testCaptureGate{live: true, log: log}
+
+	activeCtx, cancelActive := context.WithCancel(context.Background())
+	activeDone := make(chan error, 1)
+	go func() {
+		activeDone <- controller.Set(activeCtx, false)
+	}()
+	<-unmuteStarted
+
+	queuedCtx, cancelQueued := context.WithCancel(context.Background())
+	queuedDone := make(chan error, 1)
+	go func() {
+		queuedDone <- controller.Set(queuedCtx, false)
+	}()
+	deadline := time.After(time.Second)
+	for {
+		_, revision := controller.requestedPolicy()
+		if revision >= 3 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("queued unmute did not record its policy")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	cancelQueued()
+	cancelActive()
+	close(releaseUnmute)
+
+	if err := <-activeDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("active unmute error = %v, want context cancellation", err)
+	}
+	if err := <-queuedDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("queued unmute error = %v, want context cancellation", err)
+	}
+	if !controller.muted || !controller.desired || controller.unknown {
+		t.Fatalf(
+			"final policy muted=%t desired=%t unknown=%t",
+			controller.muted,
+			controller.desired,
+			controller.unknown,
+		)
+	}
+	requestedMuted, _ := controller.requestedPolicy()
+	if !requestedMuted {
+		t.Fatal("canceled queued unmute replaced the committed mute policy")
+	}
+	want := []string{"drain", "dsp:0", "fence", "dsp:1"}
+	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
+	}
+}
+
+func TestRedundantUnmuteIsIdempotent(t *testing.T) {
+	log := &privacyEventLog{}
+	controller := newTestPrivacyController(t, false, "/unused")
+	controller.capture = &testCaptureGate{live: true, log: log}
+
+	if err := controller.Set(context.Background(), false); err != nil {
+		t.Fatalf("redundant unmute: %v", err)
+	}
+	if controller.muted || controller.desired || controller.unknown {
+		t.Fatalf(
+			"final policy muted=%t desired=%t unknown=%t",
+			controller.muted,
+			controller.desired,
+			controller.unknown,
+		)
+	}
+	if got := log.snapshot(); len(got) != 0 {
+		t.Fatalf("redundant unmute performed capture or DSP I/O: %v", got)
+	}
+}
+
 func TestMuteCannotLandBetweenFinalPolicyCheckAndAllow(t *testing.T) {
 	log := &privacyEventLog{}
 	controlPath := startRecordingMicControl(t, 3, log, nil)
@@ -982,8 +1274,8 @@ func TestNewerValidUnmuteSupersedesOlderMute(t *testing.T) {
 	log := &privacyEventLog{}
 	controlPath := startRecordingMicControl(t, 1, log, nil)
 	controller := newTestPrivacyController(t, false, controlPath)
-	oldVersion := controller.recordRequestedPolicy(true)
-	newVersion := controller.recordRequestedPolicy(false)
+	oldVersion := controller.recordRequestedPolicy(context.Background(), true)
+	newVersion := controller.recordRequestedPolicy(context.Background(), false)
 
 	if err := controller.applyRequestedPolicy(
 		context.Background(),
@@ -1013,8 +1305,8 @@ func TestCancelledUnmuteRestoresSupersededMuteIntent(t *testing.T) {
 	controller := newTestPrivacyController(t, false, controlPath)
 	controller.capture = &testCaptureGate{live: true, log: log}
 
-	muteVersion := controller.recordRequestedPolicy(true)
-	unmuteVersion := controller.recordRequestedPolicy(false)
+	muteVersion := controller.recordRequestedPolicy(context.Background(), true)
+	unmuteVersion := controller.recordRequestedPolicy(context.Background(), false)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := controller.applyRequestedPolicy(
@@ -1068,10 +1360,10 @@ func TestCancelledUnmutesKeepMute(t *testing.T) {
 			controller := newTestPrivacyController(t, false, controlPath)
 			controller.capture = &testCaptureGate{live: true, log: log}
 
-			muteVersion := controller.recordRequestedPolicy(true)
+			muteVersion := controller.recordRequestedPolicy(context.Background(), true)
 			unmuteVersions := []uint64{
-				controller.recordRequestedPolicy(false),
-				controller.recordRequestedPolicy(false),
+				controller.recordRequestedPolicy(context.Background(), false),
+				controller.recordRequestedPolicy(context.Background(), false),
 			}
 			cancelled, cancel := context.WithCancel(context.Background())
 			cancel()
@@ -1126,7 +1418,7 @@ func TestCancelledMuteRemainsFailClosed(t *testing.T) {
 	controlPath := startRecordingMicControl(t, 1, log, nil)
 	controller := newTestPrivacyController(t, false, controlPath)
 	controller.capture = &testCaptureGate{live: true, log: log}
-	version := controller.recordRequestedPolicy(true)
+	version := controller.recordRequestedPolicy(context.Background(), true)
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -1161,8 +1453,8 @@ func TestAppliedOlderRequestCannotMutateHardware(t *testing.T) {
 	log := &privacyEventLog{}
 	controlPath := startRecordingMicControl(t, 1, log, nil)
 	controller := newTestPrivacyController(t, false, controlPath)
-	older := controller.recordRequestedPolicy(true)
-	newer := controller.recordRequestedPolicy(true)
+	older := controller.recordRequestedPolicy(context.Background(), true)
+	newer := controller.recordRequestedPolicy(context.Background(), true)
 
 	if err := controller.applyRequestedPolicy(
 		context.Background(),
@@ -1186,8 +1478,8 @@ func TestAppliedOlderRequestCannotMutateHardware(t *testing.T) {
 
 func TestSupersededUnmuteCannotBecomePolicyAfterNewerCancellation(t *testing.T) {
 	controller := newTestPrivacyController(t, true, "/unused")
-	olderUnmute := controller.recordRequestedPolicy(false)
-	newerUnmute := controller.recordRequestedPolicy(false)
+	olderUnmute := controller.recordRequestedPolicy(context.Background(), false)
+	newerUnmute := controller.recordRequestedPolicy(context.Background(), false)
 
 	if err := controller.applyRequestedPolicy(
 		context.Background(),
@@ -1211,12 +1503,13 @@ func TestSupersededUnmuteCannotBecomePolicyAfterNewerCancellation(t *testing.T) 
 	}
 }
 
-func TestCancelledNewerUnmuteReconcilesSupersededRollback(t *testing.T) {
+func TestCanceledNewerUnmuteDoesNotSupersedeActiveUnmute(t *testing.T) {
 	log := &privacyEventLog{}
 	var newerUnmute uint64
-	controller := newTestPrivacyController(t, false, "/unused")
+	newerCtx, cancelNewer := context.WithCancel(context.Background())
+	controller := newTestPrivacyController(t, true, "/unused")
 	controller.capture = &testCaptureGate{live: true, log: log}
-	olderUnmute := controller.recordRequestedPolicy(false)
+	olderUnmute := controller.recordRequestedPolicy(context.Background(), false)
 
 	// Record the newer request while the older request is inside the DSP
 	// transaction, so the older request must roll hardware back to mute.
@@ -1228,7 +1521,11 @@ func TestCancelledNewerUnmuteReconcilesSupersededRollback(t *testing.T) {
 		func(request string) {
 			if request == "0\n" {
 				once.Do(func() {
-					newerUnmute = controller.recordRequestedPolicy(false)
+					newerUnmute = controller.recordRequestedPolicy(
+						newerCtx,
+						false,
+					)
+					cancelNewer()
 				})
 			}
 		},
@@ -1238,38 +1535,31 @@ func TestCancelledNewerUnmuteReconcilesSupersededRollback(t *testing.T) {
 		context.Background(),
 		false,
 		olderUnmute,
-	); !errors.Is(err, errMicrophoneRequestSuperseded) {
-		t.Fatalf("older unmute error = %v", err)
+	); err != nil {
+		t.Fatalf("older unmute: %v", err)
 	}
-	if !controller.muted || !controller.unknown {
+	if controller.muted || controller.desired || controller.unknown {
 		t.Fatalf(
-			"rollback state muted=%v unknown=%v",
+			"applied state muted=%v desired=%v unknown=%v",
 			controller.muted,
+			controller.desired,
 			controller.unknown,
 		)
 	}
-	cancelled, cancel := context.WithCancel(context.Background())
-	cancel()
 	if err := controller.applyRequestedPolicy(
-		cancelled,
+		newerCtx,
 		false,
 		newerUnmute,
 	); !errors.Is(err, context.Canceled) {
-		t.Fatalf("newer cancelled unmute error = %v", err)
+		t.Fatalf("newer canceled unmute error = %v", err)
 	}
 	select {
 	case <-controller.reconcile:
+		t.Fatal("stable unmuted policy scheduled unnecessary reconciliation")
 	default:
-		t.Fatal("inconsistent rollback did not schedule reconciliation")
 	}
-	if err := controller.Reconcile(context.Background()); err != nil {
-		t.Fatalf("reconcile rollback: %v", err)
-	}
-	if !controller.muted || controller.unknown {
-		t.Fatalf(
-			"reconciled state muted=%v unknown=%v",
-			controller.muted,
-			controller.unknown,
-		)
+	want := []string{"drain", "dsp:0", "allow"}
+	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
 	}
 }

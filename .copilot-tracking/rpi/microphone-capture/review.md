@@ -145,6 +145,14 @@ Two final cancellation combinations were added after review:
 * cancellation after a superseded unmute rollback reconciles any unknown or
   inconsistent hardware state rather than leaving capture fenced indefinitely.
 
+The last protocol review found that an authority could send `STATE UNMUTED`
+followed directly by `ALLOW` without the mandatory drain, and that a rejected
+`ALLOW` response left the authority connection alive. The owner now treats
+drain completion as a one-shot authorization prerequisite. Every ordinary
+unmute requests a new drain while DSP mute is still confirmed. A pre-drain or
+otherwise denied `ALLOW` terminates the authority session and capture
+generation.
+
 The final security review reports no remaining high-confidence vulnerability.
 The final holistic decision is **GO for a RAM-only build and boot**. Physical
 capture, mute/unmute, direct-open exclusivity, and DSP restart acceptance remain

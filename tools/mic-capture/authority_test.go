@@ -6,7 +6,9 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"path/filepath"
 	"testing"
@@ -118,6 +120,40 @@ func TestAuthorityProtocolRejectsMalformedState(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("malformed state did not stop the protocol")
+	}
+	server.Close()
+}
+
+func TestDeniedAllowTerminatesAuthoritySession(t *testing.T) {
+	server, client := net.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events := make(chan authorityEvent)
+	done := make(chan error, 1)
+	go runAuthorityProtocol(ctx, client, events, done)
+	const epoch = "00112233445566778899aabbccddeeff"
+	if _, err := server.Write([]byte("ALLOW " + epoch + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	event := <-events
+	if event.kind != "allow" {
+		t.Fatalf("event kind = %q", event.kind)
+	}
+	event.result <- errors.New("drain was not completed")
+	reply := make([]byte, len("DENIED\n"))
+	if _, err := io.ReadFull(server, reply); err != nil {
+		t.Fatal(err)
+	}
+	if string(reply) != "DENIED\n" {
+		t.Fatalf("reply = %q", reply)
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("denied ALLOW left authority session alive")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("denied ALLOW did not terminate authority")
 	}
 	server.Close()
 }
