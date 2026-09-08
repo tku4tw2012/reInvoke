@@ -20,7 +20,7 @@ const (
 	pollPriority = 0x0002
 	pollError    = 0x0008
 
-	gpioPollTimeoutMilliseconds = 500
+	gpioPollTimeoutMilliseconds = 50
 	mcuDrainInterval            = 5 * time.Millisecond
 	maxMCUPendingReads          = 1024
 	// A wedged MCU never releases its interrupt, so suppression must expire
