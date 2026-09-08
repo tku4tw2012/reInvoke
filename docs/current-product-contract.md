@@ -41,7 +41,7 @@ and initramfs loaded through yellow-mode U-Boot.
 | Persistent storage | NAND is not mounted. Ordinary writable MTD nodes are removed; only the explicit read-only NAND node may exist. NAND installation is a separate, unapproved project. |
 | Bluetooth playback | BlueZ 5.55 and patched BlueALSA 4.0.0 provide classic A2DP Sink playback. The allowlist, bond state, D-Bus state, and runtime configuration are volatile. Audible playback and rotary volume have been demonstrated; the final accepted image still needs its attended acceptance run. |
 | Speaker safety | The owned MCU service initializes amplifier and DAC muted. It opens the physical path only while ALSA is `RUNNING`, the active-PCM lease thread matches ALSA's owner, and that thread resolves to the packaged player. Disconnect, silence, process exit, or shutdown reasserts mute. A 1.5-second holdoff prevents brief transport gaps from flapping the hardware mute gates. |
-| Microphone capture | The raw ALSA path is resolved: stereo 48 kHz `S32_LE`, 256-frame periods, and 16 periods. The speaker target starts no capture consumer. Opening/configuring raw PCM can overwrite an earlier DSP mute route; a future voice service must obey the capture-owner contract below. |
+| Microphone capture | `reinvoke-mic-capture` supervises `arecord` on `hw:1,0` and delivers mono left-channel 48 kHz `S32_LE` 256-frame records to consumers at `/run/reinvoke/mic-capture/audio.sock` (mode `0600`). The donor-designated left channel is the voice-recognition path; right channel is call audio. Delivery is gated on `/run/reinvoke/microphone-state`; zero bytes reach consumers while the file reads `muted`. DSP service restart creates a new stream generation. Accepted on hardware: 14 single-press mute/unmute toggles; zero bytes delivered while muted; audio resumes immediately after unmute; DSP restart recovery confirmed. Beamforming and AEC activation are not proven. |
 | Microphone privacy | Mic-Mute means microphone privacy, not speaker mute. One process-lifetime MCU controller owns physical-button/API changes, RAM state, retry, and the red animation. On a configured capture path, attended speech/tap tests measured 99.975% nonzero unmuted and exactly 0/244,736 nonzero muted. This is a trusted software boundary, not an electrical disconnect or protection from arbitrary root-level raw-device access. |
 | Physical controls | Rotary volume, Mic-Mute short press, Action short press, Bluetooth short/long press, and Mic-Mute long press have owned actions. Bluetooth short toggles the bounded pairing window; long retains the validated reopen fallback. Action toggles Bluetooth play/pause. Mic-Mute long requests the isolated provisioning window when the image is booted in STA/uAP mode. Other decoded keys are published for compatibility. |
 | LEDs | Animation transport, `ledOff`, and the separate front/rear `ledSet` transport are recovered. Privacy red-ring on/off and the top-ring white pairing indication were observed. The new state-driven rear pairing/connection policy is host-tested but has not been physically validated under reInvoke. |
@@ -69,6 +69,10 @@ yellow-mode USB/U-Boot
         |-- private D-Bus
         |-- BlueZ bluetoothd
         |-- patched BlueALSA daemon and player
+        |-- reinvoke-mic-capture
+        |    |-- arecord supervision, left-channel extraction
+        |    |-- state-file gate (polls /run/reinvoke/microphone-state)
+        |    `-- mode-0600 stream socket /run/reinvoke/mic-capture/audio.sock
         `-- owned HCI and bounded pairing helpers
 ```
 
@@ -94,11 +98,14 @@ The microphone path intentionally has one public owner:
    mute, and only then publishes session readiness.
 6. An indeterminate unmute is immediately followed by a mute attempt. Failed
    mute reconciliation is retried independently of the router.
-7. A capture owner must not open or read the raw PCM while confirmed state is
-   muted. If low-latency operation requires keeping PCM configured, it must
-   configure the stream, request mute, wait for confirmation, and discard every
-   sample before that confirmation. ALSA `hw_params` can overwrite an earlier
-   DSP route; direct raw opens are outside the privacy controller.
+7. `reinvoke-mic-capture` is the sole owner of the raw PCM handle. Consumers
+   read from `/run/reinvoke/mic-capture/audio.sock` (mode `0600`); they never
+   open the raw device. The capture owner polls `/run/reinvoke/microphone-state`
+   every 100 ms and discards all periods while the file reads `muted`. DSP
+   restart increments the stream generation; consumers detect this via the
+   generation field in the stream header and reconnect. ALSA `hw_params` can
+   overwrite an earlier DSP route; direct raw opens are outside the privacy
+   controller and must not be used.
 
 The donor DSP service historically registered eight WAMP procedures, including
 `com.harman.dsp.micMute`. The owned DSP service registers seven. Moving raw
@@ -364,21 +371,35 @@ clients, no NAND mount, and full self-cleanup at the 300 second bound. IPv6 is
 not a supported feature; the kernel enables it, so the gate asserts its
 forwarding stays off rather than relying on it being absent.
 
-The NAND phase is not open. A read-only survey of the running unit shows the
-replacement kernel exposes the flash as a single unpartitioned device,
-`mtd1 "mv_nand"`, 256 MiB with a 128 KiB erase block, on a Toshiba part with a
-2048 byte page and 64 byte OOB. No partition map is published by this kernel, so
-there is no offset table to write against, and the layout recorded in the
-acquisition notes describes a 512 MiB device that U-Boot rejects on this unit.
-Yellow mode has only ever been entered while the original flash is intact, so it
-is not yet established as an escape hatch after a failed write. Until the real
-offsets, the boot-slot semantics, and recovery from a bad image are all
-established, this platform stays RAM only.
+The NAND phase is not open. A read-only survey shows a single unpartitioned
+256 MiB device with 2 KiB pages and 128 KiB erase blocks. OOB has three
+different meanings in the current evidence: U-Boot exposes 32 bytes, Linux
+declares 64, and upstream identification of the Toshiba ID prefix documents 128
+physical bytes. Live reads return meaningful content only in the first 32 bytes.
+No partition map is published by this kernel, and the main vendor layout
+describes a 512 MiB device that U-Boot rejects on this unit.
+
+Yellow mode has only ever been entered while the original flash is present.
+It is not established as an escape hatch after a failed write. The two logical
+NAND captures also differ in one early-region erase block for an unknown reason,
+and five pages remain uncorrectable under a controlled counter test. Until the
+physical OOB, the unexplained state change, boot-slot semantics, and recovery
+without NAND are all resolved, this platform stays RAM only. See
+[NAND write evidence and decision gates](nand-write-decision.md).
 
 ## Open defects and unexplained observations
 
 These are recorded so a later session does not rediscover them or misdiagnose a
 recurrence.
+
+**One early NAND erase block changed without an attributed operation.** Two
+complete 2026-09-07 logical reads match each other, but differ from the
+2026-09-02 image in `0x00660000-0x0067ffff`. The block previously held 13,040
+non-`0xFF` bytes and now reads entirely `0xFF`. Both vendor maps place it in an
+early trusted or TrustZone-related region. No preserved console log contains an
+operator-issued NAND write or erase. The earlier block was not independently
+reread, so a 2026-09-02 read artifact remains possible; an autonomous erase is
+also not excluded. The cause and time are unknown.
 
 **Media volume was once observed at zero, cause unknown.** The speaker appeared
 completely dead: the digital path was healthy, ALSA reported `RUNNING` with an

@@ -1,19 +1,33 @@
-# NAND write: the evidence for a go or no-go decision
+---
+title: NAND write evidence and decision gates
+description: Unit-specific evidence, blockers, and proof requirements for any persistent NAND change
+ms.date: 2026-09-07
+ms.topic: concept
+---
 
-This document exists so the owner can decide whether to write this unit's NAND.
-It does not make the decision. It separates what is proven on this unit from
-what is assumed, and it states plainly which unknowns are capable of ending the
-project.
+The goal is for an already Bluetooth-updated Invoke to start reInvoke from wall
+power and reach the owner's local assistant infrastructure without a USB boot
+host. This session handles storage and startup, not microphone or assistant
+implementation.
 
-An earlier draft overstated several claims. Those errors are corrected here and
-called out where they were load-bearing, because a decision this consequential
-should not rest on tidier evidence than actually exists.
+The current approach is a bounded, software-only persistent change. The owner
+accepts DIY risk but does not want disassembly or whole-chip destruction.
+Neither external chip cloning nor a deliberate full erase is a prerequisite.
+No actual write has been approved by the current draft.
+
+Use the
+[active persistence plan](../.copilot-tracking/plans/2026-09-07/nand-persistence-draft-plan.md)
+and its
+[source-backed research](../.copilot-tracking/research/2026-09-07/nand-payload-persistence.md).
+Earlier plans that required chip removal or assumed guaranteed recovery after
+full erasure are superseded.
 
 Every claim is labelled:
 
 * **(V)** verified on this physical unit
 * **(D)** vendor, SoC, or community documentation
 * **(I)** inference, clearly reasoned but not proven
+* **(A)** repeatable computation on an archived artifact, not a new live test
 
 ## Session handoff, 2026-09-07
 
@@ -41,22 +55,63 @@ Open items that are not NAND are listed under open defects in
 `docs/current-product-contract.md`. The notable one is a media volume observed at
 zero with no explanation.
 
+## Read-only findings, 2026-09-07
+
+The probes issued no write ioctl and targeted only the odd-numbered read-only
+MTD minor. They rejected the even writable minor before issuing an MTD ioctl.
+Device-side autonomous writes were not excluded. Probe source, compiler
+identity, output, and hashes are in the external evidence archive. **(V)**
+
+The latest offline work resolves the allocation map:
+
+1. Eight identical CRC-valid version tables in this unit's retained capture
+   place `rootfs` at `0x02920000-0x08320000` (end exclusive), a 90 MiB
+   allocation. Every allocation named in both retained 83 containers agrees
+   with the captured table. **(A, D)**
+2. The earlier putative kernel at `0x00a20000` is `tz_en`. The actual
+   `bootimgs` allocations are 10 MiB each. **(A)**
+3. The changed block at `0x00660000` belongs to `factory_setting`, not a
+   TrustZone or bootloader allocation. Its cause remains unknown; its factory
+   contents remain outside candidate writes. **(A)**
+4. The five ECC-failing pages are in `fw_stat`; the two known bad blocks are
+   in `app`. Neither lies in the rootfs allocation. **(A)**
+
+Earlier read-only observations still matter:
+
+1. Two new complete logical reads match each other but not the 2026-09-02
+   capture. One erase block at `0x00660000` now reads entirely `0xFF`; it
+   previously contained 13,040 bytes of structured content. The time and cause
+   of the transition are unknown. **(V)**
+2. Each of the five historical bad pages still increments the kernel's
+   uncorrectable-ECC counter. Adjacent control pages do not. The returned bytes
+   are repeatable, but they remain uncorrectable. **(V)**
+3. The live Linux OOB interface is internally inconsistent. It declares 64
+   bytes, returns meaningful content only in bytes 0-31, and reports ECC
+   positions 80-127. Current upstream Linux maps this Toshiba ID prefix to a
+   part with 128 physical OOB bytes. **(V, D)**
+4. The MTD `raw` mode is not raw on this driver. Normal and raw reads return the
+   same bytes and both exercise hardware ECC because the driver wires
+   `read_page_raw` to its hardware-ECC reader. **(V, D)**
+
+The complete captures are not raw restore images. That does not rule out a
+targeted logical filesystem write using the controller's normal hardware-ECC
+path. It means target-specific backup, ECC verification and restoration must be
+defined rather than assumed.
+
 ## The short version
 
-Writing NAND is not blocked by the replacement platform. The platform is ready.
-It is blocked by unresolved questions about the hardware, and by the discovery
-that the existing backup is not as trustworthy as its checksum suggests.
+The RAM-only platform is sufficient for continued NAND investigation, while its
+remaining non-NAND acceptance gaps stay recorded in the current product
+contract. No current artifact is a validated persistent firmware.
 
-Two things dominate the risk:
-
-1. **The recovery path is unproven against a damaged flash.** Yellow mode has
-   only ever been entered with the original flash intact.
-2. **The backup contains bytes that were never read correctly.** Five pages
-   produced uncorrectable ECC errors during the capture itself.
+There is a concrete rootfs allocation to investigate now. Remaining work is to
+select a compatible startup change, verify the writer's scope and ECC behavior,
+and explain the residual boot and recovery risk before the first write. A stock
+reflash is not automatically needed to establish any of those.
 
 ## What is genuinely known about the flash
 
-### Geometry
+### Geometry has three different layers
 
 The running kernel reports a single unpartitioned device. **(V)**
 
@@ -68,9 +123,33 @@ NAND device: Manufacturer ID: 0x98, Chip ID: 0xda (Toshiba 256MiB 8-bit),
 
 `0x10000000` is 268,435,456 bytes, so this is a 256 MiB part with a 128 KiB
 erase block. No partition table is published by this kernel, so there is no
-offset map to write against without reconstructing one.
+offset map to write against without reconstructing one. The 64-byte OOB value is
+the Harman driver's MTD declaration, not a verified physical spare-area size.
 
-### The backup is a complete-length capture, not a proven-good one
+The unit reports full ID `98 DA 90 15 76 16`. **(V)** Current upstream
+[Linux NAND identification](https://github.com/torvalds/linux/blob/master/drivers/mtd/nand/raw/nand_ids.c)
+maps prefix `98 DA 90 15 76` to `TC58NVG1S3H`, with 2 KiB pages, 128-byte
+physical OOB, 128 KiB erase blocks, and an 8-bit-per-512-byte ECC requirement.
+**(D)** The package marking has not been inspected, so exact-model identity
+remains documentation-backed rather than physically confirmed.
+
+The Harman/Marvell source configures this ID for 48-bit BCH per 2 KiB. Under BCH
+its controller path uses 32 OOB bytes per single-plane page, even though MTD
+publishes 64. **(D)** Live OOB reads confirm that only bytes 0-31 carry
+controller-returned content. **(V)**
+
+The current model is therefore:
+
+| Layer | OOB size | Evidence |
+|---|---:|---|
+| Toshiba physical spare area | 128 bytes | **(D)** exact ID-prefix match |
+| Harman Linux MTD declaration | 64 bytes | **(V)** |
+| Marvell BCH controller-visible area | 32 bytes | **(V, D)** |
+
+This reconciliation explains the visible numbers. It does not settle how to
+produce or restore all physical OOB bytes on this unit.
+
+### Neither logical capture is a restore image
 
 `hardware/dumps/20260902T215700Z-native-ram/invoke-nand-data.bin` is exactly
 268,435,456 bytes and its recorded SHA-256 was re-verified for this document as
@@ -97,34 +176,100 @@ write back data the device itself could not read.
 **It is an ECC-processed logical read**, not a raw programmer image. It reflects
 what the MTD layer handed back, after correction where correction succeeded.
 
-### The partition map, reconstructed from the dump
+Two complete logical rereads on 2026-09-07 are byte-identical, with SHA-256:
 
-Scanning the dump directly produced this region map. Regions are 128 KiB erase
-blocks; "used" means the leading bytes are not all `0xFF`. **(V)**
+```text
+2fac4159fe23aa25581c29f6c90033af3a1126a02593db0bd47e2c10d2c09f19
+```
 
-| Offset | Size | Content |
-| --- | --- | --- |
-| `0x00000000` | 128 KiB | erased |
-| `0x00020000` | 1.25 MiB | structured header, high entropy |
-| `0x00100000` | — | byte-identical header to `0x00020000` |
-| `0x00a20000` | 8 MiB | container matching the extracted kernel partition |
-| `0x01a20000` | 2.7 MiB | SquashFS, `SDK Tools_v2`, 2017-06-22 |
-| `0x02920000` | ~46.6 MiB | SquashFS, `Barracuda_libre-12.2050.3`, 2021-02-04 |
-| `0x0c000000`, `0x0c020000` | — | bad blocks recorded by the kernel BBT |
-| `0x0ffc0000` | 256 KiB | in use at end of device |
+They differ from the 2026-09-02 image only in
+`0x00660000-0x0067ffff`. The current block is all `0xFF`; the old capture held
+13,040 non-`0xFF` bytes across 14 pages there. **(V)**
 
-Two further 8.38 MiB used regions appear at `0x01020000` and `0x01f20000`,
-exactly `0xF00000` apart, and the two SquashFS images share that same stride.
-The spacing is suggestive of a paired slot layout, but the contents were not
-identified, so this remains **(I)**.
+The cause is unknown. The old block was not independently reread in September,
+so a prior read artifact is not excluded. A real erase or an autonomous
+early-stage action is also not excluded. No preserved console log contains an
+operator-issued erase or write command. **(V, I)**
 
-An earlier draft called the `0x00a20000` offset "proven, not an inference". That
-was wrong, and the reasoning was circular: `installed-kernel-partition.bin` was
-itself carved out of this dump, so matching it back only proves the carve is
-faithful. An exhaustive block-aligned scan does show the 8 MiB file occurs there
-and nowhere else, which is a real boundary result **(V)**, but the label "kernel"
-comes from a vendor layout **(D)**, not from independently identifying executable
-kernel content at that address.
+The decoded captured version table places `0x00660000` inside
+`factory_setting`. **(A)** Earlier labels derived from the two example layouts
+were wrong. This state change does not make the block free space, and the
+rootfs-only candidate excludes the entire factory allocation.
+
+### Controller-visible OOB was captured, but physical OOB was not
+
+Two complete captures of 32 OOB bytes per page match exactly:
+
+```text
+size:    4194304 bytes
+SHA-256: a2df824977591738f4d3ce51bd070308a19a58a3b8827af2751b5069428a9251
+```
+
+They contain the mirrored `Bbt0` and `1tbB` signatures and version byte. **(V)**
+Requests for 64 bytes return the same first 32 followed by 32 zero bytes on
+every page. The live ECC layout names 48 ECC bytes at positions 80-127 and
+free bytes 2-79, which cannot fit the MTD-reported 64 bytes. **(V)**
+
+The controller-visible capture preserves useful metadata. It omits the
+documented physical ECC area and is not a programmer backup. **(I)**
+
+### The five bad pages fail a controlled test
+
+A read-only probe measured `ECCGETSTATS` around one-page reads. Known-good pages
+at `0x0fe40000` and `0x0fe46800` left the failed counter unchanged. Each
+historical suspect page increased it by one:
+
+```text
+0x0fe40800
+0x0fe43000
+0x0fe45000
+0x0fe45800
+0x0fe46000
+```
+
+The test first failed closed against the writable MTD minor, and the adjacent
+good pages prove that a zero delta was observable. **(V)** Normal and MTD raw
+mode return the same data; raw mode still increments the failed counter because
+this driver routes it through hardware ECC. **(V, D)**
+
+### The allocation map decoded from the captured version tables
+
+Marvell's source defines the version-table records and their CRC check. Eight
+copies in the retained capture are byte-identical and pass that check. The
+[offline inspector](../tools/nand-inspect/README.md) reproduces these results.
+All end addresses below are exclusive. **(A, D)**
+
+| Name | Start | End | Allocation |
+|---|---|---|---|
+| `block0` | `0x00000000` | `0x00020000` | 128 KiB |
+| `pre-bootloader` | `0x00020000` | `0x00120000` | 1 MiB |
+| `post-bootloader` | `0x00120000` | `0x00320000` | 2 MiB |
+| `postbootloaderB` | `0x00320000` | `0x00520000` | 2 MiB |
+| `factory_setting` | `0x00520000` | `0x00a20000` | 5 MiB |
+| `tz_en` | `0x00a20000` | `0x00f20000` | 5 MiB |
+| `tz_en-B` | `0x00f20000` | `0x01020000` | 1 MiB |
+| `bootimgs_B` | `0x01020000` | `0x01a20000` | 10 MiB |
+| `bsl` | `0x01a20000` | `0x01f20000` | 5 MiB |
+| `bootimgs` | `0x01f20000` | `0x02920000` | 10 MiB |
+| `rootfs` | `0x02920000` | `0x08320000` | 90 MiB |
+| `app` | `0x08320000` | `0x0fe20000` | 123 MiB |
+| `fw_stat` | `0x0fe20000` | `0x0ff20000` | 1 MiB |
+
+The table leaves the final tail unnamed. The recorded flash BBT copies are in
+that tail and are excluded from candidate writes.
+
+The rootfs superblock reports 48,831,891 used bytes. `bsl` contains the smaller
+auxiliary/recovery SquashFS. These observations and the valid tables replace
+the previous heuristic labels. **(A)**
+
+The old file named `installed-kernel-partition.bin` was an 8 MiB carve starting
+at `0x00a20000`, inside `tz_en`; its name is not a valid identification. Do not
+use that carve as a kernel backup or write target.
+
+Matching allocations do not establish the complete installed slot-selection
+algorithm, cryptographic acceptance, or a writer's erase scope.
+These offsets belong to the captured unit. Another Invoke needs its own
+metadata check rather than inheriting this map by model name.
 
 ### The main vendor layout does not fit this unit
 
@@ -140,7 +285,9 @@ real, the attribution was wrong.
 
 The bundle also ships a different, compact 256 MiB layout in
 `79_IMAGE.examples`. **(D)** So there is not one vendor layout to follow but at
-least two, and which applies to this production unit is unsettled.
+least two. Neither example is now used to select this unit's offsets. The
+source-decoded 83 descriptors explicitly declare 256 MiB and agree with the
+captured version-table allocations instead. **(A)**
 
 ## The unknowns that matter
 
@@ -168,12 +315,38 @@ So the question is not "does ROM own the trigger" but "does the entire path to a
 RAM-loaded U-Boot survive corruption of the region we intend to write, and of any
 region a mistaken write could reach".
 
-**Status: unproven, and it is the deciding question.**
+The exact served `79_IMAGE` is comment-only. The live log shows it executing
+`#skip` and immediately displaying the prompt, so that final script issues no
+NAND command. **(V)** The preceding `bcm_erom.bin.usb`, `09_IMAGE`,
+`sysinit.img`, `bootloader.img`, and `drm_erom.img` are opaque high-entropy
+blobs under the available static tools. They expose no useful NAND strings or
+literal `0x00660000`, but those negative scans do not prove unreachable code or
+NAND independence. **(V, I)**
 
-### 2. The OOB width disagreement between boot stages
+**Status: recovery after corruption remains unproven.** It is a risk to disclose
+for a particular proposed change, not a reason to require whole-chip erasure.
 
-U-Boot reports 32 bytes of OOB per 2 KiB page. Linux on this same unit reports
-64 bytes. **(V)**
+Passive bus tracing can narrow the question only if it observes `CE#`, `WE#`,
+`RE#`, `CLE`, `ALE`, and `R/B#`, begins before power, and then detects a known
+read command after the prompt as a positive control. Even a clean trace proves
+only that no access was observed on those signals.
+
+Two later functional controls answer different questions:
+
+* Reaching the prompt with the original removed and the socket empty proves
+  electrical independence only if a post-prompt identification command fails.
+* Reaching the prompt with a confirmed blank compatible chip proves independence
+  from valid NAND content only if identification succeeds and reviewed boot
+  regions still read blank.
+
+Those physical experiments are outside the owner's current constraints. The
+software-only plan does not require proving electrical independence from the
+entire chip.
+
+### 2. Physical OOB and controller ECC
+
+U-Boot reports 32 bytes of OOB per 2 KiB page. Linux reports 64, while upstream
+identification of the Toshiba part reports 128 physical bytes. **(V, D)**
 
 An earlier draft called this a three-way contradiction by adding an
 `oobsize=128 bytes` string. That was wrong: the 128 figure comes from a
@@ -181,14 +354,21 @@ An earlier draft called this a three-way contradiction by adding an
 SDK build metadata, not a description of this controller's geometry. **(V)** It
 has been removed from the argument.
 
-The remaining 32-versus-64 discrepancy is genuine but should not be overstated
-either. The two numbers may describe different things, a controller-visible
-window versus the physical spare area, and disagreement alone does not prove a
-writer would choose the wrong ECC layout. What it does mean is that the
-authoritative geometry for *writing* has not been established, and ECC syndrome
-placement depends on getting it right.
+Live reads now show that 32 is the meaningful controller-visible window and 64
+is the vendor driver's inconsistent MTD declaration. The driver layout refers
+to bytes through 127, consistent with the documented 128-byte physical spare
+area, but those physical locations have not been read directly. **(V, D, I)**
 
-**Status: unresolved, and it must be settled before any write.**
+The controller can plausibly generate hidden ECC during a normal write, but
+that behavior has not been verified against a raw programmer read or a bootable
+clone. Plausibility is not a write authorization.
+
+The retained source does explicitly route normal page-program transfers through
+the configured BCH engine. This is a credible logical-write path to investigate
+without manufacturing raw ECC bytes. Its behavior on the target still needs a
+bounded installation and verification procedure. **(D)**
+
+**Status: better understood, still unresolved for writing and restoration.**
 
 ### 3. Bad blocks and BBT handling
 
@@ -203,8 +383,12 @@ itself. There is no evidence of a disagreement about physical defects, and the
 claim is withdrawn.
 
 What remains true is that BBT handling by any writer is unspecified, the BBT
-lives in the OOB area the backup does not contain, and the device already has
-real defects plus five pages that cannot be read correctly.
+lives partly in OOB the logical backup does not fully contain, and the device
+already has real defects plus five pages that cannot be read correctly.
+
+The two data-table copies and their controller-visible OOB signatures are now
+captured and unchanged across logical images. They encode the two physical bad
+blocks. **(V)** Factory markers and hidden physical OOB remain uncaptured.
 
 **Status: unknown handling, on a device with known defects.**
 
@@ -215,66 +399,79 @@ is expected and that rootfs verification and slot selection remain unknown.
 **(D)** Nothing here demonstrates that a modified persistent image would satisfy
 whatever the boot chain checks.
 
-Separately, the validated RAM initramfs is about 30.9 MiB against an 8 MiB
-container, so a persistent design would not be the artifact that has been tested.
-It would be a new, unvalidated one.
+Separately, the validated RAM initramfs is about 30.9 MiB. The captured table
+allocates 10 MiB to each boot-image region and 90 MiB to rootfs. A rootfs-only
+design therefore has a plausible size envelope, but it still requires a
+measured build and a startup adapter, not a claim that the existing RAM file
+can be written unchanged. **(A, I)**
+
+### 5. Why the factory-setting block changed
+
+The current logical image has one newly blank erase block at `0x00660000`.
+**(V)** No captured operator command explains it. The transition may have
+occurred in a boot stage, stock runtime, earlier experiment, or the old read
+path. **(I)** Its time and mechanism are unknown.
+
+No candidate installation will intentionally alter this factory allocation.
+The anomaly remains recorded; it does not identify the rootfs as unsafe or
+justify erasing the factory area.
 
 ## What a safe write would require
 
 | Precondition | Status |
 | --- | --- |
-| A 256 MiB layout that applies to this unit | **Partly met.** Content boundaries proven; labels and slot semantics come from conflicting vendor layouts. |
-| Full recovery path survives corruption of the target | **Unproven.** The deciding unknown. |
-| Authoritative OOB/ECC geometry for writing | **Unproven.** 32 vs 64 unresolved. |
-| A restorable backup | **Not met.** Complete-length capture, but no OOB and five uncorrectable pages. |
+| A 256 MiB allocation map for this unit | **Established from archived metadata.** Eight CRC-valid captured tables agree with both 83 packages. Active selection is separate. |
+| Recovery after failure of the proposed change | **Unproven.** Must be evaluated for the selected target, with residual risk stated. |
+| Appropriate ECC write path | **Source-backed candidate.** Normal writes use hardware BCH; raw-mode readback is not raw and verification must check ECC counters. |
+| Target-specific backup and restoration | **To design.** Current captures preserve logical rootfs and visible OOB, not a complete raw chip image. |
+| Preserved factory and status data | **Required boundary.** Exclude the changed factory block, `fw_stat`, and BBT tail. |
 | Modified image satisfies signing and verification | **Unproven.** Signing expected, never tested. |
 | Known slot-selection behaviour | **Unknown.** |
 | Power-loss-safe erase and write sequencing | **Not designed.** No reviewed installer exists. |
 | Readback verification after write | **Not designed.** |
-| Image fits its target region | **Not met.** ~30.9 MiB validated artifact vs 8 MiB container. |
+| Image fits its target region | **To measure.** Rootfs has 90 MiB; a new persistent build has not been validated. |
 
 ## Options, with honest trade-offs
 
-**Do nothing and keep booting from RAM.** Costs nothing, risks nothing. The
-platform already works this way including audio, Bluetooth, physical controls and
-provisioning. The unit needs a host to boot.
+**Do nothing and keep booting from RAM.** This adds no intentional NAND-write
+risk. The platform already works this way including audio, Bluetooth, physical
+controls and provisioning. The unit needs a host to boot.
 
-**Resolve the unknowns first.** Establish that the full recovery path survives a
-damaged target region, settle the write-time OOB geometry, and capture a true raw
-image including OOB. This converts an unbounded risk into a bounded one.
+**Develop a scoped software-only installation.** Use the decoded rootfs
+allocation, qualify its startup and writer behavior, and present the smallest
+change with explicit risk before writing it.
 
 **Write anyway.** This bets a one-of-a-kind unit on assumptions this repository's
 own review declined to make, with a backup that cannot restore OOB and contains
 five pages of unverified data.
 
-**Remove the risk instead of accepting it.** A second unit, or a programmer clip
-that can read and restore OOB directly, changes the calculus entirely, because a
-mistake becomes recoverable rather than final.
+**Remove the risk instead of accepting it.** A second unit, or a removable
+original plus a verified replacement-chip clone, changes the calculus because a
+mistake occurs on replaceable media. An improvised in-circuit clip is not
+automatically safe; it can cause bus contention or back-power the board.
 
-## What would move this to a go
+## What comes before the first write
 
-1. Demonstrate that the complete path to a RAM-loaded U-Boot survives corruption
-   of the intended target region, and of regions a mistaken write could reach.
-2. Establish the authoritative OOB and ECC geometry used when writing.
-3. Capture a true raw image including OOB, and re-read the five uncorrectable
-   pages until they either read consistently or are known-lost.
-4. Establish what the boot chain verifies, and whether a modified image passes.
-5. Determine slot-selection behaviour.
-6. Write and review an installer that targets verified offsets, sequences erase
-   and write to tolerate power loss, handles bad blocks explicitly, and verifies
-   by readback.
+1. Finish choosing the smallest startup change, preferably without changing
+   kernel or early boot records.
+2. Validate its filesystem, runtime paths, vendor-service exclusions and kernel
+   compatibility in a nonpersistent rehearsal where possible.
+3. Specify exact erase-block bounds, ECC behavior, backup and readback checks.
+4. State the expected restoration path and its limits, including the
+   consequence of power loss during this operation.
+5. Have the owner select the current or another unit and approve this specific
+   write. Reserve a hardware window instead of interrupting microphone work.
 
-Only after those does the size and layout question become the main problem.
+A complete destructive-recovery research campaign is not part of these steps.
 
 ## Recommendation
 
-Not yet, and the case for waiting got stronger rather than weaker while this
-document was being checked. The backup is less trustworthy than its checksum
-implied, and three claims that made the picture look tidier turned out to be
-wrong.
+Continue the scoped persistence work. The actual 90 MiB rootfs allocation is
+now established from the capture rather than guessed from example scripts.
+This is meaningful progress toward a no-disassembly installation.
 
-The cost of waiting is that the speaker needs a host to boot. The cost of being
-wrong is the speaker.
+Do not execute the withdrawn full-erase runbook. The next decision is a
+particular startup change with a reviewed footprint and an honest DIY-risk
+statement, not whether every imaginable NAND failure is recoverable.
 
-That trade is the owner's to make, and this document exists so it can be made on
-evidence rather than optimism.
+The owner retains the decision on unit choice and the first actual write.

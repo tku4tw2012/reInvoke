@@ -1,19 +1,23 @@
 ---
-title: U-Boot console access over Micro-USB
-description: Verified non-destructive procedure for reaching an interactive U-Boot prompt on the Harman Kardon Invoke
+title: Historical U-Boot console access over Micro-USB
+description: Previously verified procedure and evidence limits for reaching an interactive U-Boot prompt
 ms.date: 2026-09-05
 ms.topic: how-to
 ---
 
 Status: verified on hardware on 2026-09-02 and reproduced twice in the same
-session. This is the current USB/U-Boot procedure. See the
-[current product and architecture contract](current-product-contract.md) for the
-RAM runtime loaded through it.
+session. This is retained as historical access evidence, not approval to repeat
+the powered procedure while another session uses the unit. The current NAND
+plan is software-only and does not require disassembly or whole-chip erasure.
+Any reboot or NAND operation needs a scheduled owner-approved window. See
+[NAND write evidence and decision gates](nand-write-decision.md) and the
+[current product and architecture contract](current-product-contract.md).
 
-An interactive U-Boot prompt is reachable over the Micro-USB port without
-opening the enclosure and without writing to the device. The boot chain runs
-entirely from RAM. The unit returns to normal Bluetooth-speaker operation after
-a power cycle.
+An interactive U-Boot prompt was reached over the Micro-USB port without opening
+the enclosure and without issuing an intentional NAND write command. The served
+boot chain ran from RAM. Autonomous behavior before the prompt was not proved
+write-free. At the time, a power cycle returned the unit to normal
+Bluetooth-speaker operation.
 
 ## What was reached
 
@@ -23,7 +27,11 @@ arm-marvell-eabi-gcc (Marvell GCC 201106-257.a1ba7f96) 4.4.5
 MV88DE3100|>
 ```
 
-## The procedure
+## The previously verified procedure
+
+> [!CAUTION]
+> Do not interrupt the microphone session's live device. These historical
+> access steps are not NAND-write approval.
 
 The host tool must already be polling before the device attaches. It reacts to a
 USB hotplug event, so a device that is already connected will not be picked up.
@@ -70,7 +78,7 @@ All values below were read with non-destructive commands.
 | DRAM | 512 MiB, bank base `0x00000000`, size `0x20000000` |
 | SPI NOR | M25P128, 16 MiB, 64 sectors of 256 KiB, mapped at `0xF0000000` |
 | NAND | Chip ID `98DA90157616`, 256 MiB |
-| NAND geometry | 128 KiB blocks and 2 KiB pages; U-Boot reports 32 B OOB while Linux reports 64 B |
+| NAND geometry | 128 KiB blocks and 2 KiB pages; U-Boot exposes 32 B OOB, Linux declares 64 B, and the Toshiba ID prefix maps to 128 B physical OOB upstream |
 | NAND randomizer | Not enabled |
 | eMMC / SD | No card responds on `MV_SDIO` |
 | Console | Serial only, no Ethernet detected |
@@ -91,6 +99,14 @@ responds correctly to identification and reads.
 This does not support the earlier hypothesis that NAND degradation explains the
 device's USB behavior.
 
+A later controlled read-only investigation changed the safety interpretation.
+The five historical pages still increment the uncorrectable-ECC counter, and the
+current Linux driver returns only 32 meaningful OOB bytes despite declaring 64.
+Upstream Linux maps the Toshiba ID prefix to a 128-byte physical-OOB part.
+Separately, one early-region erase block differs between the 2026-09-02 and
+2026-09-07 logical images for an unknown reason. See
+[NAND write evidence and decision gates](nand-write-decision.md).
+
 ### Observed content map
 
 Sampled with `nandrd` at 32-byte granularity.
@@ -100,7 +116,7 @@ Sampled with `nandrd` at 32-byte granularity.
 | `0x00000000` | Blank (`0xFF`) |
 | `0x00020000` | Structured 12-byte header, then high-entropy data |
 | `0x00100000` | Byte-identical header to `0x00020000` |
-| `0x00400000` – `0x01000000` | Blank |
+| Selected samples from `0x00400000` – `0x01000000` | Blank at the sampled bytes only |
 | `0x02000000` | High-entropy data |
 | `0x04000000` | High-entropy data |
 | `0x08000000` | Blank |
