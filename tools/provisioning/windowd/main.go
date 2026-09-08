@@ -64,6 +64,12 @@ const (
 
 var interfacePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,15}$`)
 
+// errProvisioningTimeout distinguishes a window that expired without receiving
+// credentials from a window that closed due to a hardware or apply failure.
+var errProvisioningTimeout = errors.New(
+	"provisioning window timed out without credentials",
+)
+
 type openRequest struct {
 	Operation       string `json:"operation"`
 	DurationSeconds *int64 `json:"duration_seconds,omitempty"`
@@ -72,6 +78,15 @@ type openRequest struct {
 type openResponse struct {
 	Accepted       bool  `json:"accepted"`
 	DurationSecond int64 `json:"duration_seconds,omitempty"`
+}
+
+type outcomeMessage struct {
+	Outcome string `json:"outcome"`
+}
+
+func writeOutcome(connection net.Conn, outcome string) {
+	_ = connection.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	_ = json.NewEncoder(connection).Encode(outcomeMessage{Outcome: outcome})
 }
 
 type apCredentials struct {
@@ -331,22 +346,25 @@ func (d *daemon) handleConnection(
 	ctx context.Context,
 	connection *net.UnixConn,
 ) {
-	defer connection.Close()
 	_ = connection.SetReadDeadline(time.Now().Add(3 * time.Second))
 	if err := verifyRootPeer(connection); err != nil {
+		_ = connection.Close()
 		return
 	}
 	duration, err := decodeOpenRequest(connection)
 	if err != nil {
 		writeOpenResponse(connection, openResponse{Accepted: false})
+		_ = connection.Close()
 		return
 	}
 	if ctx.Err() != nil {
 		writeOpenResponse(connection, openResponse{Accepted: false})
+		_ = connection.Close()
 		return
 	}
 	if !d.gate.TryAcquire() {
 		writeOpenResponse(connection, openResponse{Accepted: false})
+		_ = connection.Close()
 		return
 	}
 
@@ -354,20 +372,28 @@ func (d *daemon) handleConnection(
 		Accepted:       true,
 		DurationSecond: int64(duration / time.Second),
 	})
+	// The goroutine owns the connection from this point; it writes the outcome
+	// and closes when the window finishes.
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
 		defer d.gate.Release()
+		defer connection.Close()
 		d.logger.Printf("provisioning window starting")
-		if err := d.manager.Run(ctx, duration); err != nil &&
-			!errors.Is(err, context.Canceled) {
-			// Every error returned by Run is a sanitized constant, so the
-			// detail is safe to log and is the only way to diagnose a
-			// window that fails on hardware.
+		err := d.manager.Run(ctx, duration)
+		switch {
+		case err == nil:
+			d.logger.Printf("provisioning window closed: credentials applied")
+			writeOutcome(connection, "applied")
+		case errors.Is(err, errProvisioningTimeout):
+			d.logger.Printf("provisioning window closed: timed out without credentials")
+			writeOutcome(connection, "timeout")
+		case errors.Is(err, context.Canceled):
+			// Daemon shutting down; no outcome written.
+		default:
 			d.logger.Printf("provisioning window closed after an error: %v", err)
-			return
+			writeOutcome(connection, "failed")
 		}
-		d.logger.Printf("provisioning window closed")
 	}()
 }
 
@@ -675,7 +701,7 @@ func (m *windowManager) monitor(
 		select {
 		case <-ctx.Done():
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return nil
+				return errProvisioningTimeout
 			}
 			return ctx.Err()
 		case <-ticker.C:
@@ -703,7 +729,7 @@ func (m *windowManager) monitor(
 				case <-ctx.Done():
 					stopTimer(grace)
 					if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-						return nil
+						return errProvisioningTimeout
 					}
 					return ctx.Err()
 				}
