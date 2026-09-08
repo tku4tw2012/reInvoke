@@ -289,10 +289,6 @@ start_autonomous_runtime() {
       --bluetooth-state /run/reinvoke/bluetooth-state \
       --provisioning-socket /run/reinvoke/provision-window.sock \
       --dsp-mic-control-socket /run/reinvoke/dsp-mic-control.sock \
-      --capture-privacy-socket /run/reinvoke/mic-privacy.sock \
-      --capture-owner-pid /run/reinvoke/mic-capture.pid \
-      --capture-owner-executable "${runtime_bin}/reinvoke-mic-capture" \
-      --privacy-authority-epoch /run/reinvoke/mic-privacy.epoch \
       --lights-dir "${runtime_root}/share/lights"
     microphone_state_attempt=0
     while ! ${BB} test -s /run/reinvoke/microphone-state &&
@@ -339,7 +335,6 @@ start_autonomous_runtime() {
         -loader "${runtime_loader}" \
         -library-path "${runtime_lib}" \
         -arecord "${runtime_bin}/arecord" \
-        -mcu-executable "${runtime_bin}/reinvoke-mcu-interface" \
         -dsp-executable "${runtime_bin}/reinvoke-dsp-interface"
     else
       log "microphone capture bundle is incomplete"

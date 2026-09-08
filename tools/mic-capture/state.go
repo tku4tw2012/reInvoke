@@ -110,21 +110,3 @@ func readDSPGeneration(
 		socketIno: uint64(status.Ino),
 	}, nil
 }
-
-func readAuthorityEpoch(path string) (string, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	epoch := strings.TrimSpace(string(content))
-	if len(epoch) != 32 {
-		return "", errors.New("privacy authority epoch has invalid length")
-	}
-	for _, value := range epoch {
-		if !((value >= '0' && value <= '9') ||
-			(value >= 'a' && value <= 'f')) {
-			return "", errors.New("privacy authority epoch is invalid")
-		}
-	}
-	return epoch, nil
-}

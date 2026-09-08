@@ -47,26 +47,6 @@ func main() {
 		"/run/reinvoke/dsp-mic-control.sock",
 		"root-only DSP microphone control socket",
 	)
-	capturePrivacySocket := flag.String(
-		"capture-privacy-socket",
-		"",
-		"root-only MCU socket authorizing one microphone capture owner",
-	)
-	captureOwnerPID := flag.String(
-		"capture-owner-pid",
-		"",
-		"root-controlled PID file for the microphone capture owner",
-	)
-	captureOwnerExecutable := flag.String(
-		"capture-owner-executable",
-		"",
-		"expected microphone capture-owner executable path",
-	)
-	privacyAuthorityEpoch := flag.String(
-		"privacy-authority-epoch",
-		"",
-		"mode-0600 RAM state for the process-lifetime privacy authority epoch",
-	)
 	allowUnmute := flag.Bool(
 		"allow-unmute",
 		false,
@@ -162,27 +142,6 @@ func main() {
 		log.Fatal(
 			"pairing-agent-pid and pairing-agent-executable must be supplied together",
 		)
-	}
-	capturePrivacyValues := 0
-	for _, value := range []string{
-		*capturePrivacySocket,
-		*captureOwnerPID,
-		*captureOwnerExecutable,
-		*privacyAuthorityEpoch,
-	} {
-		if value != "" {
-			capturePrivacyValues++
-		}
-	}
-	if capturePrivacyValues != 0 && capturePrivacyValues != 4 {
-		log.Fatal(
-			"capture-privacy-socket, capture-owner-pid, capture-owner-executable, and privacy-authority-epoch must be supplied together",
-		)
-	}
-	if capturePrivacyValues == 4 {
-		if err := validateRootExecutable(*captureOwnerExecutable); err != nil {
-			log.Fatal(err)
-		}
 	}
 	microphoneMuted, err := loadOrInitializeMicrophoneState(*microphoneState)
 	if err != nil {
@@ -303,28 +262,6 @@ func main() {
 	)
 	privacy.lifetime = ctx
 	inputControls = append(inputControls, privacy)
-	capturePrivacyDone := make(chan error, 1)
-	if capturePrivacyValues == 4 {
-		captureServer, err := openCapturePrivacyServer(
-			*capturePrivacySocket,
-			*privacyAuthorityEpoch,
-			*captureOwnerPID,
-			*captureOwnerExecutable,
-			privacy,
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		go func() {
-			err := captureServer.Run(ctx)
-			if err != nil {
-				cancel()
-			}
-			capturePrivacyDone <- err
-		}()
-	} else {
-		capturePrivacyDone <- nil
-	}
 	privacyDone := make(chan struct{})
 	go func() {
 		defer close(privacyDone)
@@ -422,7 +359,6 @@ func main() {
 	)
 	cancel()
 	<-privacyDone
-	capturePrivacyErr := <-capturePrivacyDone
 	heartbeatErr := <-heartbeatDone
 	playbackErr := <-playbackDone
 	if relayDone != nil {
@@ -435,8 +371,7 @@ func main() {
 	muteErr := control.muteAll()
 	if runErr != nil || heartbeatErr != nil ||
 		playbackErr != nil || bluetoothErr != nil ||
-		bluetoothClearErr != nil || capturePrivacyErr != nil ||
-		muteErr != nil {
+		bluetoothClearErr != nil || muteErr != nil {
 		if runErr != nil {
 			fmt.Fprintf(os.Stderr, "mcu-interface: %v\n", runErr)
 		}
@@ -451,9 +386,6 @@ func main() {
 		}
 		if bluetoothClearErr != nil {
 			fmt.Fprintf(os.Stderr, "mcu-interface: %v\n", bluetoothClearErr)
-		}
-		if capturePrivacyErr != nil {
-			fmt.Fprintf(os.Stderr, "mcu-interface: %v\n", capturePrivacyErr)
 		}
 		if muteErr != nil {
 			fmt.Fprintf(os.Stderr, "mcu-interface: shutdown: %v\n", muteErr)

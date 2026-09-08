@@ -223,8 +223,6 @@ main() {
     BB=/bin/busybox
     ready=yes
     $BB test -S /run/reinvoke/mic-capture/audio.sock || ready=no
-    $BB test -S /run/reinvoke/mic-privacy.sock || ready=no
-    $BB test -s /run/reinvoke/mic-privacy.epoch || ready=no
     $BB test -s /run/reinvoke/mic-capture.pid || ready=no
     $BB test -s /run/reinvoke/mcu-interface.pid || ready=no
     $BB test -s /run/reinvoke/dsp-interface.pid || ready=no

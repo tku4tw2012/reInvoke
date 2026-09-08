@@ -33,27 +33,3 @@ func TestMicrophoneStateIsFailClosed(t *testing.T) {
 		t.Fatalf("unmuted state muted=%v err=%v", muted, err)
 	}
 }
-
-func TestAuthorityEpochValidation(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "epoch")
-	valid := "00112233445566778899aabbccddeeff\n"
-	if err := os.WriteFile(path, []byte(valid), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := readAuthorityEpoch(path); err != nil ||
-		got != "00112233445566778899aabbccddeeff" {
-		t.Fatalf("epoch=%q err=%v", got, err)
-	}
-	for _, invalid := range []string{
-		"short\n",
-		"00112233445566778899AABBCCDDEEFF\n",
-		"00112233445566778899aabbccddeefg\n",
-	} {
-		if err := os.WriteFile(path, []byte(invalid), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := readAuthorityEpoch(path); err == nil {
-			t.Fatalf("accepted invalid epoch %q", invalid)
-		}
-	}
-}
