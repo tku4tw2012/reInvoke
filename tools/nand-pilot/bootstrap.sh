@@ -50,7 +50,7 @@ if ${BB} awk '$5 == "/" && $0 ~ / - squashfs / {found=1} END {exit !found}' \
   ${BB} mount -o remount,ro / || pilot_fatal "cannot enforce read-only source"
 fi
 
-PILOT_ADBD_PRODUCT=reInvoke-NAND-pilot-02
+PILOT_ADBD_PRODUCT=reInvoke-NAND-03
 PILOT_ADBD_STARTED_PHASE=early-adb-started
 PILOT_ADBD_DEGRADED_PHASE=early-adb-degraded
 PILOT_ADBD_ENABLE_DEV_FILE=/sys/class/misc/android_adb_enable/dev
