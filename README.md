@@ -1,4 +1,8 @@
-# reInvoke
+---
+title: reInvoke
+description: Native replacement platform for the Harman Kardon Invoke
+ms.date: 2026-09-12
+---
 
 Preservation, hardware-research, and owned-runtime project for the **Harman
 Kardon Invoke** (`HKINVOKE`, FCC ID `APIHKINVOKE`) and its Marvell 88DE3006
@@ -25,9 +29,8 @@ Three systems appear in this repository and must not be conflated:
 1. the **2017 retail Invoke**, preserved as Cortana-era historical evidence;
 2. Harman's **2021 final Bluetooth firmware**, version `12.2134.0`, used as a
    vendor comparison and donor source; and
-3. the **reInvoke target**, an owned RAM-only Linux runtime with local Bluetooth
-   audio, physical controls, process-lifetime microphone privacy, and optional
-   local networking.
+3. the **reInvoke target**, an owned Linux runtime that now starts from NAND,
+   with RAM recovery retained for development and repair.
 
 Read the
 **[current product and architecture contract](docs/current-product-contract.md)**
@@ -36,10 +39,10 @@ before treating older research notes as current behavior. See
 
 ## Current reInvoke architecture
 
-The accepted runtime uses:
+The current native runtime uses:
 
-* `native-ram-init` as owned PID 1, supervising volatile storage, USB, radios,
-  logging, networking, and all product services;
+* a read-only NAND bootstrap and paired BSL launcher that enter the owned
+  runtime without requiring USB diagnostics;
 * `reinvoke-mcu-interface` for MCU input, LEDs, speaker mute/power safety, rotary
   volume, and the public compatibility Mic-Mute API;
 * `reinvoke-dsp-interface` for DSP loading, SPI/GPIO/reset, seven public DSP
@@ -49,10 +52,11 @@ The accepted runtime uses:
 * BlueZ 5.55 and patched BlueALSA 4.0.0 for local A2DP Sink playback; and
 * supervised network and authenticated provisioning daemons.
 
-RAM boot, A2DP playback, rotary volume, microphone mute/capture behavior,
-pairing-window control, SD8887 networking, and `ledOff` have been validated at
-least once. The newest accepted image is still non-persistent and needs the final
-multi-cold-boot and attended playback campaign in [PLAN.md](PLAN.md).
+Candidate 02 has started from NAND after a wall-power cycle and demonstrated
+Bluetooth pairing, audible playback, rotary volume, physical provisioning, and
+local-network MCU/DSP control without host-supplied firmware. Native USB/ADB,
+persistent settings, and native microphone data-path acceptance remain open.
+Start with the [native NAND platform](docs/native-nand-platform.md).
 
 ## Layout
 
@@ -88,7 +92,7 @@ historical evidence and the
 | Tier | Contents | Location |
 |---|---|---|
 | 1 | Docs, metadata, hashes, extracted text layer | **This repository** (~480 KB) |
-| 2 | Firmware bundles (569 MB) | [GitHub Releases](../../releases) + operator-managed cold storage |
+| 2 | Firmware bundles (569 MB) | [GitHub Releases](https://github.com/tku4tw2012/reInvoke/releases) + operator-managed cold storage |
 | 3 | Full working set including Git mirrors (4.9 GB) | Private operator-managed archive |
 
 Every artifact held outside Git is indexed here by SHA-256 in [`metadata/`](metadata),
@@ -101,10 +105,12 @@ incompressible: recompressing them yields ~0%, and Git packing barely helps whil
 making the bytes permanent in history. Meanwhile the *engineering meaning*
 concentrates in a tiny fraction of the bytes.
 
-A worked example — `docs/bundle-contents/invoke-flashing/marvell_flash_tool/gen-cmd.sh`
-is 596 bytes and yields the device's complete NAND partition map, its serial console
-parameters (`ttyS0,115200`), and a recovery boot path. Those partitions sum to exactly
-**512 MB**, establishing the flash size by derivation.
+A worked example,
+`docs/bundle-contents/invoke-flashing/marvell_flash_tool/gen-cmd.sh`, is
+596 bytes and yields a generic 512 MiB vendor partition map, serial-console
+parameters (`ttyS0,115200`), and a recovery boot path. Live identification and
+full logical reads establish that this unit instead has **256 MiB NAND**. The
+generic 512 MiB map does not apply to it.
 
 That single file is worth more to reverse engineering than the 569 MB it shipped
 alongside — which is precisely why the split exists.
@@ -121,11 +127,12 @@ is a patched variant, not a duplicate of the copy inside the flashing bundle.
 
 ## Safety
 
-Acquisition tooling downloads, mirrors, archives, hashes, extracts, indexes, and
-documents evidence. RAM-boot tooling may execute only through the reviewed,
-reversible yellow-mode procedure in [docs/uboot-access.md](docs/uboot-access.md).
-It must not erase or write NAND. Firmware images are retained as research
-evidence, not as a distribution channel.
+Acquisition tooling downloads, mirrors, archives, hashes, extracts, indexes,
+and documents evidence. Native-image builders operate on regular files and do
+not authorize hardware operations. NAND writes require a separately reviewed
+scope and explicit owner approval; image 99 remains excluded. The
+[U-Boot procedure](docs/uboot-access.md) is the recovery boundary, not ordinary
+product startup.
 
 Treat peer addresses, credentials, account names, serial numbers, machine names,
 usernames, and host paths as operator-local data. Documentation examples use
@@ -181,7 +188,8 @@ here. They would apply to anyone who chooses to distribute a built image.
 
 ### Firmware mirror attribution
 
-The Invoke firmware published under [Releases](../../releases) was obtained from the
+The Invoke firmware published under
+[Releases](https://github.com/tku4tw2012/reInvoke/releases) was obtained from the
 **[coggy9/HKHacking](https://github.com/coggy9/HKHacking)** project, which originally
 made these bundles available as GitHub release assets. Full credit for locating and
 publishing that material belongs to that project and its contributors.

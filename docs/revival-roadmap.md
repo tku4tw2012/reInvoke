@@ -1,7 +1,7 @@
 ---
 title: reInvoke revival roadmap
 description: Staged roadmap and completed milestones for closed-unit reInvoke software replacement
-ms.date: 2026-09-05
+ms.date: 2026-09-12
 ms.topic: overview
 ---
 
@@ -42,7 +42,7 @@ into a local Bluetooth speaker. See
 `docs/bundle-contents/invoke-ota2/ota2-analysis.md`.
 
 That donor finding was a comparison point. The current target is the owned
-RAM-only reInvoke stack, not Harman's 2021 firmware.
+NAND-started reInvoke stack, with RAM boot retained for recovery.
 
 ### 3. Safe observation on one physical sample — complete
 
@@ -56,8 +56,9 @@ procedure.
 The sample carries `Barracuda_libre-12.2050.3`, not the 2021 final image.
 Yellow-mode USB and owned RAM boot are resolved and no longer a project gate.
 
-Do not flash until a recovery and image-integrity procedure is independently
-established.
+This warning was satisfied before the first approved writes: bounded image
+checks and post-write recovery were demonstrated. Any future flash still needs
+its own explicit owner-approved scope.
 
 ### 4. Software interface validation — accepted boundary
 
@@ -80,12 +81,13 @@ BG2CDP platform.
 - **Bypass electronics:** optional future hardware project if the existing
   audio/control path fails.
 
-### 6. Minimal revival demonstrator — implemented, final campaign pending
+### 6. Minimal revival demonstrator — native milestone complete
 
 The owned PID 1, Bluetooth playback, volume, speaker safety, microphone privacy,
 LED transport, networking, provisioning boundary, and safe shutdown are
-implemented. The current image still needs the remaining cold boots and one
-attended playback-continuity run in [PLAN.md](../PLAN.md).
+implemented. Candidate 02 starts from NAND and has demonstrated audible
+Bluetooth playback, rotary volume, physical provisioning, and local-network
+MCU/DSP control. Native administration and persistent settings remain open.
 
 ### 7. Hardening and preservation release
 
