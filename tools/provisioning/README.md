@@ -1,128 +1,122 @@
 ---
-title: Secure native provisioning service
-description: Ephemeral authenticated Wi-Fi credential delivery with volatile state on RAM and NAND boots
-ms.date: 2026-09-03
-ms.topic: concept
+title: Volatile Wi-Fi provisioning tools
+description: Component builds, authenticated credential protocol and NetworkManager client
+ms.date: 2026-09-12
+ms.topic: how-to
 ---
 
-`reinvoke-provisiond` is a RAM-only HTTPS control plane for delivering one Wi-Fi
-configuration to a separate network adapter. It replaces the retained
-Chromecast setup page, which posts plaintext credentials over unauthenticated
-HTTP.
+The owned provisioning stack replaces donor plaintext HTTP setup. Credentials
+remain in RAM regardless of boot medium; candidate-specific evidence and the
+physical AP flow are in [native provisioning](../../docs/native-provisioning.md).
 
-`reinvoke-wifi-applyd` is the separate privileged adapter. It accepts only a
-root peer on a root-owned Unix socket, derives the WPA2 PSK in memory, writes a
-mode-0600 configuration containing no plaintext passphrase to ramfs/tmpfs, and
-starts fixed root-controlled `wpa_supplicant` and `wpa_cli` paths without a
-shell.
+## Components and build
 
-RAM-only here describes configuration lifetime, not the boot medium. Native
-candidate 02 completed the physical AP-to-station flow; keys, credentials,
-and bonds still disappear on power loss. See the
-[native provisioning evidence](../../docs/native-provisioning.md).
+| Component            | Responsibility                                           |
+| -------------------- | -------------------------------------------------------- |
+| `provisiond`         | TLS, bearer authorization, bounded JSON validation       |
+| `wifi-applyd`        | Root-only credential application and station association |
+| `networkd`           | DHCP, routes, resolver state and cleanup                 |
+| `windowd`            | Physical-button AP window and child lifecycle            |
+| `configure-wifi.mjs` | NetworkManager client with same-socket TLS pinning       |
 
-Opening a later physical provisioning window cleanly terminates an existing
-root-owned supplicant before applying the replacement network. The total
-replacement, launch, and association path is bounded by `-connect-timeout`.
-
-## Security boundary
-
-The daemon:
-
-* Binds only to an explicit IP address
-* Generates an in-memory ECDSA certificate and requires TLS 1.3
-* Generates a 256-bit bearer token from the kernel random source
-* Writes the URL, token, certificate fingerprint, and expiry to a root-only
-  descriptor in `/run`
-* Expires after five minutes by default and refuses lifetimes over 15 minutes
-* Accepts one successful WPA2-PSK request with a 4 KiB body limit
-* Never logs an SSID or passphrase
-* Sends credentials to a root-owned Unix socket instead of writing them to disk
-* Shuts down after the adapter acknowledges the request
-* Verifies root ownership of the adapter directory, socket node, and connected
-  peer through `SO_PEERCRED`
-* Rejects symlinked or group/world-writable adapter paths
-
-The descriptor is intended to cross an already trusted transport such as root
-ADB over USB. A product onboarding flow can later replace that bootstrap with
-Bluetooth LE or DPP without changing the credential API.
-
-The service lifetime uses a monotonic timer. Before network setup the Invoke's
-wall clock may still be 1970; in that case the descriptor reports only
-`expires_after_seconds`, and the ephemeral certificate uses a broad validity
-range so a client with a correct clock can verify its pinned fingerprint. When
-the device clock is sane, the descriptor also includes `expires_utc`.
-
-## Build
-
-The builder uses the locally extracted, repository-signed Ubuntu Go 1.18
-toolchain and no third-party Go modules. Module proxy and checksum database
-access are disabled during the build:
+From the repository root, build each required component using the retained
+Ubuntu Go 1.18 toolchain:
 
 ```bash
-tools/provisioning/build.sh \
-  --output ../reinvoke-archive/build/artifacts/reinvoke-provisiond
-
-tools/provisioning/build.sh \
-  --component wifi-applyd \
-  --output ../reinvoke-archive/build/artifacts/reinvoke-wifi-applyd
-
-tools/provisioning/build.sh \
-  --component networkd \
-  --output ../reinvoke-archive/build/artifacts/reinvoke-networkd
+tools/provisioning/build.sh --component provisiond \
+  --archive-root "${REINVOKE_ARCHIVE}" --output "<artifact-dir>/reinvoke-provisiond"
 ```
 
-## Run
+`--component` defaults to `provisiond`; alternatives are `wifi-applyd`,
+`networkd` and `windowd`. Use distinct fresh outputs; windowd is packaged as
+`reinvoke-provision-windowd`. No third-party Go modules are used; proxy and
+checksum database access are disabled. The public clone lacks the toolchain
+and board-runtime inputs.
 
-Create a root-only runtime directory and start the network adapter's Unix
-socket first. The daemon itself must run as root. Then run:
+## HTTPS contract
+
+`windowd` normally starts the adapter and HTTPS service. For isolated target
+integration, start the adapter on a root-owned socket first, then:
 
 ```bash
-reinvoke-provisiond \
-  -listen <ap-address>:8443 \
+reinvoke-provisiond -listen "<ap-address>:8443" \
   -apply-socket /run/reinvoke/wifi-apply.sock \
-  -descriptor /run/reinvoke/provisioning.json \
-  -apply-timeout 25s \
-  -lifetime 5m
+  -descriptor /run/reinvoke/provisioning.json -apply-timeout 25s -lifetime 5m
 ```
 
-On RAM recovery, read `/run/reinvoke/provisioning.json` over the reviewed USB
-channel. Native candidate 02 has no USB/ADB; its attended client uses the
-AP descriptor flow recorded in the provisioning guide. Clients must pin the listed
-certificate SHA-256 fingerprint and send its token as:
+The root daemon binds an explicit IP, uses TLS 1.3 with an in-memory ECDSA
+certificate, generates a 256-bit bearer token, and writes a root-only descriptor
+with URL, token, SHA-256 fingerprint and expiry. Lifetime is monotonic,
+default 5 minutes, allowed 30 seconds-15 minutes. Before a sane wall clock,
+the descriptor has only `expires_after_seconds`; otherwise it also includes
+`expires_utc`. The certificate has broad validity for early-boot clocks.
 
-```text
-Authorization: Bearer <token>
-```
-
-The credential request is:
+Pin the descriptor fingerprint and use `Authorization: Bearer <token>`.
+`POST /v1/wifi` requires `Content-Type: application/json`, a body no larger
+than 4 KiB, no unknown fields or trailing JSON:
 
 ```json
-{
-  "ssid": "example-network",
-  "passphrase": "example-passphrase",
-  "security": "wpa2-psk",
-  "hidden": false
-}
+{"ssid":"<station-ssid>","passphrase":"<station-passphrase>","security":"wpa2-psk","hidden":false}
 ```
 
-The daemon does not configure `p2p0`, dnsmasq, hostapd, or
-`wpa_supplicant`. Those hardware-specific adapters remain separate so this
-internet-facing parser never receives shell or raw driver privileges.
+SSID must be 1-32 valid UTF-8 bytes; passphrase must be 8-63 bytes.
+Both reject NUL, CR and LF. Security must be exactly `wpa2-psk`.
 
-The parser's `-apply-timeout` must be at least five seconds shorter than its
-window and longer than the adapter's `-connect-timeout`. Defaults are 25 and
-20 seconds respectively.
+One valid request gets HTTP 202 `{"accepted":true}` before asynchronous radio
+changes. This is request acceptance, not association. Adapter failure leaves
+the window retryable; adapter success shuts the daemon down.
+Authenticated `GET /v1/status` returns `ready` and expiry fields.
+Rejections include 401 authorization, 400 input, 409 in-progress/completed,
+405 method and 415 content type.
 
-The adapter acknowledges success at `wpa_state=COMPLETED`.
-`reinvoke-networkd` owns the separate DHCP and resolver boundary so the
-credential adapter does not gain route or DNS policy. It monitors the
-root-controlled supplicant socket, supervises BusyBox `udhcpc`, validates lease
-values before invoking fixed commands without a shell, and atomically points
-`/etc/resolv.conf` at RAM-only resolver state.
+`-apply-timeout` must exceed adapter `-connect-timeout` (default 20s) and be
+at least five seconds shorter than the window. Adapter acknowledgment is
+`wpa_state=COMPLETED`, not DHCP completion.
 
-The service removes its IPv4 address, default route, resolver link, and lease
-state on disconnect or shutdown. It reacquires after association, credential
-replacement, DHCP failure, or daemon restart. A full-lifetime lock rejects a
-second supervisor, and stale process records never authorize signaling an
-unrelated PID on kernels without process file descriptors.
+## Application and trust boundary
+
+The daemon checks adapter directory/socket ownership, rejects symlinked or
+group/world-writable paths and verifies the connected root peer with
+`SO_PEERCRED`. It sends credentials without logging them. `wifi-applyd`
+derives the WPA2 PSK in memory, writes mode-`0600` configuration to ramfs/tmpfs
+without plaintext passphrase, and starts fixed root-controlled supplicant/CLI
+paths without a shell. The derived PSK is still a credential.
+
+A later window replaces the existing root-owned supplicant within the same
+bounded connection timeout. `networkd` supervises `udhcpc`, validates leases,
+updates RAM resolver state atomically, and removes addresses/routes/resolver
+and lease state on disconnect. It reacquires after replacement, failure or
+restart. A lifetime lock rejects duplicates; stale records cannot authorize
+signaling unrelated PIDs. These components run as root, not privilege-separated
+from one another.
+
+Descriptor bootstrap uses root USB ADB in RAM recovery or HTTP on the
+physically opened credential-controlled native AP. The TLS pin derives trust
+from that bootstrap, not a public CA. BLE/DPP are not implemented.
+
+## NetworkManager client
+
+Prepare private AP and destination profiles; credentials are read into memory,
+not passed as CLI arguments:
+
+```bash
+node tools/provisioning/configure-wifi.mjs \
+  --ap-profile "<provisioning-ap-profile>" --target-profile "<station-profile>" \
+  --descriptor-url "http://<ap-address>:8080/provisioning.json" --timeout-seconds 30
+```
+
+> [!WARNING]
+> This switches the host's Wi-Fi and submits credentials. Use the intended
+> physical AP; keep descriptors, tokens and filled requests private.
+
+The client verifies the fingerprint on the same TLS socket as the POST and
+restores the prior host profile in cleanup. `--nmcli` overrides the executable;
+timeout accepts 1-300 seconds, default 30. Accepted credentials and restored
+host Wi-Fi do not establish device DHCP or SSH login.
+
+## Offline tests
+
+```bash
+tools/provisioning/test.sh --archive-root "${REINVOKE_ARCHIVE}"
+node --test tools/provisioning/configure-wifi.test.mjs
+```

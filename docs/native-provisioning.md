@@ -1,285 +1,162 @@
 ---
 title: Native Wi-Fi provisioning boundary
-description: Authenticated volatile onboarding architecture for the native reInvoke platform
+description: Volatile onboarding, exact parser contract, bootstrap trust and process ownership
 ms.date: 2026-09-12
 ms.topic: concept
 ---
 
-The replacement onboarding path separates untrusted network parsing from radio
-and credential application. The HTTPS parser is implemented and verified on the
-physical Invoke. SD8887 access-point mode, station credential application, and
-the owned DHCP/resolver lifecycle are also verified.
-
-Candidate 02 now connects these components in a native NAND boot. A Mic-Mute
-long press opened the bounded AP, the client fetched the descriptor over the
-AP, pinned its certificate fingerprint, authenticated with its bearer token,
-and submitted the client's active local Wi-Fi profile. The client restored its
-own network and reached the Invoke's MCU/DSP services there. Credentials remain
-RAM-only, so this is a working attended development path rather than persistent
-consumer onboarding. See the
-[current product and architecture contract](current-product-contract.md).
-
-## Historical stock boundary
-
-Held `Barracuda_libre-12.2050.3` artifacts establish these reusable hardware
-facts:
-
-* The Marvell Wi-Fi library names station interface `wlan0` and AP interface
-  `p2p0`
-* Its hostapd template supports SSID visibility and WPA passphrases
-* Its control vocabulary includes `UAP_BSS_CTRL`
-* The dnsmasq configuration binds `p2p0` and leases
-  `192.168.43.100` through `192.168.43.155`
-* A long microphone-mute press maps to `wifisetup-enter`
-* `audio-ui` publishes `com.harman.networkConfiguration`
-* `connection-manager` and its Libre Wi-Fi plugin consume that boundary
-
-The retained Chromium `setup.html` is not evidence of an active Invoke server.
-No held executable owns its `/setup/*` endpoint strings. The page is also
-unsuitable for reuse because it posts the network passphrase over
-unauthenticated HTTP and contains `TODO: Encrypt password`.
+Provisioning is a physically requested, bounded AP-to-station handoff.
+Candidates 02 and 03 completed attended onboarding; candidate 03 joined the
+local network and answered ping. Its later SSH negotiation did not produce
+a login. The [native ledger](native-nand-platform.md#current-result) records
+those results; detailed isolation/failure/restart checks below remain RAM-scoped.
+Credentials disappear after power loss.
 
 ## Current replacement components
 
-The onboarding design has four independent components:
+```mermaid
+sequenceDiagram
+    actor User as Operator client
+    participant Setup as Setup services
+    participant Parser as TLS parser
+    participant Station as Station services
+    User->>Setup: Mic-Mute long press
+    Note over Setup: MCU requests setup window
+    Setup->>Parser: Start ephemeral service
+    Setup-->>User: WPA2 AP available
+    User->>Setup: GET /provisioning.json
+    Setup-->>User: Fingerprint and token
+    User->>Parser: Open and pin TLS socket
+    User->>Parser: POST /v1/wifi on that socket
+    Parser-->>User: HTTP 202, flushed before radio change
+    Parser->>Station: Validated Unix-socket request
+    Station-->>Parser: Association acknowledged
+    Note over Station: DHCP completes separately
+    Setup->>Setup: Close bounded setup window
+    User->>User: Restore Wi-Fi and check reachability
+```
 
-1. A Mic-Mute long press opens a bounded provisioning window.
-2. A radio adapter creates an isolated WPA2 AP on `p2p0`, without forwarding to
-   another interface.
-3. `reinvoke-provisiond` accepts one authenticated TLS request.
-4. A privileged station adapter receives the request over a root-owned Unix
-   socket and applies it without shell interpolation.
+The diagram combines implemented responsibilities with the externally observed
+native handoff. The MCU requests setup; `reinvoke-provision-windowd`
+supervises hostapd and BusyBox DHCP/HTTP on `p2p0`. The setup AP supplies no
+gateway, DNS service or forwarding. Defaults are HTTP 8080 for the descriptor
+and HTTPS 8443 for the parser.
 
-The current native product writes station configuration only to RAM. Persistent
-credentials still need a separately reviewed storage, recovery, update, and
-secret-management design.
+`reinvoke-provisiond` parses requests; `reinvoke-wifi-applyd` owns credential
+application and association; `reinvoke-networkd` owns DHCP, routes and resolver
+state. Parser and adapter both run as UID 0. Separation limits code
+responsibilities, not privileges.
+
+Use the [tool guide](../tools/provisioning/README.md) for invocation.
+Sources: [window owner](../tools/provisioning/windowd/main.go),
+[parser](../tools/provisioning/main.go),
+[adapter](../tools/provisioning/applyd/main.go),
+[networkd](../tools/provisioning/networkd/main.go) and
+[client](../tools/provisioning/configure-wifi.mjs).
 
 ## Authenticated parser
 
-`tools/provisioning/` contains a dependency-free Go service with these
-properties:
+Implementation and offline/RAM-tested contract:
 
-* An explicit private AP bind address, shown publicly as `<ap-address>:8443`
-* An in-memory ECDSA P-256 certificate with TLS 1.3 minimum
-* A random 256-bit bearer token
-* A root-only descriptor containing the URL, token, certificate fingerprint,
-  and relative expiry
-* A monotonic five-minute default lifetime and 15-minute hard maximum
-* A 4 KiB JSON body limit and unknown-field rejection
-* WPA2-PSK validation for a 1-32 byte UTF-8 SSID and 8-63 byte passphrase
-* No credential logging or credential file
-* One successful request per process
-* A bounded Unix-socket handoff with an explicit adapter acknowledgement
-* Root ownership checks on the socket directory, socket node, and connected
-  peer through `SO_PEERCRED`
+| Property       | Contract                                                                              |
+| -------------- | ------------------------------------------------------------------------------------- |
+| Bind           | Explicit AP address, `<ap-address>:8443`                                              |
+| TLS            | In-memory ECDSA P-256 certificate; TLS 1.3 minimum                                    |
+| Authentication | Random 256-bit token in `Authorization: Bearer <token>`                               |
+| Lifetime       | Monotonic five-minute default, 15-minute maximum                                      |
+| Input          | 4 KiB JSON limit; unknown fields rejected                                             |
+| Handoff        | Bounded root-owned Unix socket, `SO_PEERCRED` validation and explicit acknowledgement |
+| Completion     | One successful request per process; no parser credential logging or credential file   |
 
-The separate `reinvoke-wifi-applyd` adapter:
+Authenticated endpoints are `GET /v1/status` and `POST /v1/wifi`.
+POST requires `Content-Type: application/json` and exactly one JSON object.
+Status returns `ready`, `expires_after_seconds` and optional `expires_utc`.
+The Wi-Fi request fields are:
 
-* Requires root and a root-only ramfs/tmpfs runtime directory
-* Accepts only a UID-0 Unix-socket peer
-* Revalidates request bounds and fields
-* Derives the 256-bit WPA2 PSK with PBKDF2-HMAC-SHA1 and 4,096 iterations
-* Writes SSID and derived PSK as hexadecimal values, never the passphrase
-* Invokes fixed root-controlled `wpa_supplicant` and `wpa_cli` binaries without
-  a shell
-* Acknowledges success only after `wpa_state=COMPLETED`
-* Terminates the supplicant and removes the RAM config after a failed attempt
+| Field        | Value                                     |
+| ------------ | ----------------------------------------- |
+| `ssid`       | 1-32 bytes, valid UTF-8; no NUL, CR or LF |
+| `passphrase` | 8-63 bytes; no NUL, CR or LF              |
+| `security`   | `wpa2-psk`                                |
+| `hidden`     | Optional boolean                          |
 
-The TLS key never leaves process memory. The descriptor is removed when the
-request succeeds, the timer expires, or the process receives a termination
-signal.
+The mode-0600 descriptor contains `url`, `token`, `certificate_sha256`,
+`expires_after_seconds` and optional `expires_utc`.
+It is removed on success, expiry or termination. The TLS private key remains
+in process memory. With unset wall time, certificate validity spans 2000-2100
+and lifetime stays monotonic; a sane clock adds `expires_utc`.
 
-Before network setup, the Invoke wall clock may still be 1970. The process
-lifetime therefore uses a monotonic clock. When wall time is unset, the
-certificate uses a broad 2000-2100 validity window and clients authenticate it
-by the descriptor's SHA-256 fingerprint. A sane clock adds `expires_utc` to the
-descriptor.
+The adapter independently validates framing, fields, UID-0 peer and root-only
+ramfs/tmpfs runtime directory. It derives a 256-bit WPA2 PSK using
+PBKDF2-HMAC-SHA1 with 4,096 iterations and writes hexadecimal SSID/derived PSK
+to mode-0600 RAM configuration, never the passphrase.
+It invokes fixed root-controlled `wpa_supplicant`/`wpa_cli` without a shell.
+
+The parser flushes HTTP 202 with `{"accepted":true}` before asynchronous
+application: station association can change the shared radio channel and
+destroy the setup connection. The adapter's later acknowledgement requires
+`wpa_state=COMPLETED`; DHCP completes separately.
+An apply failure stops the supplicant, removes derived configuration and
+leaves the parser available for retry. It cannot replace the already-sent 202
+with an error. HTTP 202 means request acceptance, not association, DNS,
+reachability or SSH login.
 
 ## Bootstrap transport
 
-The original trusted development bootstrap was yellow-mode USB:
+The development bootstrap read `/run/reinvoke/provisioning.json` through root
+ADB in a yellow-mode RAM boot. Native candidates instead serve that descriptor
+through temporary HTTP on the WPA2 setup AP. Root-only file permissions do
+not authenticate the HTTP resource.
 
-1. Manually start the isolated AP and provisioning daemon during an attended
-   bounded window.
-2. Read `/run/reinvoke/provisioning.json` through root ADB.
-3. Join the temporary WPA2 AP.
-4. Pin the descriptor's certificate fingerprint.
-5. Send its bearer token and one credential request.
+Trust depends on an attended physical window and controlled setup-AP access.
+A fingerprint retrieved over that network is not independent out-of-band
+device identity. The client verifies the peer certificate on the actual TLS
+socket before sending token or credentials; mismatch aborts delivery.
+Explicit pinning replaces CA verification of the ephemeral self-signed
+certificate.
 
-This is sufficient for development and recovery. It is not the finished
-physical-button product flow. Candidate 02 also serves the root-only descriptor
-through a temporary HTTP bootstrap endpoint on the isolated WPA2 AP. The client
-still verifies the TLS endpoint's certificate fingerprint before sending the
-bearer token and credentials. No network identifier or secret is retained in
-this documentation.
+> [!CAUTION]
+> Anyone able to retrieve the setup descriptor obtains the provisioning token
+> and certificate pin. Keep the setup window controlled and never log
+> descriptors, AP credentials or station profiles.
 
-## Historical artifact identity and physical validation
+Restoring the client network does not persist device credentials.
+Persistent onboarding needs a separate power-loss, update, recovery and
+secret-storage design.
 
-The hashes in this section identify the dated 2026-09-03 network milestone.
-They are not aliases for the newest accepted image.
+## Network lifecycle
 
-The hardened static ARMv7 binary is 4,784,128 bytes with SHA-256
-`5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07`.
-Two clean builds were byte-identical. It keeps status requests responsive
-during a network apply and interrupts post-connect Unix socket I/O when the
-request context is canceled.
+Networkd uses fixed root-controlled executables. PID 1 bounds its logs and
+restarts a failed supervisor after five seconds;
+`reinvoke.networkd=off` disables it for manual recovery.
+The service validates DHCP address/mask, route, DNS and lifetime values before
+publishing atomic RAM state.
 
-The separate static ARMv7 Wi-Fi adapter has SHA-256
-`6697df000d130a6461d1e3f57b6ebe8b1ad1742984a94250bc1e243dca097610`.
-Two clean adapter builds were also byte-identical.
+Shutdown removes address, route, resolver link, lease and DHCP child.
+Disconnect/reconnect and supervisor restart remove/reacquire that state.
+Credential replacement swaps supplicant/DHCP children while keeping the
+network supervisor. The source names `mlan0` for the observed RAM station
+interface; older vendor `wlan0` examples are not the current interface contract.
 
-On Linux `3.8.13-reinvoke-audio`, a loopback-only test verified:
+## Validation record
 
-* ARM binary execution on the physical SoC
-* A mode-0600 descriptor under a mode-0700 runtime directory
-* Certificate fingerprint equality from the host
-* HTTP 401 without the bearer token
-* HTTP 200 for authenticated status
-* HTTP 502 when the privileged adapter socket was absent
-* No fake SSID or passphrase in the service log
-* Clean monotonic expiry with a 1970 wall clock
-* Descriptor deletion and process exit after 30 seconds
-* Refusal to run as an unprivileged host user
-* Root ownership checks before any Unix-socket credential write
-* Descriptor deletion after a live termination signal
-* A mode-0600 root-owned apply socket on the physical Invoke
-* No station config before a credential request
-* Apply-socket removal on a live termination signal
-* End-to-end root peer checks and strict JSON framing between both daemons
-* Derived-config removal and HTTP 502 when a fake supplicant failed
+Historical RAM evidence, not native shell inspection:
 
-Unit and race tests also verify successful delivery to a trusted same-UID Unix
-peer, rejection when the adapter directory is group/world writable, the
-standard IEEE WPA2 PSK vector, and replacement of an existing 0770
-`wpa_supplicant` control socket for a second provisioning window.
+| Test group             | Result                                                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Parser and handoff     | 401 without token and authenticated status 200; no test credentials in logs                                    |
+| Lifetime and cleanup   | Monotonic expiry with a 1970 clock; descriptor/socket removal on termination                                   |
+| Input and ownership    | Strict JSON, root peer/path checks, WPA2 derivation vector and writable-directory rejection                    |
+| Isolated AP            | WPA2 setup with no gateway/DNS, IPv4/IPv6 forwarding off; bounded-window cleanup and WAMP isolation            |
+| Real station lifecycle | Association, DHCP acquisition/renewal, route/DNS reachability, disconnect/reconnect and credential replacement |
+| Process ownership      | Duplicate supervisor rejected; stale reused-PID records did not signal unrelated processes                     |
 
-The adapter-rejection test used only fake credentials and did not touch a radio
-or persistent storage.
+Earlier synchronous-parser trials returned 502 on adapter failure. The current
+response-before-apply contract instead permits a retry after asynchronous
+failure. The first manual AP trial used dnsmasq and fake station executables;
+its 202 proved transport, not real association. Later real-station and
+packaged-window trials closed those narrower gaps.
+[P1-046](../metadata/P1-046.json) records RAM lifecycle build provenance.
 
-## Historical attended AP validation
-
-The AP candidate used for that milestone was staged outside the normal boot
-directory:
-
-| Artifact | SHA-256 |
-|----------|---------|
-| `3.8.13-reinvoke-audio-sd8887` kernel | `4dbfc484c3ff99325b293aa02810d9e97396252a70d89fdf47dead5443135c4c` |
-| Native SD8887 provisioning initramfs | `8e087c98d8823544a2a004c46d5868fed0106cc788b029b022c3b48d24a549c6` |
-
-The kernel contains loadable native `mlan.ko`, `sd8xxx.ko`, `bt8xxx.ko`, and
-`btmrvl.ko` modules with matching
-`3.8.13-reinvoke-audio-sd8887` vermagic. The initramfs includes those modules
-and both checksum-gated provisioning daemons. Station-only remains its default;
-`reinvoke.wifi_mode=sta-uap` is required to request `p2p0`.
-
-An attended yellow-mode test booted this pair with
-`reinvoke.wifi_mode=sta-uap`. The USB gadget returned in five seconds. The
-native driver reported `drv_mode=3` and exposed both `mlan0` and `p2p0` while
-preserving HCI, GPIO, SPI, ALSA, and the read-only NAND node. NAND remained
-unmounted, and the kernel log contained no panic, oops, or fault signature.
-
-The test then:
-
-* Ran the retained hostapd as its numeric UID/GID 1008 with a
-  `0770 root:1008` runtime directory and `0640 root:1008` configuration
-* Created a random-key WPA2 AP on `p2p0`
-* Bound dnsmasq DHCP only to `p2p0` with DNS disabled
-* Kept IPv4 and IPv6 forwarding disabled
-* Assigned the test workstation an address in the isolated AP subnet, with no gateway or DNS
-* Verified the TLS certificate fingerprint over the AP
-* Received HTTP 202 from the complete parser-to-adapter path
-* Removed the host connection profile, AP key, derived station configuration,
-  daemons, sockets, and RAM runtime after the test
-
-The success-path adapter test used root-controlled fake station executables, so
-it exercised authenticated AP delivery and both daemon boundaries without
-joining `mlan0` to an external network. No real network credential was used or
-retained. The proven default boot pair was restored to active host staging
-afterward.
-
-## Real station validation
-
-A subsequent RAM-only test cloned the test workstation's active NetworkManager profile
-without printing the SSID or PSK. The shell held both values only in memory,
-constructed JSON through standard input, and sent the request through an ADB
-loopback forward. The Wi-Fi secret did not enter a process argument or host
-file.
-
-The physical Invoke then:
-
-* Returned HTTP 202 through `reinvoke-provisiond` and
-  `reinvoke-wifi-applyd`
-* Reached `wpa_state=COMPLETED` with the real `wpa_supplicant`
-* Matched the source SSID without logging it
-* Stored only a hexadecimal SSID and derived PSK in a mode-0600 RAM file
-* Acquired and renewed a DHCP lease
-* Reached the gateway, a public IPv4 address, and a DNS-resolved host
-* Kept IP forwarding disabled and NAND unmounted
-
-Both provisioning daemons removed their sockets and exited after success. The
-station supplicant, DHCP renewal client, derived configuration, and resolver
-state remain only in the current RAM boot.
-
-The external evidence bundle is retained under
-`<archive>/hardware/usb-attempts/<timestamp>-sd8887-sta-uap-reconnect-arm-stock/`.
-
-## Current owned network lifecycle
-
-The hardened static ARMv7 `reinvoke-networkd` artifact is 2,293,760 bytes with
-SHA-256
-`cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66`.
-Two clean builds were byte-identical. The service uses only fixed,
-root-controlled executable paths and does not invoke a shell.
-
-Live RAM-only validation replaced the temporary DHCP hook and proved:
-
-* The service detected the existing `wpa_state=COMPLETED` station.
-* Its supervised BusyBox `udhcpc` acquired and renewed the station lease.
-* The lease handler validated address, mask, route, DNS, and lifetime values.
-* `/etc/resolv.conf` pointed to atomically written RAM-only resolver state.
-* Gateway, public IPv4, and DNS-resolved reachability succeeded.
-* Graceful shutdown removed the IPv4 address, default route, resolver link,
-  lease, and DHCP child.
-* A service restart reacquired connectivity without replacing credentials.
-* A station disconnect removed network state, and reconnect reacquired it.
-* A second supervisor was rejected without disturbing the active service.
-* A stale owner record pointing at a reused PID did not block startup or signal
-  the unrelated process.
-* Authenticated replacement through both provisioning daemons replaced the
-  supplicant and DHCP child while the same supervisor remained active.
-* The replacement regained association, lease, route, resolver, public IPv4,
-  and DNS without exposing or writing the plaintext credential on the host.
-
-The initramfs builder checksum-gates the artifact and PID 1 auto-starts it when
-included. PID 1 sends daemon output to the bounded kernel log and restarts a
-failed supervisor after five seconds. The `reinvoke.networkd=off` kernel
-argument keeps the packaged service disabled for manual recovery. Two clean
-builds of the packaged initramfs were byte-identical. That historical hardened
-external image is 40,068,440 bytes and has SHA-256
-`c056d21b0e147fb9fd38a9458952528be1f58b17566f1223a1147eca14d53e21`
-and contains the reviewed network daemon, provisioning adapters, pinned kernel
-module tree, release manifest, and PID 1. Provenance is recorded in
-[P1-046](../metadata/P1-046.json).
-
-## Historical 2026-09-03 packaged-image check
-
-The checksum-gated image from that milestone cold-booted in yellow mode on
-2026-09-03.
-PID 1 automatically started `reinvoke-networkd`; its live SHA-256 was
-`cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66`.
-The packaged `reinvoke-provisiond` SHA-256 was
-`5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07`.
-The root filesystem contained only `rootfs`, `proc`, `sysfs`, `devtmpfs`,
-`devpts`, and `tmpfs` mounts, with no NAND or MTD block mounted. The SD8887
-WLAN and Bluetooth drivers loaded, and the supervisor correctly remained
-waiting for a root-controlled station supplicant.
-
-This image intentionally contained no station credentials, so association,
-DHCP, DNS, and default-route acquisition were not expected in this cold-boot
-check. The already validated credentialed station lifecycle remains covered by
-the live RAM-only validation above.
-
-The network boundaries are accepted into the native architecture. Candidate 02
-completed physical-button onboarding and local-network MCU/DSP access. Persistent
-storage remains deferred until backup, recovery, update preservation, and secret
-handling are explicitly designed.
+Native provisioning adds physical-trigger and external network evidence,
+not native validation of every failure, cleanup or firewall branch.

@@ -1,584 +1,47 @@
 ---
-title: Native RAM platform and component audit
-description: Verified native Linux bring-up, installed-version evidence, and board-support boundaries for the reInvoke RAM stack
-ms.date: 2026-09-05
-ms.topic: concept
+title: Native RAM platform
+description: Working RAM inputs, hardware dependencies, accepted measurements, and replacement-runtime boundaries
+ms.date: 2026-09-12
+ms.topic: reference
 ---
 
-The Harman Kardon Invoke can run a custom-owned Linux lifecycle from DRAM. The
-accepted platform uses the reviewed reInvoke kernel, an owned initramfs, and
-selected immutable board firmware and calibration from donor artifacts. It does
-not start Harman's supervisor, Cortana, OTA updater, or normal application
-stack.
-
-This document combines current architecture with dated bring-up evidence. The
-[current product and architecture contract](current-product-contract.md) is
-normative; hashes and limitations in dated milestones apply to those iterations
-only. Here, “native RAM” means ARM Linux executing on the Invoke after a host
-loads it, not host-independent NAND startup. Candidate 02's separate native
-milestone is summarized in the [NAND guide](native-nand-platform.md).
-
-## Current accepted outcome
-
-The current RAM image has:
-
-* owned PID 1 supervising volatile filesystems, USB, radio initialization,
-  logging, networking, Bonefish compatibility, and the product services;
-* owned MCU and DSP services with mute-first speaker safety and shared reset-bit
-  preservation;
-* process-lifetime microphone privacy owned by the MCU service, with atomic RAM
-  state, retry, a protected red indication, and a root-only mode-`0600` DSP
-  microphone socket;
-* seven public DSP WAMP registrations, rather than the donor's historical eight;
-* BlueZ 5.55 and patched BlueALSA 4.0.0 for a bounded, allowlisted A2DP Sink
-  path;
-* supervised Wi-Fi DHCP/resolver lifecycle and separated provisioning/apply
-  daemons; and
-* no NAND mount or persistent bond, credential, or application state.
-
-RAM boot, playback, rotary volume, capture, mute/unmute signal correlation,
-all-zero muted capture, pairing-window control, networking, and the LED clear
-packet were demonstrated on RAM builds. The then-open final cold-boot/playback
-checks belong to that RAM iteration; current native acceptance and remaining
-gaps are in the [NAND guide](native-nand-platform.md#current-result).
-
-## Historical initial verified outcome
-
-The initial donor-assisted RAM prototype completed this sequence. It is
-chronological evidence, not the current service graph:
-
-1. Yellow service mode loaded U-Boot into DRAM.
-2. U-Boot loaded the reviewed `81_IMAGE` kernel at `0x0c400000`.
-3. U-Boot loaded a sanitized initramfs at `0x08000000`.
-4. The kernel executed the replacement `/init` as PID 1.
-5. The USB gadget enumerated as `18d1:0d02`.
-6. Root ADB connected as `<adb-serial>`.
-7. No NAND filesystem was mounted.
-8. A complete 256 MiB logical NAND data image streamed through a fresh
-   read-only MTD node.
-9. The SD8887 Wi-Fi function loaded with the unit's firmware and calibration.
-10. `mlan0` completed a scan without joining a network.
-11. A RAM copy of the installed SquashFS mounted read-only.
-12. Bonefish and `mcu-interface` ran under the replacement PID 1.
-13. `mcu-interface` completed its mute-first hardware sequence and registered
-    its WAMP procedures.
-14. The installed SD8887 Bluetooth module loaded after a metadata-only
-    `vermagic` adjustment, downloaded firmware, and created `hci0`.
-15. The installed Bluedroid service joined the custom-owned WAMP bus using
-    RAM-only pairing state and registered its control procedures.
-16. A GCC 4.9 replacement kernel registered the first SoC GPIO bank at base 0
-    while retaining USB, SPI, and Wi-Fi.
-17. `mcu-interface` completed live MCU application-version and recovery-flag
-    queries with GPIO 3 configured as a falling-edge input.
-18. `dsp-client` received `EVENT_DSP_BOOTUP`, requested the normal DAC and
-    amplifier unmute sequence, and published DSP version value `25688`.
-
-## RAM-platform persistence model
-
-| Component | Analogy | Persistence | Current policy |
-|-----------|---------|-------------|----------------|
-| DRAM | Whiteboard | Lost on power removal | Primary development and validation target |
-| NAND | Internal SSD | Persistent | Read through `/dev/reinvoke-nand-ro`; no writes |
-| SPI NOR | Early-boot flash | Persistent | Sampled only; image before any future write |
-| SD8887 radio firmware | Device firmware loaded by Linux | Volatile in the radio; source file is persistent | Load from the RAM initramfs |
-| MCU firmware | Firmware in a companion controller | Presumed persistent in the MCU | Use the existing protocol; do not invoke upgrade RPCs |
-| DSP loader image | DSP program loaded by the host | Volatile in the DSP; the host sends all 160,484 bytes over SPI at every service start | Ship the file with the replacement; a byte-exact capture confirms the transfer is verbatim |
-
-The 16 MiB M25P128 SPI NOR supports erase and program operations in principle.
-U-Boot maps it at `0xF0000000`, reports an invalid stored environment, and
-returned zeroes at the sampled offsets. Those observations do not prove that
-the full chip is unused.
-
-## Historical pre-write vendor-version audit
-
-The complete logical NAND data image is:
-
-```text
-size:   268435456 bytes
-sha256: edf38ef2af48d249c9925ebb6a94c716cfdb2c1ce575fb704283918cdd0e53be
-```
-
-This is an ECC-processed data-area image. It does not include NAND OOB bytes and
-is not a substitute for a raw programmer image. The kernel reported
-uncorrectable ECC conditions near the end of the device while the complete data
-length still streamed successfully.
-
-The active rootfs identity comes from the extracted SquashFS at `0x02920000`,
-not from unscoped strings elsewhere in NAND:
-
-| Field | Value |
-|-------|-------|
-| Product | `barracuda` |
-| Release | `Barracuda_libre-12.2050.3` |
-| Git commit | `6c36464edbac87c01fcba0f81c86293f554acf50` |
-| Build timestamp | `20210204092918` |
-| SquashFS creation | 2021-02-04 05:08:43 |
-| SquashFS size | 48,831,891 bytes |
-
-Strings for `Barracuda_libre-2.1727.0`, commit
-`0c29b0f24b4f687957a40e8857fb644810421e18`, DSP `378`, and MCU `000111`
-remain later in NAND. They are retained data or logs and do not identify the
-active SquashFS.
-
-A second SquashFS begins at `0x01a20000`. It is a 2,712,641-byte configuration
-image created in 2017. Its `Software_Version` metadata reports NAND image
-generation `20170622:0721`.
-
-## Boot and kernel audit
-
-| Component | Identity | Evidence |
-|-----------|----------|----------|
-| USB-loaded U-Boot | 2013.04, built 2016-04-11 | Live `version` output |
-| RAM development kernel | Linux `3.8.13-mrvl`, built 2014-09-11 | Live `uname` output and reviewed `81_IMAGE` |
-| Reviewed `81_IMAGE` | SHA-256 `dda4f295e037786c5302b91976e6b37d99bdaa108e76bb94d1337181f64c4763` | Host hash and U-Boot header |
-| Reviewed recovery initramfs | SHA-256 `08a8f96a5c476a08ba19441d83637e606f27f442d56c2689dd6b56d2fc72b7a8` | Host hash |
-| Installed normal kernel partition | 8 MiB at `0x00a20000`, SHA-256 `68bc06928caec07893b2ba698ec0b4546191787add22ce7a245b7392cdbff0eb` | NAND carve |
-
-The installed normal-kernel carve has a structured header followed by
-high-entropy data. It has no U-Boot `uImage` magic or readable Linux banner.
-This is consistent with a signed or encrypted Marvell container, but the
-cryptographic format is not yet proven.
-
-The RAM kernel does not implement `kexec`. Its `sys_kexec_load` symbol is a weak
-alias of `sys_ni_syscall`. A custom kernel must therefore be loaded directly by
-U-Boot or through another verified boot-stage mechanism.
-
-### Secure boot impact
-
-Manufacturer signing is expected to block an unauthorized replacement of the
-normal kernel through the stock persistent boot path. The private signing key
-is not expected to exist on the device. OTP output exposes key-status and CRC
-fields, not a reusable private key.
-
-This does not block the current development path. The RAM-loaded U-Boot accepts
-the reviewed standard `uImage` kernel and our modified initramfs. Signing
-becomes a hard blocker only if the final design requires the stock boot chain
-to accept a replacement persistent kernel. Candidate 02 later demonstrated persistent custom userspace while retaining
-the vendor native kernel. This does not prove arbitrary custom native kernels
-are accepted or resolve every verification and slot-selection rule.
-
-### Historical first replacement-kernel build
-
-The acquired Invoke GPL archive contains Linux 3.8.13 source, the
-`berlin2cdp-a0-acast` device tree, and
-`berlin2cdp_a0_amp_acast_defconfig`. Unlike the recovery/dongle kernel, this
-configuration enables:
-
-* Berlin ALSA
-* DesignWare SPI and `spidev`
-* SD8887 Wi-Fi and Bluetooth modules
-* Berlin NAND and randomizer support
-* I2C and GPIO
-* An appended device tree suitable for the existing U-Boot `bootm` path
-
-The first reproducible build produced Linux `3.8.13-reinvoke`, a
-3,816,179-byte `81_IMAGE.reinvoke`, and five modules. The image SHA-256 is
-`f2fdec3a09e3c8c90045c2d15281bd0d9b8b4c26a98404554bd4a730234ab8e1`.
-The U-Boot header specifies load and entry address `0x01108000`.
-
-The build also enables the Marvell UDC and Android composite gadget so loss of
-USB diagnostics is not an accepted default. See
-[Invoke kernel build](../tools/kernel/README.md) for provenance and the build
-procedure.
-
-### Historical rebuilt-kernel boot experiments
-
-The known-good recovery kernel returned its `18d1:0d02` USB gadget 2.58 seconds
-after the Marvell endpoint disconnected. Replacement attempts use that measured
-time as the success baseline.
-
-| Experiment | Compiler | Load address and DTB | Result |
-|------------|----------|----------------------|--------|
-| ACast reference | GCC 11.4 | `0x01108000`, ACast DTB | No USB after 360 seconds |
-| Known layout | GCC 11.4 | `0x02008000`, exact recovery DTB | No USB after 367 seconds |
-| Known layout | GCC 9.5 | `0x02008000`, exact recovery DTB | No USB after 218 seconds |
-| Pristine source | Android NDK GCC 4.9 | `0x02008000`, exact recovery DTB | USB returned after 7 seconds |
-| SPI-only | Android NDK GCC 4.9 | Proven layout plus SPI node | USB returned after 6 seconds; `spidev0.0` created |
-| SPI plus GPIO | Android NDK GCC 4.9 | Proven SPI DTB plus first-bank `base-gpio = <0>` | USB returned after 6 seconds; MCU and DSP completed bidirectional startup |
-| Audio | Android NDK GCC 4.9 | Proven SPI/GPIO DTB plus Berlin ASoC nodes | USB returned after 5 seconds; ALSA card 1 and audible output verified |
-
-The successful kernel is `3.8.13-reinvoke-gcc49`. It was built from the
-preserved Harman source without the ARM `uaccess` compatibility backport.
-Modern GCC versions can compile the tree after compatibility changes, but their
-images did not meet the observed USB-return criterion on this hardware; no
-trace located the failed boot stage. The RAM-kernel working policy is therefore:
-
-* Use verified NDK GCC 4.9 for device kernels and modules.
-* Keep GCC 11 compatibility work as a host-build research branch, not the
-  hardware baseline.
-* Hold load address and device tree constant while adding peripherals one at a
-  time.
-
-Android's GCC defaults also emitted position-independent references in modules.
-The first Wi-Fi load failed on `_GLOBAL_OFFSET_TABLE_`. Rebuilding modules with
-`-fno-pic -fno-pie` removed that dependency; `88mlan.ko` and `sd8801.ko` then
-loaded, downloaded firmware and calibration, created `mlan0`, and completed a
-24-access-point scan.
-
-The SPI-only kernel added DesignWare SPI at `0xF7E81C00` and a conservative
-1 MHz `spidev0.0` child. It booted in six seconds and exposed both `spi0` and
-`/dev/spidev0.0`. It established the transport and exposed the missing
-control-line dependency:
-
-* Bonefish and `mcu-interface` completed their established startup.
-* `dsp-client` opened `spidev0.0`, remained alive, joined WAMP, and registered
-  its DSP procedures.
-* A `com.harman.dsp.getVer` call reached `dsp-client` but did not receive a DSP
-  reply.
-* A bounded trace observed 45,476 successful four-byte
-  `SPI_IOC_MESSAGE(1)` transfers in 12 seconds.
-
-`dsp-client` requests GPIOs 4, 5, 12, 13, and 15, while `mcu-interface`
-requests GPIO 3. The acquired Invoke `gpio-dwapb` driver requires a
-`base-gpio` property. The older recovery DT omits it, so the platform driver
-binds but unregisters every GPIO bank.
-
-The next DTB added only `base-gpio = <0>` to the first SoC bank while
-preserving the proven SPI node. The resulting kernel:
-
-* Has SHA-256
-  `66ccac301084be80eae8e8ac64bd3151a14c372feb82993f45f9df1d8f1059fc`
-* Returned USB in six seconds
-* Registered `gpiochip0` as `gpio_soc_0`, base 0, with 32 GPIOs
-* Kept `/dev/spidev0.0`, Wi-Fi, and the read-only NAND boundary active
-* Configured MCU GPIO 3 as a falling-edge input
-* Let `dsp-client` drive GPIOs 4, 5, 12, 13, and 15 through its normal startup
-* Received `EVENT_DSP_BOOTUP` from the physical DSP
-* Completed `com.harman.dsp.getVer` and published
-  `com.harman.dsp.version [25688]`
-
-The DSP boot event invoked the normal MCU DAC and amplifier unmute procedures.
-The DSP transcript identifies the same value as
-`EVENT_DSP_VERSION=0.0.64.58`: the WAMP integer is hexadecimal `0x6458`, or
-decimal `25688`.
-
-The transport, frame layout, checksum, GPIO handshake order, expander-backed
-reset, and boot-image staging behind these observations were later recovered
-from the donor binary itself and are recorded in
-[dsp-boundary.md](emulation/dsp-boundary.md). The captured
-`readmsg: 0x00 0x01 0x04` line in that run is message id 1, event code 4,
-`EVENT_DSP_BOOTUP`, which is what makes the unmute happen.
-
-A later run on 2026-09-03 captured the SPI `ioctl` boundary byte for byte while
-forwarding every call unchanged, archived as
-`hardware/software-captures/20260903T191657Z-dsp-ioctl-record/`. It contains
-40,121 four-byte image transfers whose concatenated payloads are byte-identical
-to the per-byte bit-reversal of `dsp-img.ldr`, followed by 23 one-byte message
-transfers carrying the boot event and one `com.harman.dsp.getVer` exchange.
-That settles the DSP program as **host-loaded and volatile**: it lives in a
-file on the host filesystem and is retransmitted in full at every service
-start, so a replacement platform has to carry the image, not merely the
-protocol. Outputs were remuted after the run.
-
-## Board-support audit
-
-| Layer | Verified identity | Persistence and replacement boundary |
-|-------|-------------------|--------------------------------------|
-| Wi-Fi | Marvell SDIO functions `02df:9135`, `9136`, and `9137`; station interface `mlan0` | Linux downloads firmware at module load; safe to bundle in our initramfs |
-| Wi-Fi firmware | `sd8887_wlan_a2_p78.bin`, SHA-256 `1230d8073a271b38733685671eedeb1f5042e8edcbe1bf5a67d654baa979b59e` | Volatile controller load |
-| Wi-Fi calibration | `WlanCalData_ext-LS9AD-20160725.conf`, SHA-256 `11cb55e4f238ce179fb33e197aec11c3ed4ea578f735ef1b0ec5a4fedabd0431` | Board-specific donor data |
-| Bluetooth firmware | `sd8887_bt_a2_new.bin`, SHA-256 `c04b50f8e3a604d85dd7e4a6e05545ec6d0fae417f5898910722993bee62bc73` | Separate volatile controller load |
-| MCU image | `cortana_mcu.bin`, 13,312 bytes, SHA-256 `af0db96faaa79fcff254c5c95cef858e1fc6543ad73238b740f28f0e9fd98811` | Separate MCU upgrade surface exists; do not use it |
-| DSP image | `dsp-img.ldr`, 160,484 bytes, SHA-256 `e76f6ce7c53bb5b508507354fb08523089c136b3731d5ad4f4488a50526a44c8` | Host-loaded and volatile: pushed bit-reversed over SPI on every start, confirmed byte-identical on hardware |
-
-The recovery kernel has no active ALSA card, no SPI controller, and no
-Invoke-specific SD8887 Bluetooth transport module. Wi-Fi works because its
-recovery module supports SDIO function `9135`.
-
-The first recovery-kernel control changed only a temporary copy of the installed
-module's `vermagic`. It created `hci0`, but its first HCI command timed out.
-
-The audio kernel now uses `bt8xxx.ko` built from the Invoke GPL source with
-exact `3.8.13-reinvoke-audio` vermagic. The module SHA-256 is
-`b77adca16d3c2778a047243f824b8fea339603343c88da32ab4c42e952bbd522`.
-It downloaded `sd8887_bt_a2_new.bin`, reported `BT FW is active(2)`, created
-`hci0`, and registered an unblocked Bluetooth rfkill device.
-
-In that donor-assisted milestone, Bluedroid then:
-
-* Enabled the adapter with its controller-provided local address
-* Initialized A2DP Sink, AVRCP Controller, and AVRCP Target with result `0`
-* Set a compatibility name matching `HK Invoke_<address-suffix>`
-* Entered connectable mode
-* Entered connectable and discoverable pairing mode on a WAMP request
-
-All configuration and bond paths point to RAM-backed `/data`. An iPhone
-completed pairing and negotiated A2DP at 44.1 kHz stereo. The physical rotary
-ring changed the real ALSA `music` control and Bluedroid forwarded those values
-to the phone's absolute-volume scale.
-
-Ubuntu 22.04 on the source workstation provided a controlled second source.
-BlueZ discovered, paired, and connected the Invoke's classic Audio Sink profile.
-PulseAudio loaded its Bluetooth policy and discovery modules, selected
-`a2dp_sink`, exposed an SBC 44.1 kHz stereo sink, and showed an active sink
-input during controlled playback.
-
-Both sources sent sustained RTP/SBC traffic to dynamic L2CAP channel `0x44`.
-The Invoke received thousands of incoming ACL packets, including SBC frames
-with the expected `0x9c` sync byte. The donor Bluedroid stack did not emit its
-A2DP audio-start callback, connect its PCM consumer, or open ALSA card 1.
-A read-only client connected to its abstract `.a2dp_data` socket but received
-zero decoded bytes. The standard `.a2dp_ctrl` `CHECK_READY` command returned
-failure acknowledgement `1`.
-
-This historically verified pairing, A2DP negotiation, and compressed media
-ingress. Decoding and PCM handoff in donor Bluedroid were not recovered.
-Current reInvoke does not depend on that opaque userspace stack; BlueZ and
-patched BlueALSA replace it.
-
-The recovery kernel exposes neither an SPI master nor a usable low-numbered GPIO
-bank. The SPI-plus-GPIO replacement kernel closes both gaps. The real MCU
-adapter opened `/dev/i2c-0`, completed its mute-first sequence, reported
-application version `000116` and recovery flag `0`, and configured GPIO 3 as
-expected. The real DSP then completed its boot notification and version
-response over SPI.
-
-The installed kernel metadata identified the audio increment. Its
-`modules.builtin` contains ALSA loopback, the Berlin PCM, DHUB, AIO, SPDIF,
-AVPLL and playback components, and `snd-soc-wm8904`. This confirms WM8904 as an
-installed-kernel component rather than relying only on the ACast reference
-device tree.
-
-The public `courk/gmini-linux` Berlin PCM source at commit
-`764b617b647c91fe969332ceb690282ecdad4e0c` directly calls
-`snd_berlin_card_init()`. Harman's Invoke source adds an immediate `return 0`
-inside that initializer and adds a separate WM8904 ASoC machine driver. This
-supports using the Invoke ASoC machine path rather than removing the return to
-revive the older direct-card path. The pinned comparison file is recorded as
-`P2-005`.
-
-### Live audio validation
-
-The audio kernel registered:
-
-* ALSA card 0 as `Loopback`
-* ALSA card 1 as `marvell-wm8904`
-* Card 1 PCM 0 with one playback and one capture substream
-
-The WM8904 I2C probe at `0x1a` returned `-121` for early register accesses, but
-the ASoC machine link still registered. This matches the observed design in
-which MCU-controlled DAC and amplifier stages plus the SPI-loaded DSP form the
-physical output path. The unresolved I2C response must not be treated as proof
-that a discrete WM8904 is present.
-
-With MCU-controlled amplifier and DAC mute asserted, `aplay` opened card 1 at
-48 kHz, stereo, `S32_LE`, sent one second of zero samples, and closed without an
-xrun, DMA error, or kernel fault. A second guarded test:
-
-1. Asserted amplifier and DAC mute.
-2. Unmuted DAC and amplifier only for the playback window.
-3. Played a 0.5-second, 1 kHz, -48 dBFS PCM tone.
-4. Remuted amplifier and DAC through an exit trap.
-
-The operator audibly confirmed the tone. This proves the RAM-owned
-kernel-to-speaker output path.
-
-The capture endpoint uses one fixed buffer geometry inherited from the Berlin
-playback callbacks: 2,048-byte periods, 16 periods, and a 32 KiB buffer.
-TinyALSA defaults and the first parameter sweep were invalid because they did
-not request all 16 periods. With amplifier and DAC mute asserted, this command
-opened card 1 PCM 0:
-
-```text
-tinycap <ram-output.wav> -D 1 -d 0 -c 2 -r 48000 -b 32 -p 256 -n 16
-```
-
-The active stream reported stereo 48 kHz `S32_LE`, a 256-frame period, a
-4,096-frame buffer, and matching advancing hardware/application pointers. The
-five-second capture contained 121,344 frames; 99.98 percent were nonzero, and
-left/right correlation was 0.975. The dated evidence is retained in the
-external archive's hardware-attempt records. A later attended run correlated
-speech and tapping while unmuted. An accepted privacy/restart run produced only
-zero samples while muted, resolving the software capture and privacy path.
-
-The physical rotary ring also produced 63 volume-up and 57 volume-down MCU
-events. Bonefish recorded exactly 120 matching
-`com.harman.test.inputEvent` publications. After the stock empty-stream ALSA
-initialization created the soft-volume elements, `audio-ui` set the real
-`music` mixer control to 20 percent. Later physical turns changed both channels
-to matching values, including 32 percent, and Bluedroid translated the same
-changes to the paired peer's absolute-volume scale.
-
-## Userspace component audit
-
-Semantic versions are recorded only when an artifact exposes one. Build IDs and
-hashes identify stripped binaries when no semantic version is available.
-
-| Component | Installed evidence | Status in the replacement architecture |
-|-----------|--------------------|-----------------------------------------|
-| Bonefish | Build ID `11d0eab176300d7c3c585b87dd7b82b0dd250d9d`; SHA-256 `f8ca28a9536b2795adee89d17c38a616fca859b89bdf11529228790e36584b24` | Current narrow compatibility router under owned PID 1; not product policy |
-| Autobahn-C++ | Symbols embedded in Bonefish and donor clients; semantic version unresolved | Isolated compatibility dependency |
-| Donor `mcu-interface` | Build ID `140341f267dc32d01b82175787e8d86fc75162bc`; SHA-256 `25e09fa524d0df037d53ceafc93fa938fb73dd008bc5b8d366b3ff968d9c20b7` | Historical protocol evidence; replaced by `reinvoke-mcu-interface` |
-| Donor `dsp-client` | Build ID `bee96ed4a94512944506d92660f1043df0a99385`; SHA-256 `a6ce3ff85ff04d9978e3f60acfe1339c561148254e610c7f392f2eb8fe5c72b8` | Historical protocol evidence; replaced by `reinvoke-dsp-interface` |
-| Donor Bluedroid service | Binary SHA-256 `0a551959cf9b185722c8979834e8f56388890f9240685fa5cfa3f329abf442af` | Historical reference; replaced by BlueZ and patched BlueALSA |
-| Donor Dropbear | `2015.68` | Excluded; SSH is optional and not a product requirement |
-
-## Preserved hardware evidence
-
-The historical external evidence directory
-`<archive>/hardware/dumps/<timestamp>-native-ram/` contains:
-
-* Complete logical NAND data image and SHA-256 manifest
-* Extracted active and configuration SquashFS trees
-* Installed kernel-partition carve
-* Component hash inventory
-* Kernel log, mount table, MTD table, module list, and network state
-* Bonefish, MCU, DSP, and Bluetooth service logs
-* Bounded real-hardware MCU syscall trace
-* Wi-Fi scan count with no SSIDs retained
-
-The SPI-plus-GPIO milestone is preserved under the matching dated directory in
-`<archive>/hardware/usb-attempts/`.
-Its USB capture contains 20,380 packets with zero drops. The
-`native-platform-evidence/` subdirectory records the live kernel, mounts,
-modules, network, GPIO, SPI, process, MCU, DSP, and WAMP state. NAND remained
-unmounted.
-
-The audio and Bluetooth milestone is preserved under the matching dated
-directory in `<archive>/hardware/usb-attempts/`.
-Its 130,649,184-byte USB capture contains 218,178 packets with zero drops. The
-private evidence subtree holds bond and HCI records with directory mode `0700`
-and file mode `0600`; those identifiers are not copied into Git.
-
-The reproducible RAM pair at the 2026-09-03 milestone was:
-
-| Artifact | SHA-256 |
-|----------|---------|
-| Audio kernel with packaged native Bluetooth | `fb4340f7d92a40ac32a4a58af166e7a1d5f0897978ee4a95e4a551208938328e` |
-| Audio/Bluetooth initramfs | `afdf0f5171bf299dd71b36f4d8a8f3269bf4d20b2e7d4bb0139f7cc360e4ab84` |
-| Audio DTB | `4dd7a39aa8c8d23ee824724e3f633ec16bb3a0f28c46cb096f0552dc28737dbb` |
-| Native `bt8xxx.ko` | `b77adca16d3c2778a047243f824b8fea339603343c88da32ab4c42e952bbd522` |
-
-The initramfs automatically loads the volatile Bluetooth firmware and native
-module. The checksum-gated service launcher was then tested from a clean
-service state: Bonefish, MCU, DSP, audio UI, source manager, identity adapter,
-and Bluetooth all started on their first attempt. The MCU was ready in two
-seconds, the DSP answered, volume initialized to 20 percent, and NAND remained
-unmounted.
-
-The donor DSP boot event transiently requests amplifier and DAC unmute before
-the launcher can reassert mute. The safe unattended default therefore skips
-`dsp-client`; attended audio work must opt in with `--start-dsp` and wait for
-the launcher to confirm that both outputs were remuted.
-
-The native SD8887 STA/uAP milestone is preserved under the matching dated
-directory in `<archive>/hardware/usb-attempts/`. That iteration returned the
-USB gadget in five seconds and exposed `mlan0`, `p2p0`, `hci0`, GPIO, SPI, and
-both ALSA cards. A test workstation joined a random-key
-WPA2 AP on `p2p0`, received DHCP without a gateway or DNS, pinned the
-provisioning certificate, and completed an HTTP 202 parser-to-adapter request.
-Forwarding remained disabled, NAND remained unmounted, and all temporary
-credentials and AP processes were removed. The active host staging directory
-was then restored to the proven audio/Bluetooth pair above.
-
-The same boot later cloned the test workstation's active WPA2 profile through the
-authenticated parser without printing or storing the plaintext PSK on the
-host. The real station adapter reached `wpa_state=COMPLETED`, retained only a
-derived key in mode-0600 RAM, acquired a DHCP lease, and verified gateway,
-public IPv4, and DNS reachability. The station and renewal client remain
-ephemeral, and NAND remains unmounted.
-
-### Owned network lifecycle
-
-The static ARMv7 `reinvoke-networkd` service replaced the temporary DHCP hook
-without changing the derived station credentials. It detected the existing
-supplicant, started a supervised BusyBox DHCP client, atomically installed
-RAM-only resolver state, and preserved gateway, public IPv4, and DNS
-reachability.
-
-Graceful service termination removed the DHCP child, IPv4 address, default
-route, resolver link, and lease state. Restarting the service reacquired them.
-A forced station disconnect produced the same cleanup, and reconnect restored
-connectivity. A full-lifetime lock rejected a second supervisor without
-disturbing the active instance. The final artifact identity is recorded in
-[P1-046](../metadata/P1-046.json).
-
-Hardware validation also pointed a stale owner record at an unrelated live
-process. The corrected service removed the stale records, preserved the
-unrelated process, started one DHCP child, and restored IPv4 and DNS. DHCP event
-handlers now verify the active owner token and interface before changing state.
-
-An authenticated replacement request then stopped the prior supplicant and
-DHCP child while the same network supervisor remained active. The replacement
-created new child PIDs and regained association, lease, route, resolver, public
-IPv4, and DNS. The host passed its active profile entirely through shell memory;
-no plaintext credential was printed or written to a host file.
-
-The hardened checksum-gated lifecycle image at that milestone was built twice with
-identical bytes. The external 40,068,440-byte initramfs has SHA-256
-`c056d21b0e147fb9fd38a9458952528be1f58b17566f1223a1147eca14d53e21`.
-Archive inspection confirmed the owned daemon, provisioning adapters, release
-manifest, pinned module tree, and updated PID 1. PID 1 restarts networkd after
-failure with a five-second delay, sends its output to the bounded kernel log, and
-supports `reinvoke.networkd=off` for manual recovery.
-
-On 2026-09-03 that hardened checksum-gated image was cold-booted through
-yellow mode. PID 1 auto-started `reinvoke-networkd`, whose live SHA-256 matched
-`cb61bcdd0b9f4b145619514b9acb41d74d98042f8698419ea37e0c4864340a66`.
-The packaged `reinvoke-provisiond` also matched
-`5bde5aefdb21a9caf605fb57e9a62cf9597b8ebddd1fc9d65938441d04678b07`.
-The service entered its expected supplicant-wait state, and the mount table
-showed only RAM-backed or virtual filesystems; no NAND or MTD block was
-mounted. The SD8887 WLAN and Bluetooth drivers also loaded. Because this
-acceptance image intentionally contained no station credentials, it did not
-attempt association, DHCP, DNS, or default route acquisition; those
-credentialed transitions remain covered by the live RAM-only validation above.
-
-### RAM-only replacement Bluetooth control path
-
-BlueZ 5.55, built statically for the target's EGLIBC 2.12.2 userland, registered
-the classic adapter when launched with `ControllerMode=bredr`. BlueALSA 4.0.0
-registered an A2DP sink and `bluealsa-aplay` opened no PCM until a peer connects.
-The owned pairing agent registered on the private D-Bus system bus and
-allowlisted one operator-supplied peer address plus A2DP/AVRCP services.
-
-The source workstation was freshly paired after its stale host record was
-removed. The target reported `Paired=true` for that peer while `Pairable=false` and
-`Discoverable=false`. The bond survived a disconnect and reconnect after the
-pairing window closed. Target bond state remained in the volatile
-`/usr/var/lib/bluetooth` directory, and the private D-Bus state remained under
-`/tmp`.
-
-With MCU amplifier and DAC mute asserted and host volume limited to one percent,
-an A2DP stream opened ALSA card 1 as stereo `S16_LE` at 44.1 kHz. The hardware
-pointer advanced from `192000` to `238080` while the PCM remained `RUNNING`.
-This proves the muted Bluetooth transport, SBC decode, BlueALSA, ALSA, and DMA
-pipeline. For the attended acceptance on 2026-09-03, the owned MCU WAMP
-procedures explicitly unmuted the amplifier and DAC, the paired workstation sent a
-440 Hz tone at 20 percent host volume, and the operator confirmed audible
-speaker output. The host volume was then restored to one percent; the physical
-outputs remain under the MCU mute procedures.
-Provenance is in [P1-045](../metadata/P1-045.json).
-
-The first autonomous automatic-unmute attempt later reached ALSA `RUNNING` but
-produced no audible sound and coincided with sustained I2C arbitration loss.
-That candidate was rejected. ALSA `RUNNING` alone can represent rendered
-silence, so it is not physical-unmute authorization.
-
-The historical v9 candidate introduced a RAM lease after positive PCM FIFO
-reads. The lease carries the ALSA-owning worker thread ID. The MCU service
-requires that ID to match ALSA `owner_pid` and the expected `/proc/<tid>/exe`
-while the PCM is `RUNNING`. GPIO handling requires a real `POLLPRI` edge before
-reading the MCU, preventing the prior I2C read flood. These controls are now
-part of the accepted architecture rather than a current v9 candidate. The
-latest accepted image, which also includes later privacy and playback fixes,
-still needs the cold-boot campaign and attended playback-continuity run listed
-in [PLAN.md](../PLAN.md).
-
-## Rebuilding the RAM platform
-
-No proprietary image is committed. Build the sanitized initramfs from held
-artifacts:
-
-```bash
-tools/usb-boot/build-native-initramfs.sh \
-  --source-initramfs <archive>/extracted/ota2/OTA2/82_IMAGE \
-  --donor-rootfs <archive>/hardware/dumps/<snapshot>/rootfs-extracted/primary \
-  --kernel-modules <archive>/build/artifacts/invoke-kernel-acast/modules \
-  --output <boot-dir>/82_IMAGE.native-ram
-```
-
-Build the hardware-verified GCC 4.9 kernel profile with a checksum-gated DTB:
+## Execution boundary
+
+Native RAM means ARM Linux and owned userspace executing on the Invoke after
+a host loads the kernel and initramfs into DRAM. It is not autonomous NAND
+startup. September 2026 RAM validation established acoustic playback, rotary
+volume, microphone capture/privacy, provisioning and supervised services.
+These results do not transfer automatically to an installed native candidate.
+
+The [product contract](current-product-contract.md) defines runtime behavior;
+the [native NAND platform](native-nand-platform.md) records installed pins and
+acceptance. The assistant integration and persistent configuration remain
+[unfinished work](revival-roadmap.md#remaining-work).
+
+## Working input contract
+
+The public tree contains builders and owned service source, not release firmware
+or all donor inputs. Deterministic composition from pinned held artifacts is
+narrower than a complete firmware build from a clean public clone.
+
+| Input                         | Required property                                                |
+| ----------------------------- | ---------------------------------------------------------------- |
+| Invoke GPL kernel source      | Berlin 3.8.13 tree and Invoke board configuration                |
+| Compiler                      | Verified Android NDK GCC 4.9 for hardware kernels and modules    |
+| Device tree                   | Checksum-gated, proven load layout with SPI/GPIO/audio additions |
+| Kernel modules                | Matching release and ABI, built with `-fno-pic -fno-pie`         |
+| Recovery initramfs            | Held source for the sanitized RAM startup base                   |
+| Donor rootfs                  | Extracted, identified filesystem for libraries and board assets  |
+| Firmware and calibration      | SD8887 WLAN/BT firmware, board calibration and DSP loader        |
+| Owned userspace               | PID 1, hardware services, networking and Bluetooth replacements  |
+
+The known recovery pairing is the MTD-cleanup-corrected kernel with unchanged
+RC12 initramfs. [Recovery access](uboot-access.md#known-ram-recovery-pair) retains
+its pins and handoff. The unchanged release string
+`3.8.13-reinvoke-audio-sd8887` is insufficient to distinguish the corrected
+kernel: its build version contains `#1-mtd-cleanup`.
+
+The established kernel builder accepts a pinned DTB:
 
 ```bash
 tools/kernel/build-native-kernel.sh \
@@ -588,118 +51,162 @@ tools/kernel/build-native-kernel.sh \
   --output-dir <archive>/build/artifacts/invoke-native-spi-gpio
 ```
 
-After ADB returns, reconstruct the tested RAM-only diagnostic service graph:
+That SPI/GPIO profile is a bring-up increment, not the complete audio profile.
+Use the [kernel build reference](../tools/kernel/README.md) for the selected
+profile and cleanup fix. Do not mix its modules with another kernel.
+The initramfs builder's donor-input interface is:
 
 ```bash
-tools/usb-boot/start-native-services.sh \
-  --rootfs <archive>/hardware/dumps/<snapshot>/installed-rootfs-region.bin
+tools/usb-boot/build-native-initramfs.sh \
+  --source-initramfs <archive>/extracted/ota2/OTA2/82_IMAGE \
+  --donor-rootfs <archive>/hardware/dumps/<snapshot>/rootfs-extracted/primary \
+  --kernel-modules <matching-kernel-modules> \
+  --output <boot-dir>/82_IMAGE.native-ram
 ```
 
-This launcher never starts the stock supervisor or updater and leaves physical
-outputs muted.
+This interface describes the donor-assisted base, not a one-command build of
+the latest owned runtime. [USB tools](../tools/usb-boot/README.md) owns staging
+and loader usage. The generated initramfs size must be reflected in bootargs.
 
-Stage the reviewed `81_IMAGE` and generated initramfs as `81_IMAGE` and
-`82_IMAGE` in the external boot directory. From the live U-Boot prompt:
+The RAM builder replaces PID 1 and removes vendor `flash_custk` and
+`/home/galois/run.sh`. NAND stays unmounted, but inherited BusyBox still has
+low-level applets. RAM loading is not a privilege boundary against an operator
+issuing a storage command.
+
+## Kernel bring-up constraints
+
+GCC 11.4 and 9.5 builds compiled after compatibility work but did not return
+the expected USB gadget. No trace identified their failure stage. NDK GCC 4.9
+with pristine source and the proven recovery layout did return USB; subsequent
+peripheral additions retained that baseline.
+
+* The recovery layout uses load/entry `0x02008000`; the initial ACast-layout
+  replacement at `0x01108000` did not meet the USB-return criterion.
+* Android GCC's default module output referenced `_GLOBAL_OFFSET_TABLE_`.
+  Rebuilding with `-fno-pic -fno-pie` let the SD8887 modules load.
+* DesignWare SPI at `0xF7E81C00` with a 1 MHz `spidev0.0` child exposed transport.
+  Successful SPI transfers alone did not produce a DSP response.
+* The retained `gpio-dwapb` driver requires `base-gpio`. Adding
+  `base-gpio = <0>` to the first bank registered GPIOs 0-31 and enabled
+  bidirectional MCU/DSP startup.
+* The Invoke ASoC machine path supplied audio. The older direct-card initializer
+  is deliberately bypassed in the Invoke source, unlike the sibling driver.
+* The RAM kernel lacks working `kexec`: `sys_kexec_load` aliases
+  `sys_ni_syscall`. Load a replacement kernel through the verified U-Boot path.
+
+Modern-compiler success on the host therefore does not qualify a device kernel.
+Likewise, acceptance of a standard RAM `uImage` does not establish acceptance
+of arbitrary replacement kernels by the persistent signed/encrypted boot path.
+
+## Board assets and persistence
+
+The observed unit has 512 MiB DRAM and 256 MiB NAND. The early captured active
+rootfs was `Barracuda_libre-12.2050.3`, not the separately acquired final
+`12.2134.0`. Retained strings elsewhere in NAND do not identify active firmware.
+See [firmware generations](firmware-reference.md#firmware-generations).
+
+| Component             | Asset or interface                         | Persistence boundary                         |
+| --------------------- | ------------------------------------------ | -------------------------------------------- |
+| Wi-Fi                 | `sd8887_wlan_a2_p78.bin`, SDIO `02df:9135` | Downloaded at module load                    |
+| Board calibration     | `WlanCalData_ext-LS9AD-20160725.conf`      | Held donor input                             |
+| Bluetooth             | `sd8887_bt_a2_new.bin`, native `bt8xxx.ko` | Downloaded before `hci0` becomes usable      |
+| MCU                   | I2C protocol and existing application      | Upgrade surface excluded                     |
+| DSP                   | `dsp-img.ldr`, 160,484 bytes               | Reloaded through SPI at each service start   |
+| Credentials and bonds | RAM-backed runtime paths                   | Lost with power                              |
+| SPI NOR               | 16 MiB M25P128                             | Sampled only, not proved unused or backed up |
+
+A byte-exact September 3 trace recorded 40,121 four-byte transfers matching
+every bit-reversed DSP loader byte, then message traffic in one-byte transfers.
+This established a host-loaded volatile DSP program. SPI carries firmware and
+control, not the ALSA/BlueALSA PCM stream. The
+[DSP boundary](emulation/dsp-boundary.md) records framing and GPIO ownership.
+
+The MCU returned application `000116`, recovery flag `0`, and input events via
+GPIO 3 as a falling-edge input. With GPIOs available, DSP startup returned
+`EVENT_DSP_BOOTUP` and version `0x6458` / `25688`. The
+[MCU boundary](emulation/mcu-boundary.md) owns the shared expander contract.
+
+## Audio and microphone evidence
+
+The audio kernel exposed card 0 `Loopback` and card 1 `marvell-wm8904`, with
+one playback and one capture substream on card 1 PCM 0. The WM8904 probe at
+I2C `0x1a` returned `-121`; the machine-link name is not physical codec
+identification. MCU-controlled DAC/amplifier gates and the SPI-loaded DSP
+participated in verified output.
+
+Muted zero-sample playback at 48 kHz stereo `S32_LE` completed without xrun,
+DMA error or kernel fault. A guarded low-level tone, with explicit unmute only
+for the playback window and remute afterward, was audibly confirmed.
+That established output independently of transport negotiation.
+
+Capture requires the Berlin buffer geometry: 2,048-byte periods, 16 periods,
+32 KiB total. The working TinyALSA shape was:
 
 ```text
-usbload 0x81 0x0c400000
-usbload 0x82 0x08000000
-set bootargs console=ttyS0,115200 loglevel=8 debug root=/dev/ram rdinit=/init init=/init initrd=0x08000000,<generated-size>
-bootm 0x0c400000
+tinycap <ram-output.wav> -D 1 -d 0 -c 2 -r 48000 -b 32 -p 256 -n 16
 ```
 
-The builder removes the vendor `flash_custk` executable and
-`/home/galois/run.sh`, replaces PID 1, and never mounts NAND. The inherited
-BusyBox still contains low-level applets, so operator discipline remains part
-of the safety boundary.
+This is 256 frames per period and 4,096 frames per buffer. TinyALSA defaults
+and sweeps omitting all 16 periods failed. Later attended capture correlated
+speech/taps while unmuted and returned all-zero samples while muted.
+The [capture reference](microphone-capture.md) owns privacy and restart details;
+these RAM measurements do not prove electrical microphone disconnection,
+beamforming or AEC activation.
 
-## Accepted replacement architecture
+Physical rotary events matched WAMP publications and actual mixer changes.
+The donor Bluetooth stack negotiated A2DP and received SBC from two sources,
+but never delivered decoded PCM to ALSA. A metadata-only module workaround also
+created `hci0` without a usable first HCI command. Neither was accepted as
+working playback.
 
-The accepted boundary is:
+BlueZ 5.55 and patched BlueALSA 4.0.0 replaced donor Bluedroid. The verified
+path received SBC, decoded to PCM, advanced ALSA/DMA and produced attended
+audible output. PCM travels through BlueALSA/ALSA, not through the DSP daemon.
 
-1. the reviewed reInvoke kernel and owned initramfs;
-2. reInvoke PID 1 as lifecycle owner;
-3. board firmware, calibration, and `dsp-img.ldr` as checksum-gated immutable
-   donor assets;
-4. `reinvoke-mcu-interface` as sole MCU/input/LED/speaker-safety and public
-   Mic-Mute policy owner;
-5. `reinvoke-dsp-interface` as sole DSP SPI/GPIO/reset owner, with seven public
-   DSP WAMP registrations and a private root-only microphone Unix socket;
-6. BlueZ 5.55 and patched BlueALSA 4.0.0 for A2DP Sink playback;
-7. `reinvoke-networkd`, `reinvoke-provisiond`, and
-   `reinvoke-wifi-applyd` at separated network and credential boundaries;
-8. Bonefish retained only as a narrow local compatibility router; and
-9. yellow-mode USB retained for recovery and reversible RAM loading.
+## Owned runtime and safety
 
-The donor MCU, DSP, Bluedroid, audio UI, source manager, updater, and supervisor
-are comparison points, not current runtime dependencies. See the
-[canonical contract](current-product-contract.md) for the complete service and
-safety policy.
+PID 1 supervises the runtime. `reinvoke-mcu-interface` owns MCU input, LEDs,
+public Mic-Mute policy and speaker gates. `reinvoke-dsp-interface` owns DSP
+SPI/GPIO/reset, seven public WAMP registrations and a private root-only
+microphone socket. Bonefish remains a narrow compatibility router, not the
+product policy owner. Donor supervisor, updater and hardware daemons are
+comparison material rather than owned-runtime dependencies.
 
-## Audio volume model
+The first automatic-unmute candidate reached ALSA `RUNNING` but was inaudible
+and coincided with sustained I2C arbitration loss. It was rejected.
+The replacement gate requires positive PCM FIFO reads, a live RAM lease and
+the expected ALSA-owning worker TID/executable while PCM is `RUNNING`.
+MCU reads require a real `POLLPRI` edge, avoiding the prior I2C read flood.
+An ALSA state alone is not evidence of useful audio or permission to unmute.
 
-Two distinct controls affect what comes out of the speaker, and conflating them
-produced a silent unit that looked like a hardware fault.
+Media volume and DSP gain are different interfaces:
 
-`com.harman.volumeSet` is the media volume. It takes two arguments, a value and
-an audio domain, as `[value, "music"]`. A bare `[value]` is rejected with
-`invalid argument format`. It maps onto the BlueALSA PCM volume for the
-connected A2DP peer, and `com.harman.volumeGet` reports both the `music` and
-`system` domains along with their mute flags.
+* `com.harman.volumeSet` takes `[value, "music"]`; `[value]` is invalid.
+  Media percent maps to BlueALSA as `(percent * 127 + 50) / 100`.
+* `com.harman.dsp.volumeSet` sends raw opcode `0x04` gain and receives
+  `EVENT_NEW_DAC_GAIN`; it cannot overcome muted or zero media volume.
+* A new BlueALSA transport defaulted to maximum. Owned startup caps a new peer
+  without raising an already quieter setting. The cap is not an acoustic
+  safety guarantee, and the scale is amplitude-linear, not loudness-linear.
 
-`com.harman.dsp.volumeSet` is a different control. It sends DSP opcode `0x04`
-with a single raw byte and changes the DSP gain, which the DSP acknowledges with
-`EVENT_NEW_DAC_GAIN`. It does not set the media volume, so calling it while the
-media volume is zero produces a confident-looking acknowledgement and silence.
+## Network lifecycle
 
-The media value is called a percent but is linear in amplitude, not in perceived
-loudness. It is converted with `rawVolume = (percent * 127 + 50) / 100` onto
-BlueALSA's `0-127` scale. The practical consequence is that the useful range sits
-far lower than the name suggests: the operator judged `25` to be relatively loud
-and settled on `10` to `12` for comfortable listening, and `8` was audibly
-quieter than `12`, so the scale is monotonic and behaving correctly.
+RAM tests established station association, DHCP, routing and DNS, then cleanup
+on service termination or station loss and restoration after reconnect.
+`reinvoke-networkd` owns the DHCP child and volatile resolver state.
+Its lifetime lock rejects a second supervisor; owner-token checks prevent a
+stale record or DHCP callback from disturbing an unrelated live process.
+Credential replacement restarts the relevant children without replacing the
+supervisor. PID 1 retries networkd after five seconds; `reinvoke.networkd=off`
+supports manual recovery.
 
-A freshly acquired BlueALSA transport starts at maximum volume. Without
-intervention, connecting a phone plays at full output. The platform now lowers a
-newly connected peer to a safe ceiling and never raises a quieter one, so a
-deliberate low setting is preserved.
+Provisioning uses an isolated temporary AP, ephemeral TLS and authenticated
+credential delivery. The network-facing parser lacks radio/shell privileges;
+the privileged apply socket requires a UID-0 peer. Station credentials and
+bonds remain volatile. [Provisioning](native-provisioning.md) defines the exact
+protocol, rather than the donor's unauthenticated HTTP setup flow.
 
-## Connectivity and provisioning model
-
-SSH is not a product requirement. The platform needs at least one reachable
-control plane, with different transports serving different lifecycle stages:
-
-| Stage | Transport | Purpose |
-|-------|-----------|---------|
-| Recovery | Yellow-mode USB and U-Boot | Load a known RAM kernel and initramfs |
-| Development | USB ADB or ACM | Root shell, logs, file transfer, and control API forwarding |
-| Onboarding | Temporary isolated SD8887 access point | Receive network selection and credentials locally; final physical-button orchestration is incomplete |
-| Normal operation | Wi-Fi station mode | Authenticated local API, media control, and automation |
-| Maintenance | Optional SSH | Administrative access, not required for normal use |
-
-The installed firmware contains the shape of the original access-point flow:
-
-* SD8887 station and uAP interfaces named `wlan0` and `p2p0`
-* dnsmasq on `p2p0` with DHCP range `192.168.43.100` through
-  `192.168.43.155`
-* browser endpoints for scan results, connect, forget, and save operations
-* a setup page that posts the selected SSID and passphrase
-
-The original page includes `TODO: Encrypt password` and sends JSON credentials
-to a local HTTP endpoint. reInvoke should reuse the user flow, not that security
-design. Credentials should be accepted only during an explicit physical
-provisioning window, protected by an ephemeral session secret or authenticated
-encrypted channel, written to a root-only configuration store, and never
-logged.
-
-The current dependency-free WAMP client proves that USB and Wi-Fi can carry the
-same logical control API. The persistent platform may replace WAMP with a
-smaller authenticated protocol while retaining a compatibility bridge for
-tested MCU and audio procedures.
-
-The current provisioning boundary is described in
-[native-provisioning.md](native-provisioning.md). Its static ARM daemon provides
-ephemeral TLS and token-authenticated credential delivery without exposing
-radio or shell privileges to the network parser. The privileged apply daemon
-requires a UID-0 Unix-socket peer. These validated components do not yet form a
-fully automatic physical-button onboarding flow.
+RAM firewall, supervision, capture and restart acceptance remain RAM-scoped.
+Candidate 03 later completed physical Wi-Fi provisioning and reached its SSH
+listener, but authentication closed before a native shell. Its actual kernel,
+PID 1, mounts and firewall have not been inspected through a successful login.

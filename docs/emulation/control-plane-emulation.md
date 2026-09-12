@@ -1,376 +1,167 @@
 ---
 title: Control-plane emulation
-description: Historical reproduction of the donor Invoke WAMP control plane under qemu-user
-ms.date: 2026-09-05
-ms.topic: concept
+description: Recovered donor WAMP contracts, stock reachability and isolated emulation
+ms.date: 2026-09-12
+ms.topic: reference
 ---
 
-Results from running the Invoke's own userland binaries on an x86 host under
-`qemu-user` ARM emulation, with the device's WAMP router live and answering
-calls. No physical unit was involved and no hardware was at risk.
+Preserved ARM services run under `qemu-user` with synthetic ALSA/I2C responses.
+The results below establish software contracts, not physical audio. reInvoke
+retains Bonefish as a narrow compatibility router and replaces donor policy
+services; see the [current contract](../current-product-contract.md) and
+[owned speaker boundary](owned-speaker-control.md).
 
-> [!NOTE]
-> This is donor-firmware evidence, not the current service graph. reInvoke keeps
-> Bonefish only as a narrow compatibility router and replaces the MCU, DSP,
-> Bluetooth, and media policy services. See the
-> [current contract](../current-product-contract.md).
+## Router and emulation boundary
 
-This document records what was executed, what the device software actually
-did, and which prior claims it corrected.
+`bonefish -r default -t 9999 -w 9998` exposes dealer/broker roles on RawSocket
+9999 and WebSocket 9998. Options also include `--no-json`, `--no-msgpack` and
+`-d`. The held RawSocket build accepts MessagePack serializer 2 and rejects
+JSON serializer 1 and serializer 3 with error code 1. That experiment did not
+test WebSocket; candidate 02's later native WebSocket evidence is separate.
 
-## Evidence classification
+URI names are case-sensitive. The corrected inventory has 165 names:
+`com.harman.volumeSet` is real; the previously truncated `com.harman.volume`
+is not. A binary string proves vocabulary, not registration or successful
+execution.
 
-Verified facts:
+The guest shim intercepts unsupported ALSA control ioctls before qemu returns
+`ENOSYS` (`SNDRV_CTL_IOCTL_CARD_INFO` is `0x81785501`). It supplies card,
+element-list/info/read/write and event subscription operations plus raw
+`I2C_RDWR`. Its ARM EABI5 hard-float build requires only `GLIBC_2.4`,
+compatible with donor glibc 2.23. A host loopback card cannot fix qemu's missing
+ioctl implementation. Bluetooth still needs HCI/rfkill, not synthetic ALSA.
 
-* The preserved rootfs contains the binaries, configuration, and WAMP router
-  described here.
-* `bonefish`, `audio-ui`, `oobe-ui`, and `bluetooth` from the final firmware
-  have been run under `qemu-user` in a rootless sandbox.
-* A third-party MsgPack WAMP client successfully called the audio procedures
-  listed in the results table and observed the returned state changes.
+## Audio and source contracts
 
-Artifact-backed findings:
+Observed final-firmware `audio-ui` registrations, all under `com.harman.`:
 
-* The final firmware advertises a local media-control service surface on the
-  WAMP bus: volume, mute, shutdown, pairing, and Bluetooth transport procedure
-  names are registered by preserved binaries.
-* Guest-side syscall interposition is sufficient for the ALSA control path and
-  for acknowledging the raw I2C startup path under emulation.
+| Procedures                                                                                   | Contract                                                                                  |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `volumeGet`, `stateGet`                                                                      | No positional input; full state in result kwargs                                          |
+| `volumeSet`                                                                                  | `[value, "music"]`; clamp to 0-100; result `[effective, "music"]` plus full volume kwargs |
+| `volumeAdjust`                                                                               | `[delta, "music"]`; clamp result; same result shape                                       |
+| `musicMuteSet`                                                                               | `[boolean, "music"]`; result `[boolean, "music"]` plus full volume kwargs                 |
+| `musicMuteToggle`                                                                            | No arguments; same result shape as `musicMuteSet`                                         |
+| `extStateUpdate`                                                                             | `["bluetooth"]` with `{"state":"playing"}` kwargs; empty result                           |
+| `aui.alertPlay`, `aui.alertCancel`, `aui.registerVoiceAgent`, `aui.demo-action`, `demoIntro` | Registered; not required for owned Bluetooth operation                                    |
 
-Inference:
-
-* Treating the final firmware as a stock repurposing route is an engineering
-  direction supported by the service set, not yet a measured physical-device
-  result.
-
-Current limits:
-
-* Emulation verifies software state changes, not acoustic output on real
-  hardware.
-* Bluetooth procedures register but do not complete without an HCI transport and
-  paired media session.
-* The I2C trace is an emulated startup trace with synthetic responses; it is not
-  a physical bus capture.
-
-## Why this was possible
-
-The Invoke's control plane is not a proprietary protocol. `system-manager`
-starts `bonefish`, an open-source C++ WAMP router, and every subsystem
-connects to it as an `autobahn-cpp` client. Because both the router and the
-clients ship as ordinary ARM Linux executables inside the preserved rootfs,
-the entire control plane can be reconstituted off-device.
-
-## Environment
-
-| Component | Value |
-|---|---|
-| Emulator | `qemu-arm-static` (qemu-user) |
-| Isolation | `bwrap` rootless sandbox, no root privileges required |
-| Sandbox root | `reinvoke-archive/emulation/sandbox` (a copy, never the evidence tree) |
-| Launcher | `reinvoke-archive/emulation/run.sh` |
-| Source rootfs | `extracted/phase3/stockroot/rootfs` from `83_IMAGE` |
-
-Services run against a copy so runtime state never mutates preserved material.
-
-Two runtime facts had to be reproduced before any service would stay up:
-
-- `/data` is a symlink to `/lsync/data1`, so `/lsync` must exist and be
-  writable or `audio-ui` aborts in `boost::filesystem::create_directory`.
-- `qemu-user` does not redirect filesystem syscalls through its `-L` sysroot.
-  Absolute paths resolve against the host, which is why a real sandbox rather
-  than a library search path is required.
-
-## Verified router behaviour
-
-`bonefish` accepts the documented options `-r realm`, `-t rawsocket-port`,
-`-w websocket-port`, `--no-json`, `--no-msgpack`, and `-d`. Started as
-`bonefish -r default -t 9999 -w 9998`, it listens on both ports and announces
-the `dealer` and `broker` roles in its WELCOME.
-
-Serializer negotiation was probed across the full rawsocket matrix:
-
-| Requested serializer | Result |
-|---|---|
-| 1 (JSON) | Rejected, error code 1 |
-| 2 (MsgPack) | Accepted at every tested max-length |
-| 3 | Rejected, error code 1 |
-
-The bus is therefore MsgPack-only over rawsocket in this build. Any future
-client must speak MsgPack; a JSON client is refused at handshake.
-
-## Correction to the recovered URI list
-
-An earlier pass reported 130 control URIs extracted from service binaries.
-That count was produced with a lowercase-only pattern, which truncated every
-camelCase identifier at its first capital letter. The real name
-`com.harman.volumeSet` was being recorded as `com.harman.volume`.
-
-Re-extracting with a case-correct pattern yields 165 URIs, and the corrected
-forms are confirmed against live router traffic. A probe of the truncated list
-against the running bus returned zero registered procedures, which is what
-exposed the error. The truncated names were not merely incomplete, they were
-names that do not exist.
-
-## Procedures registered by audio-ui
-
-Observed directly in router debug output as `audio-ui` joined the realm:
-
-| Procedure |
-|---|
-| `com.harman.volumeGet` |
-| `com.harman.volumeSet` |
-| `com.harman.volumeAdjust` |
-| `com.harman.musicMuteSet` |
-| `com.harman.musicMuteToggle` |
-| `com.harman.stateGet` |
-| `com.harman.aui.alertPlay` |
-| `com.harman.aui.alertCancel` |
-| `com.harman.aui.registerVoiceAgent` |
-| `com.harman.aui.demo-action` |
-| `com.harman.extStateUpdate` |
-| `com.harman.demoIntro` |
-
-It subscribes to `com.harman.test.inputEvent` and
-`com.harman.music.stateChanged`, and publishes `com.harman.ready.audio-ui`
-followed by a periodic `com.harman.heartbeat.audio-ui` carrying
-`{"thread_id": <int>}`.
-
-## Recovered payload shapes
-
-These are observed messages, not inferred schemas.
-
-`com.harman.stateGet` returns no positional arguments and a keyword map of
-stream states:
+Volume/mute calls succeeded under emulation: setting 30, adjusting by 5 and
+muting returned `[30,"music"]`, `[35,"music"]` and `[true,"music"]`; follow-up
+queries confirmed each change. `volumeGet` returns a map such as:
 
 ```json
-{"alert": {"priority": "5", "state": ""},
- "alert-type": {"priority": "", "state": ""},
- "bluetooth": {"priority": "5", "state": ""},
- "call": {"state": ""},
- "microphone": {"priority": "4", "state": ""},
- "music": {"state": ""},
- "system": {"state": ""},
- "voice": {"priority": "5", "state": ""}}
+{"music":{"mute":0,"volume":50},"system":{"mute":0,"volume":70}}
 ```
 
-`com.harman.volumeGet` returns per-stream volume and mute:
+`stateGet` returns no positional arguments and this keyword-map shape:
 
 ```json
-{"music": {"mute": 0, "volume": 50},
- "system": {"mute": 0, "volume": 70}}
+{"alert":{"priority":"5","state":""},
+ "alert-type":{"priority":"","state":""},
+ "bluetooth":{"priority":"5","state":""},
+ "call":{"state":""},
+ "microphone":{"priority":"4","state":""},
+ "music":{"state":""},
+ "system":{"state":""},
+ "voice":{"priority":"5","state":""}}
 ```
 
-`com.harman.stateChanged` is published with one positional argument naming the
-changed stream and a keyword map of the full state. `com.harman.volume.setDuck`
-was observed published as `["music", "hard"]`, establishing that ducking takes
-a stream name and a strength.
+`stateChanged` publishes `[stream]` plus the full stream-map kwargs.
+`volumeChanged` publishes `["music", value]`. Muting stored volume 35 publishes
+`volumeChanged ["music",0]` then `musicMuteChanged [true]`; stored volume stays
+35. Observed `volume.setDuck ["music","hard"]` supplies stream and strength.
+`audio-ui` subscribes to `test.inputEvent` and `music.stateChanged`, publishes
+`ready.audio-ui`, and emits `heartbeat.audio-ui` with `{"thread_id":<int>}`.
 
-## A control call that actually worked
+Historical `music-source-manager` registrations, also under `com.harman.`:
 
-`com.harman.musicMuteToggle` was called with no arguments and returned
-`[true, "music"]` with keyword state showing `music.mute` transitioned from
-`0` to `1`. A follow-up `com.harman.volumeGet` confirmed the new value.
+| Group                   | Procedures                                                                                               |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- |
+| Transport forwarding    | `music.{next,pause,prev,repeat,resume,shuffle,skipto,stop}`                                              |
+| Source registry/routing | `source.{flush,get-active,get-registered,nowPlayingUpdate,register,start,trackPositionUpdate,volumeSet}` |
+| Lifecycle               | `music-source-manager.shutdown`                                                                          |
 
-This is the first end-to-end demonstration that the Invoke's audio control
-surface can be driven by a client Harman did not write, using only preserved
-software.
+In isolated execution, `source.register ["com.harman.bluetooth"]` and
+`source.start ["com.harman.bluetooth"]` returned no args.
+`source.get-registered []` returned `["com.harman.bluetooth"]`;
+`source.get-active []` changed from `[""]` to `["com.harman.bluetooth"]`.
+The service subscribes to `volumeChanged` and publishes
+`ready.music-source-manager` and `heartbeat.music-source-manager`.
+BlueZ/BlueALSA do not require this registry or donor process.
 
-The initial sandbox could not run `volumeSet`, `volumeAdjust`, or
-`musicMuteSet`. `qemu-user` returned `ENOSYS` for ALSA control ioctls before
-they reached the host driver. A guest-side ARM `LD_PRELOAD` shim now supplies
-the required card, element-list, element-info, read, write, and event
-subscription operations. `audio-ui` initializes without ALSA errors and all
-three procedures work end to end.
+## Vendor control surface
 
-The exact positional payloads are value first, stream name second:
+The final `Barracuda_libre-12.2134.0` rootfs removes Cortana/Spotify and adds
+`wifi-blocker`; the historical unit rootfs capture was `12.2050.3`.
+Static configuration and emulated registrations establish the following
+stock surface, not a supported reInvoke administration API:
 
-```json
-{"volumeSet": [30, "music"],
- "volumeAdjust": [5, "music"],
- "musicMuteSet": [true, "music"]}
-```
+| Service     | Additional `com.harman.` registrations                                                               |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| `bluetooth` | `bluetoothPairing`, `bluetooth.{resume,pause,stop,next,prev,skipTo,repeat,shuffle}`, `deviceNameGet` |
+| `oobe-ui`   | `oobe-ui.shutdown`                                                                                   |
 
-`volumeSet` returned `[30, "music"]`; `volumeAdjust` returned `[35, "music"]`;
-and `musicMuteSet` returned `[true, "music"]`. Each response also carried the
-updated full volume state. Follow-up `volumeGet` calls confirmed every change.
+These Bluetooth calls registered but timed out without HCI and a paired
+session. `bluetooth` still subscribes to `com.cortana.device.nameChanged`.
+See [Bluetooth stack](bluetooth-stack.md) for the unresolved donor decoder.
 
-## The final firmware on the bus
+Bonefish binds all interfaces, but `usr/sbin/firewall.sh` drops TCP 9998,
+9999 and 22. An earlier branch accepts them when `/usr/bin/dctflag nofw`
+returns nonempty output. `etc/podium-env` also reads `dctflag exdata`.
+The executable formats `dct_%s=%s`, reads the `wlan0` hardware address and
+references `/factory_setting/%d.dct`. The YAFFS2 partition is not mounted
+read-only; DCT format, integrity checks and secure-boot relationship remain
+unknown. Editing it would be a persistent flash change, not a transient
+firewall adjustment. No working stock debug-gate modification was established.
 
-The same method was applied to `Barracuda_libre-12.2134.0`, the last build
-Harman shipped, recovered from the OTA2 bundle. This is the build in which
-Cortana and Spotify are removed and a `wifi-blocker` service is added, so its
-control surface is the closest thing to a factory-sanctioned repurposed device.
+The firewall permits mDNS, `bootps`, UDP 48301, HTTPS, TCP 12345 and ICMP echo.
+`sshd` starts as Dropbear but is externally blocked. `init.rc` configures USB
+product `0d02`, name `MRVL USB SDK`, function `adb`, and enable `1`; its
+`adbd` service is `disabled` and `#start adbd` remains commented. Gadget
+configuration alone proves neither enumeration nor a usable daemon.
 
-A second sandbox at `reinvoke-archive/emulation/sandbox-final` runs it via
-`run-final.sh`. Its `bonefish`, `audio-ui`, `oobe-ui`, and `bluetooth` services
-all join the realm.
+`wifi-blocker`'s name does not establish radio shutdown or total network
+isolation. `serviceport.sh` configures `eth0` from `/data/service-ip.txt`,
+defaulting to vendor address `172.20.20.20`, and announces gratuitous ARP.
+An actual `eth0` on Invoke is unresolved; regulatory photographs show no
+external Ethernet jack. Bluetooth is the evidence-supported stock user-facing
+path. Later [closed-unit recovery](../uboot-access.md) provided local execution
+without validating the DCT branch or proving every USB stage is BootROM.
 
-Procedures registered by the final build:
+## Donor ALSA configuration
 
-| Procedure | Provided by |
-|---|---|
-| `com.harman.bluetoothPairing` | bluetooth |
-| `com.harman.bluetooth.resume` | bluetooth |
-| `com.harman.bluetooth.pause` | bluetooth |
-| `com.harman.bluetooth.stop` | bluetooth |
-| `com.harman.bluetooth.next` | bluetooth |
-| `com.harman.bluetooth.prev` | bluetooth |
-| `com.harman.bluetooth.skipTo` | bluetooth |
-| `com.harman.bluetooth.repeat` | bluetooth |
-| `com.harman.bluetooth.shuffle` | bluetooth |
-| `com.harman.deviceNameGet` | bluetooth |
-| `com.harman.oobe-ui.shutdown` | oobe-ui |
-| `com.harman.volumeGet` | audio-ui |
-| `com.harman.volumeSet` | audio-ui |
-| `com.harman.volumeAdjust` | audio-ui |
-| `com.harman.musicMuteSet` | audio-ui |
-| `com.harman.musicMuteToggle` | audio-ui |
-| `com.harman.stateGet` | audio-ui |
-| `com.harman.aui.alertPlay` | audio-ui |
-| `com.harman.aui.alertCancel` | audio-ui |
-| `com.harman.aui.registerVoiceAgent` | audio-ui |
-| `com.harman.aui.demo-action` | audio-ui |
-| `com.harman.extStateUpdate` | audio-ui |
-| `com.harman.demoIntro` | audio-ui |
+`etc/asound.conf` includes `asound-product.conf`. Its DSP sink is hardware
+card 1, 48 kHz, stereo `S32_LE`; default playback is `hw:Loopback,0,5`,
+default capture is `mic`. Capture uses `dsp_dsnoop` then `softvol mic`.
+Per-stream `dmix` instances slave to `dsp`; card-0 softvol controls are
+`system`, `music`, `timer`, `call`, `voice` and `mic`. `alarm` inherits
+`timer`; voice routes through LADSPA `mbeq_1197.so`.
+This is donor configuration, not the current BlueALSA route or board wiring.
 
-That set advertises a media-player control surface: pairing, transport, track
-selection, repeat and shuffle, volume, mute, and shutdown. The volume and mute
-procedures have been exercised under emulation; the Bluetooth procedures are
-registered but still blocked by the missing HCI transport. This is the practical
-API candidate for treating an Invoke as a controllable Bluetooth speaker.
+## Isolated reproduction
 
-One vestige is worth recording. The `bluetooth` service still subscribes to
-`com.cortana.device.nameChanged` even though every Cortana binary was removed,
-so the device-name path was never fully decoupled from the assistant.
+Requires an existing writable private
+`${REINVOKE_ARCHIVE}/emulation/sandbox-final` rootfs copy, `qemu-arm-static`,
+`bwrap` and the ARM compiler. `/data -> /lsync/data1` needs writable `/lsync`.
+Qemu's `-L` does not redirect absolute filesystem paths, so use the sandbox.
 
-## Results by call
+> [!WARNING]
+> Keep the network namespace loopback-only. The launcher rejects other
+> interfaces and uses synthetic `/dev/null` placeholders; never expose a
+> host I2C device. Bonefish is unauthenticated.
 
-Tested against the final firmware with a third-party MsgPack client.
-
-| Call | Result |
-|---|---|
-| `com.harman.stateGet` | Returns full stream state |
-| `com.harman.volumeGet` | Returns per-stream volume and mute |
-| `com.harman.musicMuteToggle` | Succeeds and mutates state |
-| `com.harman.volumeSet` | Succeeds with `[value, stream]` |
-| `com.harman.volumeAdjust` | Succeeds with `[delta, stream]` |
-| `com.harman.musicMuteSet` | Succeeds with `[boolean, stream]` |
-| `com.harman.bluetooth.*` | No reply within timeout |
-| `com.harman.deviceNameGet` | No reply within timeout |
-
-The remaining failures are environmental within the current sandbox: Bluetooth
-procedures block because the sandbox has no HCI transport or paired media
-session. See
-[bluetooth-stack.md](bluetooth-stack.md).
-
-## Limits of this method
-
-Two kernel-facing interfaces initially blocked recovery under `qemu-user`.
-Both were overcome above the emulator with a guest-side ioctl shim.
-
-`qemu-user` does not implement the ALSA control ioctls. Tracing `amixer` inside
-the sandbox shows `SNDRV_CTL_IOCTL_CARD_INFO` (`0x81785501`) returning `ENOSYS`.
-Loading `snd-aloop` on the host made a Loopback card appear at card 1, which is
-exactly where the device's `asound.conf` expects its DSP, and the device can see
-`/proc/asound/cards` and every node under `/dev/snd`. None of that helps,
-because the emulator refuses the ioctl before the driver is ever reached.
-
-The ARM preload library intercepts `ioctl()` inside the guest, before qemu sees
-it. Its synthetic control card exposes the six names in the preserved ALSA
-configuration: `music`, `call`, `voice`, `system`, `timer`, and `mic`. The
-library is ARM EABI5 hard-float and requires only `GLIBC_2.4`, so it loads
-against the firmware's glibc 2.23. No host or guest glibc upgrade is required.
-
-The Bluetooth transport procedures need an HCI transport. An earlier version of
-this document said they need BlueZ and D-Bus, which is incorrect for the
-examined service: it uses Bluedroid through the kernel Bluetooth subsystem. See
-[bluetooth-stack.md](bluetooth-stack.md).
-
-The same shim answers raw `I2C_RDWR`, which `i2c-stub` cannot provide. See
-[mcu-boundary.md](mcu-boundary.md). This demonstrates that a targeted guest
-interposer can extend qemu-user for the observed startup path when the missing
-behavior is a narrow syscall boundary. Full-system emulation was not required
-for the audio-control and MCU-startup results recorded here.
-
-## Audio topology
-
-`etc/asound.conf` loads `etc/asound-product.conf`, which describes the real
-signal path.
-
-| Element | Value |
-|---|---|
-| DSP device | `hw` card 1, 48000 Hz, 2 channels, `S32_LE` |
-| Default playback | `hw:Loopback,0,5` (ALSA loopback) |
-| Default capture | `mic` |
-| Mixing | `dmix` instances per stream, all slaving to `dsp` |
-| Microphone | `dsp_dsnoop` then `softvol` named `mic` |
-
-Each stream is a `softvol` plugin whose control name matches the stream and
-whose control card is 0:
-
-| Stream | Control name | Slave |
-|---|---|---|
-| `system` | `system` | `volmix_system` |
-| `music` | `music` | `volmix_music` |
-| `timer` | `timer` | `volmix_timer` |
-| `call` | `call` | `volmix_call` |
-| `voice` | `voice` | `mbeq` |
-| `alarm` | inherits `timer` | `timer` |
-
-The `voice` stream routes through `mbeq`, a LADSPA equalizer present in the
-rootfs as `usr/lib/ladspa/mbeq_1197.so`. The DSP carries its own loadable
-image at `usr/share/dsp/dsp-img.ldr`.
-
-## Build provenance
-
-Service logs leak the original build path:
-
-```text
-/usr/src/debug/audio-ui/1.0-r0/jenkins_slave/workspace/
-PodiumCustomerRelease-Microsoft/podium/source/audio-ui/alsa_volume.c
-```
-
-This confirms Podium as the platform name, names the Microsoft customer
-release branch, and gives source file names with line numbers for the audio
-volume implementation.
-
-## What this establishes and what it does not
-
-Verified by execution:
-
-- The control plane is reproducible off-device with no hardware access for the
-  service paths tested here.
-- The transport is WAMP over MsgPack rawsocket on port 9999.
-- The audio volume/mute control surface responds to third-party calls and
-  changes software state.
-- The volume and mute setters use value-first positional arguments.
-- The full ALSA routing, including DSP format and per-stream controls, is
-  documented in preserved configuration.
-
-Not established:
-
-- Whether the same calls drive real speakers on real hardware. Emulation
-  exercises the software path only.
-- Anything about the daughterboard connector, electrical behaviour, or the
-  MCU's physical I2C wiring. Those remain measurements, not inferences.
-- Bluetooth transport behavior under emulation or on a paired physical unit.
-
-## Reproducing this
+From the repository root, compile the shim, enter the namespace, then launch:
 
 ```bash
 arm-linux-gnueabihf-gcc -shared -fPIC -O2 -Wall -Wextra -Werror \
-  -o ../reinvoke-archive/emulation/invoke-ioctl-shim.so \
+  -o "${REINVOKE_ARCHIVE}/emulation/invoke-ioctl-shim.so" \
   tools/emulation/invoke-ioctl-shim.c
-
 unshare --user --map-root-user --net
 ip link set lo up
-
-tools/emulation/run-final-shim.sh \
-  /usr/bin/bonefish -r default -t 9999 -w 9998 -d &
+tools/emulation/run-final-shim.sh /usr/bin/bonefish -r default -t 9999 -w 9998 -d &
 tools/emulation/run-final-shim.sh /usr/bin/audio-ui 127.0.0.1 9999 &
 ```
 
-Run the MsgPack WAMP client from that same shell and network namespace,
-connecting to `127.0.0.1:9999`, realm `default`. The launcher refuses to run in
-the workstation's initial network namespace because `bonefish` listens on all
-interfaces.
+Run the [MessagePack client](../../tools/control/README.md) in that namespace
+against `127.0.0.1:9999`, realm `default`. The public clone supplies the shim
+and launcher, not the sandbox or vendor binaries.

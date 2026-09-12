@@ -1,627 +1,189 @@
 ---
-title: Historical Invoke and Marvell Berlin acquisition manifest
-description: Dated acquisition seed, preserved discovery proposals, and current custody corrections
+title: Invoke and Berlin source catalogue
+description: Acquisition status, authoritative records and unresolved firmware and source leads
 ms.date: 2026-09-12
 ---
 
-## Reading boundary
+## Record authority
 
-This seed was generated on 2026-08-25 and later annotated with acquired
-results. `LIVE_CONFIRMED`, discovery actions, and execution ordering below
-describe those checkpoints, not fresh URL checks or unfinished tasks approved
-for automatic execution. Use `tools/acquisitions.json` and the corresponding
-public metadata sidecars for acquisition status; private native builds have
-separate manifests.
+The source catalogue distinguishes acquired objects from discovery leads for
+Invoke and the Marvell Berlin family. Status describes the recorded capture,
+not present upstream availability or compatibility with the speaker.
 
-As verified through the release list and API on 2026-09-12 UTC, this repository
-has no releases. Original public vendor inputs came from
+* [Acquisition definitions](../../tools/acquisitions.json) identify sources,
+  destinations and capture scope.
+* [Metadata sidecars](../../metadata/) bind downloaded bytes or Git revisions
+  to their provenance. Use their complete hashes, sizes and retrieval dates
+  rather than filenames as identities.
+* [Firmware reference](../firmware-reference.md) records extracted formats and
+  generation differences.
+* [Storage policy](storage-policy.md) defines retention and publication.
+
+Public upstream packages are distinct from private build outputs and device
+captures. Full firmware, extracted trees and the private archive are not
+provided by this repository. The custom image is not published; the recorded
+2026-09-12 release check found no reInvoke releases.
+
+## Recorded acquisition results
+
+The three Invoke originals were acquired on 2026-08-26 from
 [coggy9/HKHacking releases](https://github.com/coggy9/HKHacking/releases).
-The custom image is not published, and firmware packages remain private.
-Earlier mirror proposals or dated upload records do not establish current
-public availability.
-
-**Generated:** 2026-08-25  
-**Purpose:** seed manifest for automated preservation of Harman Kardon Invoke / Marvell 88DE3006 (BG2CDP) firmware, BSPs, GPL drops, SDKs, donor trees, and reverse-engineering material.
-
-## Automation policy
-
-For every acquired object: preserve the original byte-for-byte; record source URL, final URL, UTC retrieval time, SHA-256, SHA-1, size, MIME/type, and HTTP metadata; extract only into a separate tree; never overwrite an older copy; mirror full Git history when practical.
-
-**Do not automatically execute or flash any downloaded artifact.** Acquisition automation is authorized only to download, mirror, archive, hash, extract, index, and document.
-
-Suggested tree:
-
-```text
-reinvoke/                 # Git repository (small, durable catalogue)
-├── docs/
-├── metadata/             # provenance sidecars, SHA-256 per artifact
-└── tools/
-
-reinvoke-archive/         # bulk payloads, never in Git; mirrored to cold storage
-├── originals/{harman,google,marvell,kinoma,valve,community}/
-├── git-mirrors/
-├── extracted/
-└── web-pages/
-```
-
-`destination:` values below are relative to the archive root, not the repository.
-The operational manifest is `tools/acquisitions.json`; this document is the seed
-specification and rationale.
-
-## Historical P0 acquisition queue
-
-### P0-001 — Harman Citation GPL/Open-Source package
-
-```yaml
-id: P0-001
-priority: P0
-status: LIVE_CONFIRMED
-kind: binary_archive
-expected_filename: Citation.zip
-download_url: "https://www.harmankardon.com/on/demandware.static/-/Sites-masterCatalog_Harman/default/dwb3ecd0ef/downloads/Citation.zip"
-provenance_page: "https://www.harmankardon.com/opensource.html"
-destination: originals/harman/citation/Citation.zip
-why: "Same Harman ecosystem; Citation-family material is a high-value donor for Invoke research."
-```
-
-After extraction search for:
-
-```text
-88DE3006 BG2CDP bg2cdp berlin2 berlin2cdp berlin2cdp-dongle
-Galois galois Marvell mrvl u-boot uboot linux kernel defconfig
-.dts .dtsi NAND mtd 88W8887 toolchain buildroot busybox
-```
-
-### P0-002 — Official Google Chromecast / Nest open-source archive
-
-```yaml
-id: P0-002
-priority: P0
-status: LIVE_CONFIRMED
-kind: cloud_folder
-folder_url: "https://drive.google.com/drive/folders/1jdISUGQQr10kX_MeJ_tWoCLjv1CznoWH?resourcekey=0-DDxaPDf4jphp5EtgzWFQ5g"
-provenance_page: "https://support.google.com/product-documentation/answer/10525328?hl=en"
-destination: originals/google/chromecast-nest-oss/
-action: ENUMERATE_AND_DOWNLOAD_ALL
-```
-
-Locate with highest priority:
-
-```text
-chromecast_sdk_oss.tgz
-chromecast_oss.tgz
-*1.56*
-*Kernel*Bootloader*SDK*
-*Chromecast*Audio*
-*Chromecast*2*
-*Google*Home*
-*Google*Home*Mini*
-```
-
-Historical high-value lead:
-
-```text
-1.56/
-└── Kernel Bootloader SDK/
-    └── .../
-        └── chromecast_sdk_oss.tgz
-```
-
-Do not assume the current Drive hierarchy still matches the historical hierarchy. Search recursively by filename.
-
-### P0-003 — Google/Nest Marvell Berlin bootloader source
-
-```yaml
-id: P0-003
-priority: P0
-status: LIVE_CONFIRMED
-kind: git_repository
-clone_url: "https://nest-open-source.googlesource.com/manifest_repos/bootloader"
-browse_url: "https://nest-open-source.googlesource.com/manifest_repos/bootloader/"
-destination: git-mirrors/google-nest/bootloader.git
-action: GIT_MIRROR
-required_commit: "836ad32e08388e0e4ce8d03fe4f14d2c3ea8ba13"
-```
-
-Preserve these exact historical paths too:
-
-```text
-https://nest-open-source.googlesource.com/manifest_repos/bootloader/+/836ad32e08388e0e4ce8d03fe4f14d2c3ea8ba13/berlin_tools/bootloader/
-https://nest-open-source.googlesource.com/manifest_repos/bootloader/+/836ad32e08388e0e4ce8d03fe4f14d2c3ea8ba13/berlin_tools/bootloader/bootloader.lds
-```
-
-### P0-004 — Harman Kardon Invoke flashing bundle
-
-```yaml
-id: P0-004
-priority: P0
-status: DISCOVERY_REQUIRED
-kind: firmware_bundle
-expected_filename: Harman.Kardon.INVOKE.Flashing.zip
-known_discussion: "https://github.com/coggy9/HKHacking/discussions/3"
-destination: originals/harman/invoke/
-action: DISCOVER_ARCHIVE_OR_MIRROR
-```
-
-**Do not invent a direct download URL.** Search GitHub attachments/user-content URLs, old Harman pages, archive.org, Wayback, cached pages, mirrors, forums, and preserved user uploads.
-
-Expected internal objects:
-
-```text
-70_IMAGE
-79_IMAGE
-79_IMAGE.examples
-81_IMAGE
-82_IMAGE
-83_IMAGE
-99_IMAGE
-Mrvl_WinUSB*
-usb_boot*
-l2nand*
-mload*
-```
-
-Also archive the complete discussion page above.
-
-Later acquisition resolved this lead as P0-004a/b/c. See the
-[retention record](source-retention-ranking.md#local-capture-status-for-top-custody-gap-items)
-and their metadata sidecars. The discovery instructions above are retained
-history, not a request to search for or republish these packages.
-
-### P0-005 — historical Harman Invoke OSS page
-
-```yaml
-id: P0-005
-priority: P0
-status: ACQUIRED
-kind: historical_web_target
-historical_url: "https://www.harmankardon.com/cortana-sdk-opensource.html"
-current_parent: "https://www.harmankardon.com/opensource.html"
-destination: web-pages/harman-cortana-sdk-opensource-20231203010301.html
-action: WAYBACK_CDX_ENUMERATE_ALL_CAPTURES_AND_LINKS
-```
-
-Resolved at acquisition: the live URL redirected (`REDIRECTS_TODAY` was accurate for
-direct access), but the Wayback Machine CDX index
-(`http://web.archive.org/cdx/search/cdx?url=harmankardon.com/cortana-sdk-opensource.html&output=json`)
-has two `200`-status captures (2023-03-29, 2023-12-03). The 2023-12-03
-capture was retrieved and archived; SHA-256
-`6b2e25ae48c4e3456c1952a2ff13d8013cf978b68f94d7295a741e30aac7696b`. It is a
-Microsoft-authored third-party notices file for the Cortana SDK (Expat,
-RapidJSON, Parson, zlib, curl, Breakpad, OpenSSL, Opus, and related
-components), not source code. See
-`docs/corpus/02_CLAIM_EVIDENCE_LEDGER.md` §"Cortana SDK third-party notices
-(P0-005)" for the full claim breakdown.
-
-Parse every historical capture for:
-
-```text
-invoke Invoke INVOKE cortana Cortana opensource open-source
-source GPL SDK firmware .zip .tgz .tar.gz demandware.static downloads
-```
-
-For every discovered asset URL, archive the asset itself plus all available Wayback captures.
-
-## Historical P1 donor-source queue
-
-Google/Nest repository index:
-
-```text
-https://nest-open-source.googlesource.com/manifest_repos/
-```
-
-Mirror all of these:
-
-```yaml
-repositories:
-  - id: P1-001
-    url: "https://nest-open-source.googlesource.com/manifest_repos/kernel"
-    dest: git-mirrors/google-nest/kernel.git
-  - id: P1-002
-    url: "https://nest-open-source.googlesource.com/manifest_repos/sdk"
-    dest: git-mirrors/google-nest/sdk.git
-  - id: P1-003
-    url: "https://nest-open-source.googlesource.com/manifest_repos/gnu_toolchain"
-    dest: git-mirrors/google-nest/gnu_toolchain.git
-  - id: P1-004
-    url: "https://nest-open-source.googlesource.com/manifest_repos/toolchain"
-    dest: git-mirrors/google-nest/toolchain.git
-  - id: P1-005
-    url: "https://nest-open-source.googlesource.com/manifest_repos/u-boot"
-    dest: git-mirrors/google-nest/u-boot.git
-  - id: P1-006
-    url: "https://nest-open-source.googlesource.com/manifest_repos/drivers"
-    dest: git-mirrors/google-nest/drivers.git
-  - id: P1-007
-    url: "https://nest-open-source.googlesource.com/manifest_repos/media_modules"
-    dest: git-mirrors/google-nest/media_modules.git
-  - id: P1-008
-    url: "https://nest-open-source.googlesource.com/manifest_repos/mtd-utils"
-    dest: git-mirrors/google-nest/mtd-utils.git
-  - id: P1-009
-    url: "https://nest-open-source.googlesource.com/manifest_repos/alsa-lib"
-    dest: git-mirrors/google-nest/alsa-lib.git
-  - id: P1-010
-    url: "https://nest-open-source.googlesource.com/manifest_repos/alsa-utils"
-    dest: git-mirrors/google-nest/alsa-utils.git
-  - id: P1-011
-    url: "https://nest-open-source.googlesource.com/manifest_repos/ffmpeg"
-    dest: git-mirrors/google-nest/ffmpeg.git
-```
-
-### P1-020 — Valve Steam Link SDK
-
-```yaml
-id: P1-020
-priority: P1
-status: LIVE_CONFIRMED
-kind: git_repository
-clone_url: "https://github.com/ValveSoftware/steamlink-sdk.git"
-browse_url: "https://github.com/ValveSoftware/steamlink-sdk"
-archive_url: "https://github.com/ValveSoftware/steamlink-sdk/archive/refs/heads/master.tar.gz"
-destination: git-mirrors/valve/steamlink-sdk.git
-action: GIT_MIRROR
-notes: "88DE3005/BG2CD predecessor; valuable Marvell BSP/toolchain/build-layout donor."
-```
-
-Preserve/index:
-
-```text
-kernel/ rootfs/ toolchain/ scripts/ external/ examples/
-MARVELL_SDK_PATH bg2cd bg2cd_penguin_mlc_defconfig Berlin
-Galois Marvell Vivante NAND mtd uImage
-```
-
-## Historical P1 Kinoma preservation
-
-### P1-030 — KinomaJS
-
-```yaml
-id: P1-030
-priority: P1
-status: LIVE_CONFIRMED
-kind: git_repository
-clone_url: "https://github.com/Kinoma/kinomajs.git"
-browse_url: "https://github.com/Kinoma/kinomajs"
-archive_url: "https://github.com/Kinoma/kinomajs/archive/refs/heads/master.tar.gz"
-destination: git-mirrors/kinoma/kinomajs.git
-action: GIT_MIRROR
-```
-
-Search **full history**, not only HEAD, for:
-
-```text
-Kinoma HD KinomaHD kinomahd kinoma-hd BG2CDP 88DE3006
-Berlin Marvell firmware update upgrade downgrade manifest OTA
-release beta xsedit KPL KPR
-```
-
-Extract and preserve every historical firmware-update URL or manifest URL found.
-
-### P1-031 — Kinoma Acorn kernel
-
-```yaml
-id: P1-031
-clone_url: "https://github.com/kinoma/acorn_kernel.git"
-browse_url: "https://github.com/kinoma/acorn_kernel"
-archive_url: "https://github.com/kinoma/acorn_kernel/archive/refs/heads/master.tar.gz"
-destination: git-mirrors/kinoma/acorn_kernel.git
-action: GIT_MIRROR
-```
-
-### P1-032 — Kinoma Acorn U-Boot
-
-```yaml
-id: P1-032
-clone_url: "https://github.com/kinoma/acorn_uboot.git"
-browse_url: "https://github.com/kinoma/acorn_uboot"
-archive_url: "https://github.com/kinoma/acorn_uboot/archive/refs/heads/master.tar.gz"
-destination: git-mirrors/kinoma/acorn_uboot.git
-action: GIT_MIRROR
-```
-
-### P1-033 — entire public Kinoma GitHub organization
-
-```yaml
-id: P1-033
-url: "https://github.com/Kinoma"
-action: ENUMERATE_ALL_PUBLIC_REPOSITORIES_AND_GIT_MIRROR
-destination: git-mirrors/kinoma/
-```
-
-Record the repository inventory, default branch, HEAD commit, and last update time.
-
-## Historical P1 Linux Berlin maintainer tree
-
-```yaml
-id: P1-040
-priority: P1
-status: LIVE_CONFIRMED
-kind: git_repository
-clone_url: "https://kernel.googlesource.com/pub/scm/linux/kernel/git/jszhang/linux-berlin"
-browse_url: "https://kernel.googlesource.com/pub/scm/linux/kernel/git/jszhang/linux-berlin/"
-destination: git-mirrors/linux/linux-berlin.git
-action: GIT_MIRROR
-```
-
-Search history for:
-
-```text
-88DE3006 BG2CDP berlin2cdp berlin2 Marvell
-ARMADA 1500 Mini Plus chromecast kinoma
-```
-
-## Historical P2 community preservation
-
-### P2-001 — HKHacking
-
-```yaml
-id: P2-001
-priority: P2
-status: LIVE_CONFIRMED
-kind: git_repository_and_web_content
-clone_url: "https://github.com/coggy9/HKHacking.git"
-browse_url: "https://github.com/coggy9/HKHacking"
-destination: git-mirrors/community/HKHacking.git
-action:
-  - GIT_MIRROR
-  - ARCHIVE_ISSUES
-  - ARCHIVE_DISCUSSIONS
-  - ARCHIVE_RELEASES
-  - ARCHIVE_RELEASE_ASSETS
-  - ARCHIVE_LINKED_USER_CONTENT
-```
-
-Critical discussion:
-
-```text
-https://github.com/coggy9/HKHacking/discussions/3
-```
-
-Index:
-
-```text
-Harman.Kardon.INVOKE.Flashing.zip Mrvl_WinUSB 88DE3006 BG2CDP
-berlin2cdp-dongle 79_IMAGE.examples 81_IMAGE 82_IMAGE 83_IMAGE
-99_IMAGE mload l2nand GCastSDK anchovy galois tz_en reboot_usb.sh
-```
-
-### P2-002 — google/adb-sync
-
-```yaml
-id: P2-002
-clone_url: "https://github.com/google/adb-sync.git"
-browse_url: "https://github.com/google/adb-sync"
-destination: git-mirrors/google/adb-sync.git
-action: GIT_MIRROR
-why: "Referenced by Invoke investigators while pulling mounted flash contents."
-```
-
-## Historical archival discovery jobs
-
-### DISCOVERY-001 — Kinoma HD firmware / recovery / GPL / SDK
-
-```yaml
-id: DISCOVERY-001
-priority: P0
-status: NOT_FOUND_YET
-target: Kinoma HD
-destination: originals/kinoma/hd/discovered/
-search_terms:
-  - '"Kinoma HD" firmware'
-  - '"Kinoma HD" recovery'
-  - '"Kinoma HD" image'
-  - '"Kinoma HD" SDK'
-  - '"Kinoma HD" GPL'
-  - '"Kinoma HD" source'
-  - '"Kinoma HD" download'
-  - '"kinomahd"'
-  - '"kinoma-hd"'
-  - '"88DE3006" Kinoma'
-  - '"BG2CDP" Kinoma'
-  - '"berlin2cdp" Kinoma'
-file_patterns:
-  - "*.zip"
-  - "*.tgz"
-  - "*.tar.gz"
-  - "*.img"
-  - "*.bin"
-  - "*.uImage"
-  - "*.ubi"
-  - "*.squashfs"
-```
-
-Search archive.org, Wayback/CDX, GitHub, GitLab, Bitbucket, SourceForge, historical Kinoma/Marvell pages, developer forums, FCC exhibits, FTP indexes, and download mirrors.
-
-Seed domain hypotheses, verify before treating as historical facts:
-
-```text
-kinoma.com
-developer.kinoma.com
-forum.kinoma.com
-downloads.kinoma.com
-marvell.com
-```
-
-### DISCOVERY-002 — Kinoma Studio / Kinoma Code installers
-
-```yaml
-id: DISCOVERY-002
-priority: P1
-historical_lead: "https://kinoma.com/studio"
-destination: originals/kinoma/tools/
-search_terms:
-  - '"Kinoma Studio" download'
-  - '"Kinoma Studio 4.4"'
-  - '"Kinoma Code" installer'
-  - '"Kinoma Studio" dmg'
-  - '"Kinoma Studio" exe'
-file_patterns: ["*.dmg","*.pkg","*.exe","*.msi","*.zip"]
-```
-
-Preserve installers; never execute automatically.
-
-### DISCOVERY-003 — exact Chromecast SDK bundles
-
-```yaml
-id: DISCOVERY-003
-priority: P0
-official_folder: "https://drive.google.com/drive/folders/1jdISUGQQr10kX_MeJ_tWoCLjv1CznoWH?resourcekey=0-DDxaPDf4jphp5EtgzWFQ5g"
-targets:
-  - chromecast_sdk_oss.tgz
-  - chromecast_oss.tgz
-fallback_queries:
-  - '"chromecast_sdk_oss.tgz"'
-  - '"chromecast_oss.tgz" "1.56"'
-  - '"combined-sdk-kernel-bootloader"'
-destination: originals/google/chromecast-1.56/
-```
-
-Preserve all byte-distinct copies and provenance.
-
-### DISCOVERY-004 — Harman Demandware OSS assets
-
-```yaml
-id: DISCOVERY-004
-priority: P0
-seed_pages:
-  - "https://www.harmankardon.com/opensource.html"
-  - "https://www.harmankardon.com/cortana-sdk-opensource.html"
-known_live_asset:
-  - "https://www.harmankardon.com/on/demandware.static/-/Sites-masterCatalog_Harman/default/dwb3ecd0ef/downloads/Citation.zip"
-destination: originals/harman/discovered/
-action: "Enumerate historical captures and extract demandware.static/download links."
-```
-
-Search historical HTML for:
-
-```text
-demandware.static downloads opensource source GPL cortana invoke citation
-.zip .tgz .tar.gz
-```
-
-### DISCOVERY-005 — standalone Marvell BG2CDP / 88DE3006 BSP
-
-```yaml
-id: DISCOVERY-005
-priority: P0
-status: NOT_FOUND_AS_STANDALONE_PACKAGE
-destination: originals/marvell/bg2cdp/
-search_terms:
-  - '"BG2CDP" BSP'
-  - '"BG2CDP" SDK'
-  - '"88DE3006" SDK'
-  - '"88DE3006" BSP'
-  - '"berlin2cdp" SDK'
-  - '"berlin2cdp" BSP'
-  - '"ARMADA 1500 Mini Plus" SDK'
-  - '"ARMADA 1500 Mini Plus" BSP'
-  - '"Marvell Berlin" SDK'
-  - '"Marvell Berlin" BSP'
-  - '"Galois" "Marvell Berlin"'
-  - '"bg2cdp-dongle"'
-file_patterns: ["*.tar.gz","*.tgz","*.zip","*.7z"]
-```
-
-Search public package indexes, old FTP indexes, GitHub forks, Google/Nest history, OEM GPL drops, Harman packages, Chromecast mirrors, and preservation sites.
-
-## Historical provenance-page queue
-
-```yaml
-provenance_targets:
-  - "https://www.harmankardon.com/opensource.html"
-  - "https://www.harmankardon.com/cortana-sdk-opensource.html"
-  - "https://support.google.com/product-documentation/answer/10525328?hl=en"
-  - "https://nest-open-source.googlesource.com/manifest_repos/"
-  - "https://github.com/coggy9/HKHacking/discussions/3"
-  - "https://github.com/ValveSoftware/steamlink-sdk"
-  - "https://github.com/Kinoma/kinomajs"
-  - "https://kernel.googlesource.com/pub/scm/linux/kernel/git/jszhang/linux-berlin/"
-```
-
-## Post-download indexing
-
-Recursively index these tokens across extracted archives and all Git history where feasible:
-
-```text
-88DE3006 88DE3005 BG2CDP BG2CD bg2cdp bg2cd
-berlin2cdp berlin2cdp-dongle berlin ARMADA 1500 Marvell
-Galois galois anchovy joplin mushroom chromecast GCastSDK
-88W8887 Mrvl_WinUSB l2nand mload sign_image uImage U-Boot
-NAND mtd mtdblock squashfs yaffs ubi ubifs factory_setting
-tz_en bootimgs rootfs Vivante DRM PDM I2S Cortana Invoke Citation Kinoma
-```
-
-Index at least these extensions/types:
-
-```text
-.c .h .S .lds .dts .dtsi .config defconfig .mk Makefile
-.sh .py .pl .xml .json .ini .conf .txt .md .pdf
-.bin .img .elf .axf .uImage .ubi .squashfs .tgz .tar.gz .zip
-```
-
-## Historical proposed execution order
-
-```text
-01  P0-001        Download Harman Citation.zip
-02  P0-002        Enumerate/download official Google Chromecast/Nest OSS folder
-03  DISCOVERY-003 Locate chromecast_sdk_oss.tgz and chromecast_oss.tgz
-04  P0-003        Mirror Google/Nest bootloader repository
-05  P0-004        Hunt Harman.Kardon.INVOKE.Flashing.zip
-06  P0-005        Crawl historical cortana-sdk-opensource.html
-07  DISCOVERY-004 Enumerate historical Harman Demandware OSS assets
-08  P1-001..011   Mirror selected Google/Nest repositories
-09  P1-020        Mirror Valve Steam Link SDK
-10  P1-030..033   Mirror Kinoma repositories / org
-11  P1-040        Mirror Linux Berlin maintainer tree
-12  P2-001        Mirror/archive HKHacking + discussions/assets
-13  DISCOVERY-001 Deep Kinoma HD archival hunt
-14  DISCOVERY-002 Hunt Kinoma Studio/Code installers
-15  DISCOVERY-005 Hunt standalone BG2CDP BSP/SDK
-16  INDEX          Build recursive term/file index
-17  HASH           Generate hashes/provenance/deduplication report
-```
-
-## Suggested metadata sidecar
-
-```json
-{
-  "source_url": "",
-  "final_url": "",
-  "retrieved_utc": "",
-  "filename": "",
-  "size_bytes": 0,
-  "sha256": "",
-  "sha1": "",
-  "mime": "",
-  "http_etag": "",
-  "http_last_modified": "",
-  "notes": ""
-}
-```
-
-Git metadata:
-
-```json
-{
-  "clone_url": "",
-  "retrieved_utc": "",
-  "default_branch": "",
-  "head_commit": "",
-  "refs_count": 0,
-  "mirror_path": "",
-  "notes": ""
-}
-```
-
-## Confidence labels
-
-```text
-LIVE_CONFIRMED       URL/repository currently responds and is identifiable.
-HISTORICAL_CONFIRMED Artifact/path is documented but current binary endpoint is not confirmed.
-DISCOVERY_REQUIRED   Artifact is known or strongly suspected but must be located.
-INFERENCE            Plausible lead; do not present as established fact.
-NOT_FOUND_YET        Search target only.
-```
-
-Do not upgrade `DISCOVERY_REQUIRED` or `NOT_FOUND_YET` without recording the exact retrieved URL and content hash.
+The sidecars carry exact asset URLs and complete-object digests.
+
+| Record                                 | Retained object                        | Status and use                               |
+| -------------------------------------- | -------------------------------------- | -------------------------------------------- |
+| [P0-004a](../../metadata/P0-004a.json) | `Harman.Kardon.INVOKE.Flashing.zip`    | Downloaded; stock 11.1842 and recovery kit   |
+| [P0-004b](../../metadata/P0-004b.json) | `Harman.Kardon.INVOKE.Driver.OTA2.zip` | Downloaded; final 12.2134 full-image USB kit |
+| [P0-004c](../../metadata/P0-004c.json) | Standalone StockRoot `83_IMAGE`        | Downloaded; rooted 11.1842 variant           |
+
+The [release API snapshot](../../metadata/HKHacking-releases-api-20260826T115746Z.json)
+preserves release metadata, not the assets themselves.
+[Discussion 3](https://github.com/coggy9/HKHacking/discussions/3) is the original
+community acquisition context; a rendered HTML copy was retained privately.
+A mirror of the main repository does not capture release assets or every
+Discussion/wiki page.
+
+### Other P0 records
+
+| Record                               | Source                                                                                                                              | Recorded result                                                  |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [P0-001](../../metadata/P0-001.json) | Harman `Citation.zip`, source URL in sidecar                                                                                        | HTTP 200 and 6,556 downloaded bytes; not proof of a complete BSP |
+| [P0-002](../../metadata/P0-002.json) | Official Chromecast/Nest source-folder pointer                                                                                      | `DISCOVERY_ONLY`; no folder payload acquired                     |
+| [P0-003](../../metadata/P0-003.json) | [Google/Nest bootloader](https://nest-open-source.googlesource.com/manifest_repos/bootloader/)                                      | Git mirror; revision and refs in sidecar                         |
+| P0-005                               | [Archived Cortana SDK notices](https://web.archive.org/web/20231203010301/https://www.harmankardon.com/cortana-sdk-opensource.html) | HTML acquired; third-party notices, not SDK source               |
+
+P0-001 also has a historical HTTP 403 observation. The successful small
+download supersedes neither that observation nor the need to establish package
+contents. Its SHA-256 and response metadata are in the sidecar.
+
+P0-002 exposed the folder title `Chromecast Opensource Code` but no child-file
+listing to the unauthenticated request. The official
+[Google provenance page](https://support.google.com/product-documentation/answer/10525328?hl=en)
+is useful even while the resourcekey-gated payload remains unresolved.
+
+P0-005 has no dedicated public sidecar. The captured page SHA-256 is
+`6b2e25ae48c4e3456c1952a2ff13d8013cf978b68f94d7295a741e30aac7696b`.
+The private locator is
+`web-pages/harman-cortana-sdk-opensource-20231203010301.html`.
+It records Microsoft-authored notices for components such as Expat, curl,
+OpenSSL and Opus, not an acquired Cortana implementation.
+
+## Mirrored donor sources
+
+The following sidecars record Git captures from the acquisition stage.
+Related SoCs and code names identify comparison material, not drop-in Invoke
+drivers or proof of matching peripherals.
+
+| Record                               | Source                                                                                     | Retained scope and engineering use                                 |
+| ------------------------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| [P0-003](../../metadata/P0-003.json) | [Nest bootloader](https://nest-open-source.googlesource.com/manifest_repos/bootloader/)    | Mirror; Berlin bootloader layout and tools                         |
+| [P1-020](../../metadata/P1-020.json) | [Valve steamlink-sdk](https://github.com/ValveSoftware/steamlink-sdk)                      | Mirror; BG2CD/88DE3005 predecessor BSP, toolchain and build layout |
+| [P1-030](../../metadata/P1-030.json) | [KinomaJS](https://github.com/Kinoma/kinomajs)                                             | Mirror; platform and historical update references                  |
+| [P1-031](../../metadata/P1-031.json) | [Acorn kernel](https://github.com/kinoma/acorn_kernel)                                     | Mirror; sibling kernel comparison                                  |
+| [P1-032](../../metadata/P1-032.json) | [Acorn U-Boot](https://github.com/kinoma/acorn_uboot)                                      | Mirror; sibling bootloader comparison                              |
+| [P2-001](../../metadata/P2-001.json) | [HKHacking](https://github.com/coggy9/HKHacking)                                           | Main-repository mirror; community recovery evidence                |
+| [P2-002](../../metadata/P2-002.json) | [google/adb-sync](https://github.com/google/adb-sync)                                      | Mirror; historical filesystem-pull tooling                         |
+| [P2-003](../../metadata/P2-003.json) | [hk-invoke-arm-flasher](https://github.com/jryruegas92/hk-invoke-arm-flasher)              | Pinned mirror; host recovery implementation                        |
+| [P2-004](../../metadata/P2-004.json) | [hk-invoke-opensource-speaker](https://github.com/Aristoddle/hk-invoke-opensource-speaker) | Provisional mirror; claims require independent corroboration       |
+
+P0-003's required historical commit is
+`836ad32e08388e0e4ce8d03fe4f14d2c3ea8ba13`, distinct from its captured HEAD.
+The pinned
+[Berlin bootloader tree](https://nest-open-source.googlesource.com/manifest_repos/bootloader/+/836ad32e08388e0e4ce8d03fe4f14d2c3ea8ba13/berlin_tools/bootloader/)
+and its `bootloader.lds` are the intended layout references.
+
+For evidence qualification rather than acquisition status, use the
+[sibling-source cross-index](../corpus/05_SIBLING_SOURCE_CROSSINDEX.md),
+including its [community-project review](../corpus/05_SIBLING_SOURCE_CROSSINDEX.md#community-projects).
+
+### Linux Berlin capture discrepancy
+
+[P1-040](../../metadata/P1-040.json) still says `DISCOVERY_ONLY`.
+The later acquisition definition instead records a shallow, blobless sparse
+checkout of roughly 44 MB from the
+[Linux Berlin maintainer tree](https://kernel.googlesource.com/pub/scm/linux/kernel/git/jszhang/linux-berlin/).
+Neither record establishes the full mirror proposed by the original seed.
+
+The later scope note reports Berlin2CD/BG2CD content but no BG2CDP board file,
+`sound/soc/berlin`, or `drivers/soc/berlin` in that upstream tree. The absent
+subtrees matter when comparing mainline support with the vendor kernel; a
+sparse-path request is not evidence that all requested paths exist.
+
+## Build and comparison inputs
+
+Later records cover sources actually used in kernel, audio and provisioning
+work. Exact archive/member checksums and compiler identities remain in JSON.
+
+| Record                               | Source or input                                                                                                                           | Captured scope                                                      |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| [P1-041](../../metadata/P1-041.json) | [Invoke-kernel.tar](https://archive.org/details/invoke-kernel)                                                                            | Acquired and extracted GPLv2 Linux 3.8.13 source                    |
+| [P1-042](../../metadata/P1-042.json) | Official Google Android NDK r10e                                                                                                          | Archive acquired; ARM GCC 4.9 prebuilt subtree extracted            |
+| [P1-043](../../metadata/P1-043.json) | [AOSP system/bt](https://android.googlesource.com/platform/system/bt) at `android-6.0.1_r81`                                              | Selected source files and notices, not a full Android tree          |
+| [P1-044](../../metadata/P1-044.json) | Ubuntu Go 1.18.1 packages                                                                                                                 | Retained compiler/source packages and provisioning build identities |
+| [P1-045](../../metadata/P1-045.json) | BlueZ 5.55, bluez-alsa 4.0.0, SBC 2.0, D-Bus 1.12.20                                                                                      | Pinned source archives, licences, signatures and build flags        |
+| [P2-005](../../metadata/P2-005.json) | [courk/gmini-linux PCM source](https://github.com/courk/gmini-linux/blob/764b617b647c91fe969332ceb690282ecdad4e0c/sound/soc/berlin/pcm.c) | One pinned file snapshot; comparison with Invoke ASoC integration   |
+
+P1-041 records verification against Internet Archive MD5/SHA-1 plus a computed
+SHA-256. P1-042 records an independent SHA-1 from Ubuntu's NDK installer
+package. These are integrity/provenance checks, not endorsements of executing
+unreviewed archive content.
+
+P1-045 reports verified upstream signatures for BlueZ, SBC and D-Bus; bluez-alsa
+has a recorded SHA-256 but no upstream detached signature. It also corrects
+the D-Bus 1.12.20 URL from `.tar.xz` to `.tar.gz`: the digest did not change.
+This is recorded endpoint drift, not a fresh download check.
+
+### Runtime evidence records
+
+P1-045 through P1-051 also bind historical builds and tests. Their status
+strings are checkpoint-specific, not the current product status:
+
+* [P1-046](../../metadata/P1-046.json) records RAM network lifecycle.
+* [P1-047](../../metadata/P1-047.json) records software-bus capture.
+* [P1-048](../../metadata/P1-048.json) records the owned MCU service.
+* [P1-049](../../metadata/P1-049.json) records the v9 RAM candidate checkpoint.
+* [P1-050](../../metadata/P1-050.json) records microphone DMA/capture evidence.
+* [P1-051](../../metadata/P1-051.json) records the v10 composition checkpoint.
+
+Later results belong in the [product contract](../current-product-contract.md)
+and [journal](../journal.md). RAM validation does not establish native
+acceptance, and a reproducible composition from pinned held inputs is not a
+complete clean-clone build.
+
+## Unresolved source leads
+
+These identifiers remain useful for correlating old references. They are not
+an acquisition queue, and no completed capture is inferred from their presence.
+
+| Identifier    | Target                                                             | Evidence limit                                                                                                                   |
+| ------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| P1-001..011   | Google/Nest kernel, SDK, toolchain, drivers and media repositories | Proposed repositories under the [Nest index](https://nest-open-source.googlesource.com/manifest_repos/); no blanket mirror claim |
+| P1-033        | Entire public Kinoma organization                                  | Organization-wide capture was proposed, not established                                                                          |
+| DISCOVERY-001 | Kinoma HD firmware, recovery image or GPL/SDK package              | No package established                                                                                                           |
+| DISCOVERY-002 | Kinoma Studio/Code installers                                      | Historical installer lead only                                                                                                   |
+| DISCOVERY-003 | `chromecast_sdk_oss.tgz`, `chromecast_oss.tgz`                     | Historical 1.56 `Kernel Bootloader SDK` path lead; not a verified Drive hierarchy                                                |
+| DISCOVERY-004 | Historical Harman Demandware OSS assets                            | Captured HTML does not preserve linked packages                                                                                  |
+| DISCOVERY-005 | Standalone BG2CDP/88DE3006 BSP                                     | No standalone package established                                                                                                |
+
+The useful search vocabulary is `BG2CDP`, `88DE3006`, `berlin2cdp`, `Galois`,
+`ARMADA 1500 Mini Plus`, and related board aliases. A matching filename or
+string is a discovery lead, not a compatibility result. Hardware conclusions
+belong in the [canonical baseline](../corpus/01_CANONICAL_HARDWARE_BASELINE.md).
+
+## Record maintenance
+
+Keep originals byte-for-byte and extract into separate trees. Downloads need
+the stable source URL, retrieval time, byte count and complete digest; Git
+captures need a revision and explicit full, shallow or sparse scope.
+Redact expiring signed queries and keep credentials out of provenance records.
+
+Distinguish `DOWNLOADED`, `MIRRORED` and file snapshots from `DISCOVERY_ONLY`.
+Seed-era `LIVE_CONFIRMED` means a URL responded at that checkpoint, not that
+its payload was preserved. When records disagree, document the discrepancy
+instead of silently promoting a discovery status to an acquired input.
+
+Archive-relative names in JSON refer to private retained storage, not public
+download paths. Generated images and captures require their own manifests;
+the acquisition sidecars are not a complete build or backup inventory.
+See [backup verification](storage-policy.md#backup-and-restore) before relying
+on a restored input set.

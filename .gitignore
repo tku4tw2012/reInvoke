@@ -33,6 +33,7 @@ __pycache__/
 *.pyc
 .DS_Store
 *.swp
+/scripts/node_modules/
 
 # Editor settings are personal; only share project-wide configuration.
 .vscode/*

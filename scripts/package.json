@@ -1,0 +1,17 @@
+{
+  "name": "reinvoke-documentation-checks",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "test": "node --test validate-docs.test.mjs",
+    "validate": "node validate-docs.mjs"
+  },
+  "devDependencies": {
+    "github-slugger": "2.0.0",
+    "markdown-it": "15.0.2",
+    "yaml": "2.9.1"
+  }
+}
