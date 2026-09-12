@@ -62,16 +62,19 @@ type commandRunner interface {
 type execRunner struct{}
 
 type wpaManager struct {
-	runner         commandRunner
-	writeConfig    func(string, []byte) error
-	supplicantPath string
-	clientPath     string
-	configPath     string
-	controlPath    string
-	interfaceName  string
-	driverName     string
-	connectTimeout time.Duration
-	expectedUID    uint32
+	runner          commandRunner
+	writeConfig     func(string, []byte) error
+	supplicantPath  string
+	clientPath      string
+	configPath      string
+	controlPath     string
+	interfaceName   string
+	driverName      string
+	connectTimeout  time.Duration
+	expectedUID     uint32
+	saveProfile     func(stationProfile) error
+	saveSeedProfile func(stationProfile) error
+	reportStatus    func(string)
 }
 
 func (execRunner) Run(
@@ -86,13 +89,46 @@ func (m wpaManager) Apply(
 	ctx context.Context,
 	request wifiRequest,
 ) error {
+	if err := validateWiFiRequest(request); err != nil {
+		return err
+	}
+	profile := profileFromRequest(request)
+	if err := m.applyProfile(ctx, profile); err != nil {
+		if m.reportStatus != nil {
+			m.reportStatus("PERSIST_WIFI_APPLY_FAILED")
+		}
+		return err
+	}
+	m.saveAssociatedProfile(profile)
+	return nil
+}
+
+func (m wpaManager) saveAssociatedProfile(profile stationProfile) {
+	// A parser's HTTP 202 is not association acknowledgement. Only the
+	// COMPLETED return from applyProfile reaches this durable-save hook.
+	if m.saveProfile != nil {
+		if err := m.saveProfile(profile); err != nil {
+			log.Print("PERSIST_WIFI_SAVE_FAILED: association remains volatile")
+			if m.reportStatus != nil {
+				m.reportStatus("PERSIST_WIFI_SAVE_FAILED")
+			}
+		} else {
+			log.Print("PERSIST_WIFI_SAVED")
+			if m.reportStatus != nil {
+				m.reportStatus("PERSIST_WIFI_SAVED")
+			}
+		}
+	}
+}
+
+func (m wpaManager) applyProfile(ctx context.Context, profile stationProfile) error {
 	applyContext, cancelApply := context.WithTimeout(ctx, m.connectTimeout)
 	defer cancelApply()
 
 	if err := m.prepareSupplicant(applyContext); err != nil {
 		return err
 	}
-	config := renderWPAConfig(request, m.controlPath)
+	config := renderStationConfig(profile, m.controlPath)
 	if err := m.writeConfig(m.configPath, config); err != nil {
 		return err
 	}
@@ -497,7 +533,9 @@ func run() error {
 		driverName     string
 		lifetime       time.Duration
 		connectTimeout time.Duration
+		resumeOnly     bool
 	)
+	flag.BoolVar(&resumeOnly, "resume", false, "attempt one saved station association, then exit")
 	flag.StringVar(&socketPath, "socket", defaultSocketPath, "apply Unix socket")
 	flag.StringVar(&configPath, "config", defaultConfigPath, "RAM WPA config")
 	flag.StringVar(
@@ -578,6 +616,45 @@ func run() error {
 		return fmt.Errorf("validate supplicant control directory: %w", err)
 	}
 
+	manager := &wpaManager{
+		runner: execRunner{}, writeConfig: writePrivateFile,
+		supplicantPath: supplicantPath, clientPath: clientPath,
+		configPath: configPath, controlPath: controlPath,
+		interfaceName: interfaceName, driverName: driverName,
+		connectTimeout: connectTimeout, expectedUID: 0, saveProfile: saveStation,
+		reportStatus:    recordWiFiStatus,
+		saveSeedProfile: saveSeedStation,
+	}
+	if resumeOnly {
+		if supplicantPath != defaultSupplicant || clientPath != defaultWPAClient ||
+			configPath != defaultConfigPath || controlPath != defaultControlPath ||
+			interfaceName != defaultInterface || driverName != defaultDriver {
+			return errors.New("resume requires fixed station executables and paths")
+		}
+		profile, seeded, err := selectBootProfile(loadStation, loadSeedProfile)
+		if err != nil {
+			recordWiFiStatus("PERSIST_WIFI_PROFILE_UNAVAILABLE")
+			return err
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer cancel()
+		var resumeErr error
+		if seeded {
+			resumeErr = manager.ResumeSeed(ctx, profile)
+		} else {
+			resumeErr = manager.Resume(ctx, profile)
+		}
+		if resumeErr != nil {
+			recordWiFiStatus("PERSIST_WIFI_RESUME_FAILED")
+			return errors.New("PERSIST_WIFI_RESUME_FAILED: physical setup remains available")
+		}
+		log.Print("PERSIST_WIFI_ASSOCIATED")
+		if !seeded {
+			recordWiFiStatus("PERSIST_WIFI_ASSOCIATED")
+		}
+		return nil
+	}
+
 	listener, err := net.ListenUnix(
 		"unix",
 		&net.UnixAddr{Name: socketPath, Net: "unix"},
@@ -589,19 +666,6 @@ func run() error {
 	defer listener.Close()
 	if err := os.Chmod(socketPath, 0600); err != nil {
 		return fmt.Errorf("restrict apply socket: %w", err)
-	}
-
-	manager := &wpaManager{
-		runner:         execRunner{},
-		writeConfig:    writePrivateFile,
-		supplicantPath: supplicantPath,
-		clientPath:     clientPath,
-		configPath:     configPath,
-		controlPath:    controlPath,
-		interfaceName:  interfaceName,
-		driverName:     driverName,
-		connectTimeout: connectTimeout,
-		expectedUID:    0,
 	}
 
 	signalContext, stopSignals := signal.NotifyContext(

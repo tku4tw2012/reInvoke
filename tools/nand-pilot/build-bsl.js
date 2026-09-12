@@ -17,6 +17,7 @@ const pilotArtifact = path.resolve(process.argv[4] ||
   path.join(archive, 'build/artifacts/reinvoke-nand-pilot-01-20260909-pty01'));
 const pilot = path.join(pilotArtifact, 'rootfs.squashfs');
 const pilotProposal = JSON.parse(fs.readFileSync(path.join(pilotArtifact, 'PROPOSAL.json'), 'utf8'));
+assert.equal(pilotProposal.buildId, lib.BUILD_ID, 'main candidate does not match this builder');
 const rc12 = path.join(archive, 'build/artifacts/rc12-nand-handoff-20260910/root');
 const readback = path.join(archive, 'evidence/nand-postbundle-yellow-20260911T0149Z/readback');
 const helper = path.join(output, 'set-private-loop-offset');
@@ -84,6 +85,7 @@ const verifyRoot = path.join(output, 'verified-root');
 lib.run('unsquashfs', ['-processors', '1', '-no-progress', '-d', verifyRoot, squashfs]);
 const extracted = lib.compareTrees(root, verifyRoot);
 lib.json(path.join(output, 'MANIFEST.json'), {
+  buildId: lib.BUILD_ID,
   status: 'FORWARD_VARIATION_NOT_YET_FLASHED',
   target: { start: 0x01a20000, endExclusive: 0x01f20000, bytes: baseline.length },
   filesystem: { bytes: image.length, sha256: lib.sha(image) },

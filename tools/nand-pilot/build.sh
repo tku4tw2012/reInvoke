@@ -6,8 +6,9 @@ umask 022
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "${here}/../.." && pwd)"
 archive="$(realpath "${1:-${repo}/../reinvoke-archive}")"
-output="${2:-${archive}/build/artifacts/reinvoke-native-03-20260912/main}"
+output="${2:-${archive}/build/artifacts/reinvoke-native-04-20260912/main}"
 [[ -n "${PILOT_PRIVATE_CONFIG:-}" ]] || { echo "PILOT_PRIVATE_CONFIG is required" >&2; exit 1; }
+[[ -n "${PILOT_PERSISTENCE_CONFIG:-}" ]] || { echo "PILOT_PERSISTENCE_CONFIG is required" >&2; exit 1; }
 mkdir -p "${output}"
 chmod 0700 "${output}"
 output="$(realpath "${output}")"
@@ -18,6 +19,7 @@ for tool in node fakeroot unsquashfs mksquashfs cpio gzip readelf strings nice; 
 done
 export PILOT_GO="${PILOT_GO:-${archive}/toolchains/ubuntu-go-1.18.1/extracted/usr/lib/go-1.18/bin/go}"
 [[ -x "${PILOT_GO}" ]] || { echo "Reviewed Go 1.18 runner unavailable" >&2; exit 1; }
+export REINVOKE_ARCHIVE="${archive}"
 export GOMAXPROCS=2 GO111MODULE=off CGO_ENABLED=0
 export GOCACHE="${archive}/build/cache/go-1.18"
 mkdir -p "${output}/work"

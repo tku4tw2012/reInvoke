@@ -212,9 +212,22 @@ pilot_usb_prerequisites() {
     pilot_usb_failure node-invalid-or-absent
     return 1
   }
+  # The retained daemon opens this legacy control node if the kernel exports
+  # it. Its absence is valid on kernels where opening android_adb is enough.
+  if ${BB} test -r "${PILOT_ADBD_ENABLE_DEV_FILE:-/sys/class/misc/android_adb_enable/dev}"; then
+    pilot_node_from_sysfs "${PILOT_ADBD_ENABLE_DEV_FILE:-/sys/class/misc/android_adb_enable/dev}" \
+      "${PILOT_ADBD_ENABLE_NODE:-/dev/android_adb_enable}" || {
+        pilot_usb_failure enable-node-invalid
+        return 1
+      }
+  fi
 }
 
 pilot_usb_adbd_launch() {
+  if ${BB} test -d "${PILOT_STATE}/adb-network-once"; then
+    pilot_failure usb-owner "network diagnostics selected for this boot; USB restart suppressed"
+    return 1
+  fi
   : "${PILOT_ADBD_PRODUCT:?}"
   : "${PILOT_ADBD_STARTED_PHASE:=early-adb-started}"
   : "${PILOT_ADBD_DEGRADED_PHASE:=early-adb-degraded}"

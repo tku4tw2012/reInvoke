@@ -15,6 +15,9 @@ provisioning and SSH-listener results are recorded in the
 [native NAND guide](../../docs/native-nand-platform.md). SSH authentication,
 USB/ADB and native microphone acceptance remain unverified. Candidate 02's
 broader acoustic/control acceptance is not transferred to 03.
+The current builder targets candidate 04: persisted settings and station
+resume, corrected local-account SSH lookup, and optional bounded TCP ADB.
+These changes are offline-qualified, not native acceptance.
 
 > [!CAUTION]
 > The bundle's vendor `l2nand 83` path erases all good blocks before programming
@@ -63,10 +66,11 @@ Stock built-in audio inventory does not prove card numbering or equivalent
 capture/playback behavior.
 
 The builder retains stock firmware/calibration/transmit-power/Bluetooth
-parameters and the private RC12 pairing/AP contract. Settings and bonds remain
-volatile; no persistence allocation or new station credentials are added.
-The runtime does not mount other NAND allocations and removes ordinary
-writable MTD nodes. It bundles no reInvoke installer, vendor `flash_custk`,
+parameters and the private RC12 pairing/AP contract.
+Candidate 04 mounts only the verified existing app allocation for selected
+settings; all ordinary writable MTD nodes remain removed. The persistence
+helper can recreate a private node only for the verified app partition.
+It bundles no reInvoke installer, vendor `flash_custk`,
 OTA/autoflash or automatic storage writer. Unchanged BusyBox still has generic
 writer applets, including `nandwrite`; root can bypass policy or recreate
 nodes. This is not a sandbox against arbitrary root code.
@@ -93,21 +97,21 @@ checking program-header/loadable-code equivalence and extracted-tree metadata.
 `native-bundle.js` combines the main/compact-BSL pair with fixed native
 12.2134.0 payloads and the complete vendor app seed.
 
-Candidate 03's final BSL helper exposes a read-only 40,894,464-byte bound from
-fixed offset `0x02920000`, with allocation/ioctl checks. This is within the
+The BSL helper exposes a read-only, erase-block-rounded view of the selected
+main image from fixed offset `0x02920000`, with allocation/ioctl checks. This is within the
 existing 90 MiB rootfs allocation `[0x02920000,0x08320000)`, not a layout
 change. The helper's native execution has not been traced through a shell.
 An older BSL bound rejected an oversized main; pair by exact artifact hashes,
 not similar name or size.
 
-Use final `complete/MANIFEST.json`, never a retired intermediate. Candidate 03
-outputs are `83_IMAGE.reinvoke-03`, `07_IMAGE.for-83` and `MANIFEST.json`.
-Build identity is `reInvoke-NAND-03-20260912`; Bluetooth/USB product names are
-`reInvoke-NAND`/`reInvoke-NAND-03`. Only Bluetooth identity was observed
-natively. Immutable `OFFLINE_CANDIDATE_NOT_NATIVE_BOOT_VERIFIED` records
+Use final `complete/MANIFEST.json`, never a retired intermediate. Candidate 04
+outputs are `83_IMAGE.reinvoke-04`, `07_IMAGE.for-83` and `MANIFEST.json`.
+Build identity is `reInvoke-NAND-04-20260912`; Bluetooth/USB names are
+`reInvoke-NAND-04`. Builders reject main/BSL manifests from a different
+candidate. Immutable `OFFLINE_CANDIDATE_NOT_NATIVE_BOOT_VERIFIED` records
 build-time qualification, not current installation status.
 The default main output is
-`<archive>/build/artifacts/reinvoke-native-03-20260912/main`.
+`<archive>/build/artifacts/reinvoke-native-04-20260912/main`.
 
 ## Private build inputs
 
@@ -130,10 +134,23 @@ private directories `0700`; notices remain packaged.
 
 Dropbear disables password/PAM authentication, TCP/agent/X11 forwarding and
 SFTP. `ssh-start.sh` installs port-22 filtering before the listener.
-Offline QEMU authentication controls passed; native authentication did not.
-Account/NSS/toolchain incompatibility remains a hypothesis. There is no network
-ADB fallback. Clients use dedicated private `known_hosts`/`HostKeyAlias`
+Candidate 04 sets account NSS databases to `files`: the extracted 03 root
+reproduced a pre-authentication libc-loader abort with `compat`, and the fixed
+root authenticated and executed the packaged ARM shell. This is not yet a
+native login result. Clients use dedicated private `known_hosts`/`HostKeyAlias`
 pinning and `StrictHostKeyChecking=yes`.
+
+Optional `adbNetwork` is `{enabled:true, windowSeconds:300, peers:["<IPv4>/32"]}`.
+Exactly one private RFC1918 peer is accepted; 300 seconds is the maximum.
+Default is disabled. A host-configured gadget with an open USB descriptor is
+preserved. Otherwise TCP takes over the sole ADB owner, installs filtering
+before listening, and closes sessions at expiry.
+ADB is unencrypted root access without SSH authentication.
+
+`PILOT_PERSISTENCE_CONFIG` identifies the pinned helper, changed applyd and
+MCU binaries, plus an optional private Wi-Fi seed.
+[Persistence](persistence/README.md) defines its schema, saved-profile
+precedence, 30-second snapshot window and failed-storage behavior.
 
 ## Offline build
 
@@ -141,8 +158,8 @@ Run from the repository root against the intended frozen revision, with fresh,
 distinct private outputs:
 
 ```bash
-bash tools/nand-pilot/build-ssh.sh "${REINVOKE_ARCHIVE}" "<new-ssh-output>"
 PILOT_PRIVATE_CONFIG="<private-config.json>" \
+PILOT_PERSISTENCE_CONFIG="<private-persistence-artifacts.json>" \
   bash tools/nand-pilot/build.sh "${REINVOKE_ARCHIVE}" "<new-main-output>"
 fakeroot node tools/nand-pilot/build-bsl.js \
   "${REINVOKE_ARCHIVE}" "<new-bsl-output>" "<new-main-output>"
@@ -152,8 +169,8 @@ node tools/nand-pilot/native-bundle.js \
   "${REINVOKE_ARCHIVE}" "<new-main-output>" "<new-compact-output>" "<new-complete-output>"
 ```
 
-Before the main build, update the private configuration to the reviewed new
-SSH binary and digest; `build-ssh.sh` does not do so automatically.
+Candidate 04 reuses the reviewed Dropbear binary. If rebuilding it with
+`build-ssh.sh`, update its private path and digest explicitly.
 Outputs are private mode-`0700` trees. Build limits use `GOMAXPROCS=2`,
 Go `-p 1`, `make -j1`, single-processor SquashFS and `nice -n 10` where
 applicable. This pipeline performs no kernel build or hardware operation.
@@ -169,11 +186,20 @@ BusyBox extracts and verifies the runtime. Negative controls cover corrupt
 payload/cpio, pins, module selection, read-only paths and false NAND origins.
 The complete bundle checks all nine records' CRC/SHA and manifest agreement.
 
-`verify-artifacts.js <main-output>` independently checks `payload.bin`
+`verify-artifacts.js <main-output> <archive>` independently checks `payload.bin`
 (SquashFS plus `ff` erase padding), `rollback.bin` (the original capture slice,
 not repacked stock), changed-block hashes and adjacent blocks.
 Those bounded rootfs-only proposal semantics must not be confused with the
 later vendor whole-good-block erase.
+
+Run the admin regressions against the composed runtime:
+
+```bash
+node tools/nand-pilot/ssh-test.js "${REINVOKE_ARCHIVE}" \
+  "<main-output>/build-a/runtime" "<new-private-ssh-evidence>"
+node tools/nand-pilot/adb-network-test.js "${REINVOKE_ARCHIVE}" \
+  "<new-private-adb-evidence>" "<main-output>/build-a/runtime"
+```
 
 Earlier pilot/BSL images passed RAM-assisted execution or readback without
 host-independent startup. Their failed boot experiments and withdrawn write

@@ -12,7 +12,7 @@ function patchRuntime(source) {
     if (text.split(old).length !== 2) throw new Error('ambiguous/missing RC12 patch context');
     text = text.replace(old, value);
   }
-  replace('export PATH\n', 'export PATH\n. /usr/libexec/nand-pilot/common.sh\n. /usr/libexec/nand-pilot/kernel.sh\n. /usr/libexec/nand-pilot/ssh-start.sh\n');
+  replace('export PATH\n', 'export PATH\n. /usr/libexec/nand-pilot/common.sh\n. /usr/libexec/nand-pilot/kernel.sh\n. /usr/libexec/nand-pilot/ssh-start.sh\n. /usr/libexec/nand-pilot/adb-network-start.sh\n. /usr/libexec/nand-pilot/persistence-start.sh\n');
   replace('  echo "reInvoke: $*" > /dev/kmsg', `  pilot_log "runtime: $*"
   case "$*" in
     *failed*|*incomplete*|*invalid*|*missing*|*unavailable*|*"not initialized"*)
@@ -38,7 +38,26 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
 
 `);
   replace('  . "${runtime_root}/etc/runtime.conf"\n',
-    '  . "${runtime_root}/etc/runtime.conf"\n  pilot_ssh_start || log "SSH fallback unavailable; runtime continuing"\n');
+    '  . "${runtime_root}/etc/runtime.conf"\n' +
+    '  pilot_ssh_start || log "SSH fallback unavailable; runtime continuing"\n' +
+    '  pilot_persistence_start || log "Persistent settings unavailable; runtime continuing"\n' +
+    '  pilot_adb_network_start || log "Network ADB unavailable; runtime continuing"\n');
+  replace('      supervise provision-windowd \\\n        /usr/sbin/reinvoke-provision-windowd',
+    '      supervise provision-windowd pilot_resume_then_exec \\\n        /usr/sbin/reinvoke-provision-windowd');
+  replace('      log "provisioning window requires reinvoke.wifi_mode=sta-uap"',
+    '      log "provisioning window requires reinvoke.wifi_mode=sta-uap"\n' +
+    '      pilot_resume_then_exec /bin/busybox true &\n' +
+    '      echo "$!" >/run/reinvoke/wifi-resume.pid');
+  replace('      --lights-dir "${runtime_root}/share/lights"',
+    '      --music-volume-state /run/reinvoke/music-volume \\\n' +
+    '      --lights-dir "${runtime_root}/share/lights"');
+  replace('for service_name in mic-capture provision-windowd dsp-interface \\\n',
+    'for service_name in mic-capture provision-windowd wifi-resume dsp-interface \\\n');
+  replace('  stop_service syslogd\n',
+    '  wait_service_stop bluetoothd\n' +
+    '  stop_service persistence\n' +
+    '  wait_service_stop persistence\n' +
+    '  stop_service syslogd\n');
   replace('log "native RAM environment is running"', `pilot_phase runtime-dispatched
 log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence, not this message"`);
   return text;

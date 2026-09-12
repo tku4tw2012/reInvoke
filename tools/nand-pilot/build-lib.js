@@ -14,7 +14,10 @@ const pins = {
   capture: { path: 'evidence/nand-restored-ram-inspection-20260909/restored-main-256MiB.bin', bytes: 268435456,
     sha256: '2fac4159fe23aa25581c29f6c90033af3a1126a02593db0bd47e2c10d2c09f19' },
 };
-const BUILD_ID = 'reInvoke-NAND-03-20260912';
+const CANDIDATE = '04';
+const BUILD_ID = `reInvoke-NAND-${CANDIDATE}-20260912`;
+const BLUETOOTH_NAME = `reInvoke-NAND-${CANDIDATE}`;
+const BUNDLE_NAME = `83_IMAGE.reinvoke-${CANDIDATE}`;
 const BB_SHA256 = '5fc83ab6cd37841b8d73e07bf3cd8af47ae5af56c93fe085b2db91e0d1f4207b';
 const ADB_SHA256 = '62593dfe9580443dca064e28c38cb647f1b719fe275666d5fb4b615781864ed6';
 const sha = data => crypto.createHash('sha256').update(data).digest('hex');
@@ -140,5 +143,5 @@ function proposal(image, capture, out) {
     sourcePins: pins,
   };
 }
-module.exports = { pins, BUILD_ID, BB_SHA256, ADB_SHA256, sha, hashFile, run, json, verify,
+module.exports = { pins, CANDIDATE, BUILD_ID, BLUETOOTH_NAME, BUNDLE_NAME, BB_SHA256, ADB_SHA256, sha, hashFile, run, json, verify,
   rooted, inventory, compareTrees, elfClosure, proposal };

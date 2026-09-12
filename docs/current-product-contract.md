@@ -14,8 +14,10 @@ implementation unless a measurement is explicitly identified.
 ## Current product contract
 
 Normal operation starts from NAND. Host-loaded U-Boot/RAM Linux remains the
-development and observed recovery path. Wi-Fi credentials, Bluetooth bonds and
-preferences are volatile; no persistent-state design has been selected.
+development and observed recovery path. Installed candidate 03 keeps settings
+volatile. The offline 04 successor adds guarded app/YAFFS2 persistence for
+Wi-Fi, bonds and selected preferences; see its
+[scope and limits](native-nand-platform.md#candidate-04-offline-successor).
 
 Installed candidate 03 has startup, provisioning and SSH-negotiation evidence
 but no login. Candidate 02 owns the broader native audio/control baseline;
@@ -184,8 +186,8 @@ software cannot act on an event it never receives.
 The [2017 manual, page 8](https://support.harmankardon.com/on/demandware.static/-/Sites-masterCatalog_Harman/default/dwdac694e8/pdfs/Harman%20Kardon%20Invoke%20Owners%20Manual.pdf#page=8)
 describes a settings reset/restart, not a firmware reinstall.
 Reset at power-on is a different recovery action. reInvoke has no implemented
-factory reset; persistence first needs erase scope, power-loss and rollback
-semantics. No assistant action is assigned yet.
+factory reset; 04's settings layer does not implement a reset or reflash
+migration operation. No assistant action is assigned yet.
 
 ## Dependency and build boundary
 

@@ -97,7 +97,10 @@ type blueALSAController struct {
 	// ceilingPath is the PCM the ceiling was last successfully applied to. It
 	// identifies the transport generation so the same one is not re-lowered
 	// while the operator raises the knob.
-	ceilingPath string
+	ceilingPath    string
+	musicStatePath string
+	savedVolume    int
+	hasSavedVolume bool
 }
 
 type blueALSASnapshot struct {
@@ -265,6 +268,9 @@ func (controller *blueALSAController) SetVolume(
 			return controller.setVolumeSlowLocked(ctx, percent)
 		}
 		controller.cachedVolume = percent
+		if err := controller.rememberMusicVolume(percent); err != nil {
+			return blueALSASnapshot{}, err
+		}
 		return blueALSASnapshot{Volume: percent, Muted: controller.cachedMuted}, nil
 	}
 	return controller.setVolumeSlowLocked(ctx, percent)
@@ -294,6 +300,9 @@ func (controller *blueALSAController) setVolumeSlowLocked(
 	controller.cachedMuted = snapshot.Muted
 	controller.cachedValid = true
 	snapshot.Volume = percent
+	if err := controller.rememberMusicVolume(percent); err != nil {
+		return blueALSASnapshot{}, err
+	}
 	return snapshot, nil
 }
 
@@ -324,6 +333,9 @@ func (controller *blueALSAController) AdjustVolume(
 			return controller.adjustVolumeSlowLocked(ctx, delta)
 		}
 		controller.cachedVolume = percent
+		if err := controller.rememberMusicVolume(percent); err != nil {
+			return blueALSASnapshot{}, err
+		}
 		return blueALSASnapshot{Volume: percent, Muted: controller.cachedMuted}, nil
 	}
 	return controller.adjustVolumeSlowLocked(ctx, delta)
@@ -354,6 +366,9 @@ func (controller *blueALSAController) adjustVolumeSlowLocked(
 	controller.cachedMuted = snapshot.Muted
 	controller.cachedValid = true
 	snapshot.Volume = percent
+	if err := controller.rememberMusicVolume(percent); err != nil {
+		return blueALSASnapshot{}, err
+	}
 	return snapshot, nil
 }
 
@@ -457,6 +472,11 @@ func (controller *blueALSAController) EnforceConnectCeiling(
 	ceiling := controller.connectCeiling
 	if ceiling <= 0 || ceiling > 100 {
 		ceiling = defaultConnectCeiling
+	}
+	// Persistence must not bypass the existing safe autoplay ceiling or raise
+	// a quieter phone. A saved zero still means silence on reconnection.
+	if controller.hasSavedVolume && controller.savedVolume < ceiling {
+		ceiling = controller.savedVolume
 	}
 	pcmPath, snapshot, err := controller.pcmSnapshotLocked(ctx)
 	if err != nil {

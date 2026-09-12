@@ -12,10 +12,12 @@ assert(process.argv.length === 4 || process.argv.length === 5,
 const archive = path.resolve(process.argv[2]), output = path.resolve(process.argv[3]);
 assert(!fs.existsSync(output), 'output already exists');
 const erase = 131072;
-let input, baseline, readback, previousFilesystemBytes, expectedInitHash;
+let input, baseline, readback, previousFilesystemBytes, expectedInitHash, buildId;
 if (process.argv[4]) {
   const artifact = path.resolve(process.argv[4]);
   const manifest = JSON.parse(fs.readFileSync(path.join(artifact, 'MANIFEST.json'), 'utf8'));
+  assert.equal(manifest.buildId, lib.BUILD_ID, 'BSL candidate does not match this builder');
+  buildId = manifest.buildId;
   input = path.join(artifact, 'bsl.squashfs');
   lib.verify(input, manifest.filesystem);
   baseline = fs.readFileSync(path.join(artifact, 'payload.bin'));
@@ -84,6 +86,7 @@ const verified = path.join(output, 'verified-root');
 lib.run('unsquashfs', ['-processors', '1', '-no-progress', '-d', verified, squashfs]);
 const extracted = lib.compareTrees(root, verified);
 lib.json(path.join(output, 'MANIFEST.json'), {
+  ...(buildId ? { buildId } : {}),
   status: 'COMPACT_FORWARD_VARIATION_NOT_YET_FLASHED',
   target: { start: 0x01a20000, endExclusive: 0x01f20000, bytes: baseline.length },
   filesystem: { bytes: image.length, sha256: lib.sha(image) },

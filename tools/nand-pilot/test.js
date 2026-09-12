@@ -9,9 +9,11 @@ const zlib = require('zlib');
 const lib = require('./build-lib');
 const { patchRuntime } = require('./patch-runtime');
 const { verifyLoadEquivalent } = require('./elf-load-check');
-const archive = path.resolve(__dirname, '../../../reinvoke-archive');
+assert(process.argv.length <= 3, 'usage: node test.js [ARCHIVE]');
+const archive = path.resolve(process.argv[2] || path.join(__dirname, '../../../reinvoke-archive'));
 const qemu = path.join(archive, 'emulation/qemu-arm-static');
 const fixture = fs.mkdtempSync(path.join(__dirname, '.shell-test-'));
+const bundleFixture = fs.mkdtempSync(path.join(archive, 'build/.bundle-test-'));
 try {
   const source = path.join(fixture, 'source');
   fs.mkdirSync(source);
@@ -32,7 +34,8 @@ try {
   assert.throws(() => patchRuntime(Buffer.concat([init, Buffer.from('\n')])), /hash mismatch/);
   const patchedFile = path.join(fixture, 'init');
   fs.writeFileSync(patchedFile, patched);
-  for (const file of ['bootstrap.sh', 'bsl-init.sh', 'common.sh', 'kernel.sh', 'ssh-start.sh'])
+  for (const file of ['bootstrap.sh', 'bsl-init.sh', 'common.sh', 'kernel.sh',
+    'ssh-start.sh', 'adb-network-start.sh', 'persistence-start.sh'])
     check(cp.spawnSync(qemu, [bb, 'sh', '-n', path.join(__dirname, file)], { encoding: 'utf8' }));
   check(cp.spawnSync(qemu, [bb, 'sh', '-n', patchedFile], { encoding: 'utf8' }));
   for (const release of ['3.8.13-yocto-standard', '3.8.13-reinvoke-audio-sd8887'])
@@ -40,8 +43,38 @@ try {
   assert.equal(invoke('. "$1"; pilot_select_kernel 3.8.13-unreviewed', [kernel]).status, 1);
   const bootstrap = fs.readFileSync(path.join(__dirname, 'bootstrap.sh'), 'utf8');
   const bsl = fs.readFileSync(path.join(__dirname, 'bsl-init.sh'), 'utf8');
-  assert(bootstrap.includes('PILOT_ADBD_PRODUCT=reInvoke-NAND-03'));
-  assert(bsl.includes('PILOT_ADBD_PRODUCT=reInvoke-NAND-03'));
+  assert.equal(lib.CANDIDATE, '04');
+  assert.equal(lib.BUILD_ID, 'reInvoke-NAND-04-20260912');
+  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-NAND-04');
+  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-04');
+  assert(bootstrap.includes(`PILOT_ADBD_PRODUCT=${lib.BLUETOOTH_NAME}`));
+  assert(bsl.includes(`PILOT_ADBD_PRODUCT=${lib.BLUETOOTH_NAME}`));
+  const oldMain = path.join(fixture, 'old-main');
+  const oldBSL = path.join(fixture, 'old-bsl');
+  fs.mkdirSync(oldMain);
+  fs.mkdirSync(oldBSL);
+  const oldBuildId = 'reInvoke-NAND-03-20260912';
+  lib.json(path.join(oldMain, 'PROPOSAL.json'), { buildId: oldBuildId });
+  lib.json(path.join(oldBSL, 'MANIFEST.json'), { buildId: oldBuildId });
+  for (const [script, args, message] of [
+    ['build-bsl.js', [archive, path.join(fixture, 'rejected-bsl'), oldMain],
+      /main candidate does not match this builder/],
+    ['compact-bsl.js', [archive, path.join(fixture, 'rejected-compact'), oldBSL],
+      /BSL candidate does not match this builder/],
+    ['native-bundle.js', [archive, oldMain, oldBSL, path.join(bundleFixture, 'rejected-bundle')],
+      /main candidate does not match this builder/],
+  ]) {
+    const result = cp.spawnSync(process.execPath, [path.join(__dirname, script), ...args],
+      { encoding: 'utf8', timeout: 30000 });
+    assert.notEqual(result.status, 0, 'retired artifacts must not be relabeled');
+    assert.match(result.stderr, message);
+  }
+  lib.json(path.join(oldMain, 'PROPOSAL.json'), { buildId: lib.BUILD_ID });
+  const mixed = cp.spawnSync(process.execPath, [path.join(__dirname, 'native-bundle.js'),
+    archive, oldMain, oldBSL, path.join(bundleFixture, 'rejected-mixed-bundle')],
+  { encoding: 'utf8', timeout: 30000 });
+  assert.notEqual(mixed.status, 0);
+  assert.match(mixed.stderr, /BSL candidate does not match this builder/);
   assert(!bsl.includes('fallback.pid'), 'no competing BSL transport resurrection');
   assert(bsl.indexOf('stop_boot rootfs-hash') < bsl.indexOf('exec ${BB} chroot /nand-root'));
   assert(bootstrap.includes('exec ${BB} chroot /runtime /bin/busybox sh /init'));
@@ -49,6 +82,13 @@ try {
     .test(bootstrap + bsl + patched + fs.readFileSync(common)));
   assert(!fs.readFileSync(kernel, 'utf8').includes('mac_addr=02:'), 'no hardcoded fleet MAC');
   assert(patched.includes('pilot_ssh_start'));
+  assert(patched.includes('pilot_adb_network_start'));
+  assert(patched.includes('pilot_persistence_start'));
+  assert(patched.includes('supervise provision-windowd pilot_resume_then_exec'));
+  assert(patched.includes('--music-volume-state /run/reinvoke/music-volume'));
+  assert(patched.indexOf('pilot_persistence_start ||') < patched.indexOf('pilot_adb_network_start ||'));
+  assert(patched.indexOf('pilot_persistence_start ||') < patched.indexOf('supervise mcu-interface'));
+  assert(patched.indexOf('wait_service_stop bluetoothd') < patched.indexOf('stop_service persistence'));
   const data = path.join(fixture, 'bytes');
   fs.writeFileSync(data, 'payload');
   const pin = { bytes: 7, sha256: lib.hashFile(data) };
@@ -205,4 +245,5 @@ done
   console.log('PASS: retained ARM BusyBox syntax/extraction, payload/hash/ELF negatives, kernel dispatch, dynamic-node/FD failures, PTY-independent late-device retry, healthy gadget no-reset and single-owner runtime handoff.');
 } finally {
   fs.rmSync(fixture, { recursive: true, force: true });
+  fs.rmSync(bundleFixture, { recursive: true, force: true });
 }

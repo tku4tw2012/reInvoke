@@ -174,6 +174,42 @@ authorized key, not the operator's private key. Key files use `0600` inside
 verification to work around the authentication failure.
 Native source-filter enforcement and the failure cause remain unverified.
 
+## Candidate 04 offline successor
+
+Candidate 04 combines the administration fix with a daily-use settings layer:
+
+* Local-file account lookup fixes the matching pre-authentication failure
+  reproduced in the extracted 03 root. The unchanged ARM Dropbear then logs
+  in and executes the packaged ARM shell under QEMU.
+* The existing named app/YAFFS2 allocation stores successful Wi-Fi profiles,
+  selected BlueZ bond files, privacy and safe-volume preferences. No partition
+  is added or formatted. Failed storage leaves explicit volatile operation.
+* A private derived Wi-Fi seed can initialize a verified empty store.
+  Saved profiles take precedence; association precedes durable saving.
+* Host-configured USB with an open daemon descriptor is preserved.
+  Otherwise optional network ADB replaces the USB owner for one window per
+  boot, at most 300 seconds and one private `/32` peer. It is unauthenticated,
+  unencrypted root access, not a substitute for SSH's trust model.
+* USB startup handles the optional legacy enable node. Status distinguishes
+  observed listeners from authentication and firewall acceptance.
+
+These are offline implementation and protocol results. Candidate 03 remains
+installed; native persistence, reconnection, USB and the new administration
+paths still require an approved installation and power boot.
+The installer erases saved settings on reflash. Across ordinary boots,
+abrupt power loss can discard the latest 30 seconds of bond/preference changes;
+orderly shutdown flushes after the writers stop.
+See [builder inputs](../tools/nand-pilot/README.md) and
+[persistence](../tools/nand-pilot/persistence/README.md).
+
+The reviewed private build is identified by `complete/MANIFEST.json`:
+
+| Artifact               | Bytes      | SHA-256                                                            |
+| ---------------------- | ---------: | ------------------------------------------------------------------ |
+| `83_IMAGE.reinvoke-04` | 64,516,128 | `f7920a21e794f72f750e231da103687e8a7c4a03f645373a4d139818ac818689` |
+| Main rootfs            | 42,004,480 | `6ee6ff6014715547c21f46b8cd57eef3a0516b5c914545c6e029f38036f00091` |
+| Paired compact BSL     | 2,420,736  | `3faae521d19ca69c890cd3acb8252dd374806fc40769d218dcf2a3ded87dd7a9` |
+
 ## Recovery
 
 The helper reached the observed Marvell downloader and supplied U-Boot/RAM

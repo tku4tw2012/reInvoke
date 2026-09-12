@@ -12,6 +12,11 @@ a login. The [native ledger](native-nand-platform.md#current-result) records
 those results; detailed isolation/failure/restart checks below remain RAM-scoped.
 Credentials disappear after power loss.
 
+That is candidate 03's behavior. The offline 04 adapter saves successfully
+associated profiles through the [persistence service](../tools/nand-pilot/persistence/README.md)
+and resumes a saved profile or eligible private seed at startup. HTTP 202,
+association, durable save and DHCP remain distinct outcomes.
+
 ## Current replacement components
 
 ```mermaid

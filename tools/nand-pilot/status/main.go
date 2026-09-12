@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"flag"
@@ -110,7 +111,91 @@ type status struct {
 	PTY                 nodeStatus        `json:"pty"`
 	DevptsListed        bool              `json:"devpts_listed"`
 	SSHFirewall         string            `json:"ssh_firewall"`
+	AdminListeners      map[string]string `json:"admin_listeners"`
+	NetworkADB          networkADBStatus  `json:"network_adb"`
+	Persistence         persistenceStatus `json:"persistence"`
 	KernelConfig        map[string]string `json:"kernel_reported_config"`
+}
+
+type networkADBStatus struct {
+	State             string `json:"state"`
+	Firewall          string `json:"firewall"`
+	Result            string `json:"result"`
+	MonotonicDeadline string `json:"monotonic_deadline_seconds"`
+}
+
+type persistenceStatus struct {
+	Phase       string `json:"phase"`
+	Snapshot    string `json:"snapshot"`
+	WiFiProfile string `json:"wifi_profile"`
+	Result      string `json:"result"`
+	WiFiResult  string `json:"wifi_result"`
+}
+
+func privateStatusFile(name string, limit int64, uid uint32) []byte {
+	before, err := os.Lstat(name)
+	if err != nil || !before.Mode().IsRegular() || before.Mode().Perm() != 0600 ||
+		before.Size() < 1 || before.Size() > limit {
+		return nil
+	}
+	stat, ok := before.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uid || stat.Nlink != 1 {
+		return nil
+	}
+	fd, err := syscall.Open(name, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil
+	}
+	file := os.NewFile(uintptr(fd), name)
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(before, opened) {
+		return nil
+	}
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	after, afterErr := file.Stat()
+	if err != nil || afterErr != nil || int64(len(data)) != before.Size() ||
+		after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) {
+		return nil
+	}
+	return data
+}
+
+func persistenceEvidence(root string, uid uint32) persistenceStatus {
+	result := persistenceStatus{"unknown", "unknown", "unknown", "unavailable", "unavailable"}
+	data := privateStatusFile(filepath.Join(root, "run/reinvoke/persistence-status.json"), 512, uid)
+	if data != nil {
+		var record struct {
+			Version     int    `json:"version"`
+			Phase       string `json:"phase"`
+			Snapshot    string `json:"snapshot"`
+			WiFiProfile string `json:"wifi_profile"`
+			Result      string `json:"result"`
+		}
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		var trailing interface{}
+		if decoder.Decode(&record) == nil && decoder.Decode(&trailing) == io.EOF &&
+			record.Version == 1 &&
+			token(record.Phase, "prepared", "ready", "degraded", "volatile", "stopped") == record.Phase &&
+			token(record.Snapshot, "present", "absent", "unknown") == record.Snapshot &&
+			token(record.WiFiProfile, "present", "absent", "unknown") == record.WiFiProfile {
+			result.Phase, result.Snapshot, result.WiFiProfile = record.Phase, record.Snapshot, record.WiFiProfile
+			result.Result = token(record.Result, "PERSIST_PREPARED", "PERSIST_READY",
+				"PERSIST_COMMITTED", "PERSIST_FLUSHED", "PERSIST_APP_PARTITION_ABSENT",
+				"PERSIST_APP_PARTITION_AMBIGUOUS", "PERSIST_KERNEL_UNSUPPORTED",
+				"PERSIST_FILESYSTEM_UNSUPPORTED", "PERSIST_MOUNT_FAILED",
+				"PERSIST_BLOCK_NODE_FAILED", "PERSIST_BLOCK_DEVICE_UNSAFE",
+				"PERSIST_GEOMETRY_MISMATCH", "PERSIST_OFFSET_MISMATCH")
+		}
+	}
+	wifi := privateStatusFile(filepath.Join(root, "run/reinvoke/wifi-persistence-status"), 128, uid)
+	if wifi != nil {
+		result.WiFiResult = token(strings.TrimSpace(string(wifi)), "PERSIST_WIFI_SAVED",
+			"PERSIST_WIFI_SAVE_FAILED", "PERSIST_WIFI_ASSOCIATED", "PERSIST_WIFI_RESUME_FAILED",
+			"PERSIST_WIFI_PROFILE_UNAVAILABLE", "PERSIST_WIFI_APPLY_FAILED")
+	}
+	return result
 }
 
 type nodeStatus struct {
@@ -212,7 +297,9 @@ func kernelConfig(root string) map[string]string {
 		"CONFIG_USB_GADGET", "CONFIG_USB_LIBCOMPOSITE", "CONFIG_USB_G_ANDROID",
 		"CONFIG_USB_ANDROID", "CONFIG_USB_ANDROID_ADB", "CONFIG_USB_U_SERIAL",
 		"CONFIG_USB_F_ACM", "CONFIG_USB_FUNCTIONFS", "CONFIG_USB_MV_UDC",
-		"CONFIG_UNIX98_PTYS", "CONFIG_DEVPTS_FS", "CONFIG_DEVTMPFS"} {
+		"CONFIG_UNIX98_PTYS", "CONFIG_DEVPTS_FS", "CONFIG_DEVTMPFS",
+		"CONFIG_MTD", "CONFIG_MTD_BLOCK", "CONFIG_YAFFS_FS",
+		"CONFIG_YAFFS_YAFFS2", "CONFIG_JFFS2_FS"} {
 		result[name] = "not-reported"
 	}
 	file, err := os.Open(filepath.Join(root, "/proc/config.gz"))
@@ -242,6 +329,49 @@ func kernelConfig(root string) map[string]string {
 	return result
 }
 
+func adminListeners(root string) map[string]string {
+	ports := map[uint64]string{22: "ssh", 5555: "network_adb"}
+	result := map[string]string{"ssh": "unavailable", "network_adb": "unavailable"}
+	readable := false
+	for _, name := range []string{"tcp", "tcp6"} {
+		file, err := os.Open(filepath.Join(root, "proc/net", name))
+		if err != nil {
+			continue
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, 65536))
+		closeErr := file.Close()
+		if readErr != nil || closeErr != nil {
+			continue
+		}
+		readable = true
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 4 || fields[3] != "0A" {
+				continue
+			}
+			address := strings.Split(fields[1], ":")
+			if len(address) != 2 {
+				continue
+			}
+			port, err := strconv.ParseUint(address[1], 16, 16)
+			if err != nil {
+				continue
+			}
+			if service, ok := ports[port]; ok {
+				result[service] = "listening-observed"
+			}
+		}
+	}
+	if readable {
+		for name, state := range result {
+			if state == "unavailable" {
+				result[name] = "not-observed-in-bounded-scan"
+			}
+		}
+	}
+	return result
+}
+
 func collect(root string) status {
 	at := func(path string) string { return filepath.Join(root, path) }
 	s := status{
@@ -252,23 +382,37 @@ func collect(root string) status {
 		Phase:               read(at("/run/nand-pilot/phase")),
 		Failures:            map[string]string{},
 		Services:            []service{},
-		NetworkPolicy:       "STA/uAP provisioning; credentials and bonds are RAM-only; no automatic station credentials",
+		NetworkPolicy:       "STA/uAP; saved settings require the configured persistence service",
 		Acceptance:          "not established by status: process presence is not functional health",
 		PTY:                 node(at("/dev/ptmx")),
 		DevptsListed:        strings.Contains(read(at("/proc/filesystems")), "devpts"),
 		SSHFirewall:         token(read(at("/run/nand-pilot/ssh-firewall")), "installed"),
-		KernelConfig:        kernelConfig(root),
+		AdminListeners:      adminListeners(root),
+		Persistence:         persistenceEvidence(root, 0),
+		NetworkADB: networkADBStatus{
+			State: token(read(at("/run/nand-pilot/adb-network-state")),
+				"disabled", "usb-preserved", "starting", "listening", "closed", "failed"),
+			Firewall:          token(read(at("/run/nand-pilot/adb-network-firewall")), "installed"),
+			Result:            token(read(at("/run/nand-pilot/adb-network-result")), "expired", "shutdown"),
+			MonotonicDeadline: "not-reported",
+		},
+		KernelConfig: kernelConfig(root),
 	}
 	s.OriginEvidence = classify(mounts(read(at("/proc/self/mountinfo"))), at("/sys"))
-	for _, name := range []string{"bootstrap", "kernel", "wifi", "bluetooth", "runtime", "pty", "usb", "usb-owner", "ssh"} {
+	for _, name := range []string{"bootstrap", "kernel", "wifi", "bluetooth", "runtime",
+		"pty", "usb", "usb-owner", "ssh", "adb-network", "persistence"} {
 		if read(at("/run/nand-pilot/failure-"+name)) != "" {
 			s.Failures[name] = "failure-record-present; contents withheld"
+		}
+		if deadline, err := strconv.ParseUint(read(at("/run/nand-pilot/adb-network-deadline")), 10, 64); err == nil {
+			s.NetworkADB.MonotonicDeadline = strconv.FormatUint(deadline, 10)
 		}
 	}
 	for _, dir := range []string{"/run/nand-pilot", "/run/reinvoke"} {
 		for _, name := range []string{"adbd", "adbd-supervisor", "sshd", "sshd-native",
 			"sshd-supervisor", "bluetoothd", "bluealsa", "mcu-interface", "dsp-interface",
-			"mic-capture", "provision-windowd", "bonefish", "syslogd", "pairing-agent"} {
+			"mic-capture", "provision-windowd", "bonefish", "syslogd", "pairing-agent",
+			"persistence", "wifi-resume", "networkd"} {
 			if read(at("/run/nand-pilot/failure-service-"+name)) != "" {
 				s.Failures["service-"+name] = "failure-record-present; contents withheld"
 			}
@@ -306,9 +450,9 @@ func collect(root string) status {
 		Functions:    token(read(at(gadget+"/functions")), "adb", "acm,adb"),
 		LegacyDevice: misc, Node: node(at("/dev/android_adb")), DaemonUSBFD: usbFD(root, pid),
 		SupervisorState: token(read(at("/run/nand-pilot/adb-transport")), "pending", "open", "stopped",
-			"gadget-absent", "gadget-config-failed", "node-invalid-or-absent", "fd-unreadable", "usb-fd-not-open", "retry-budget-exhausted"),
+			"gadget-absent", "gadget-config-failed", "node-invalid-or-absent", "enable-node-invalid", "fd-unreadable", "usb-fd-not-open", "retry-budget-exhausted"),
 		LastFailure: token(read(at("/run/nand-pilot/usb-last-failure")), "gadget-absent",
-			"gadget-config-failed", "node-invalid-or-absent", "fd-unreadable", "usb-fd-not-open", "retry-budget-exhausted"),
+			"gadget-config-failed", "node-invalid-or-absent", "enable-node-invalid", "fd-unreadable", "usb-fd-not-open", "retry-budget-exhausted"),
 	}
 	if value := read(at("/run/nand-pilot/usb-failure-uptime")); value != "" {
 		if seconds, err := strconv.ParseFloat(value, 64); err == nil && seconds >= 0 {
@@ -346,6 +490,14 @@ func main() {
 	fmt.Printf("USB: gadget=%s requested=%s kernel=%s fd=%s supervisor=%s recent=%s\nPTY: %s %d:%d mode=%s devpts=%t\nSSH firewall: %s\n",
 		s.USB.Gadget, s.USB.Enable, s.USB.State, s.USB.DaemonUSBFD, s.USB.SupervisorState, s.USB.LastFailure,
 		s.PTY.State, s.PTY.Major, s.PTY.Minor, s.PTY.Mode, s.DevptsListed, s.SSHFirewall)
+	fmt.Printf("Admin listeners: SSH=%s network-ADB=%s (not authentication or firewall proof)\n",
+		s.AdminListeners["ssh"], s.AdminListeners["network_adb"])
+	fmt.Printf("Network ADB: state=%s firewall=%s result=%s uptime-deadline=%s\n",
+		s.NetworkADB.State, s.NetworkADB.Firewall, s.NetworkADB.Result,
+		s.NetworkADB.MonotonicDeadline)
+	fmt.Printf("Persistence: phase=%s snapshot=%s wifi-profile=%s result=%s wifi-result=%s\n",
+		s.Persistence.Phase, s.Persistence.Snapshot, s.Persistence.WiFiProfile,
+		s.Persistence.Result, s.Persistence.WiFiResult)
 	for name, detail := range s.Failures {
 		fmt.Printf("FAIL %s: %s\n", name, detail)
 	}
