@@ -1,4 +1,9 @@
-# Runtime Interface Inventory
+---
+title: Historical vendor runtime interface inventory
+description: Static service-map evidence and later corrections, not the current owned runtime API
+---
+
+## Evidence scope
 
 > [!IMPORTANT]
 > **Historical vendor inventory.** This static map describes the extracted
@@ -54,8 +59,14 @@ the boundaries most relevant to local reuse:
 - Liveness: `com.harman.heartbeat.{mcu,audio,music}` and matching
   `com.harman.ready.*` topics
 
-These are names, not signatures. Argument shapes and return types are not
-established by string extraction and remain unresolved.
+These are the original extraction-stage names and shorthand families, not a
+callable API specification. Several spellings above are not the later verified
+procedures: the live media setter is `com.harman.volumeSet`, raw DSP gain is
+`com.harman.dsp.volumeSet`, and Mic-Mute is `com.harman.dsp.micMute`.
+The owned MCU now owns the last of those. Later recovered signatures are
+documented in [owned speaker control](../../emulation/owned-speaker-control.md)
+and the [DSP boundary](../../emulation/dsp-boundary.md); do not promote a
+string inventory or brace shorthand into a verified procedure name.
 
 ## MCU boundary
 
@@ -79,13 +90,14 @@ an identification.
 
 ## Revival implication
 
-The strongest near-term revival target remains the local audio, UI, and MCU
+At the static-analysis checkpoint, the strongest near-term revival target was the local audio, UI, and MCU
 boundary. The evidence above narrows what that requires. Because the control
 plane is an open protocol spoken to an open-source router, driving the audio
 path does not depend on reverse engineering a proprietary format. It depends on
 reaching the bus and learning each procedure's argument shape.
 
-Two consequences follow. Bus access on hardware is the gating problem, not
+The historical conclusion was that bus access on hardware was the gating problem, not
 protocol discovery. And the same router and client binaries can be exercised
 off-device, which allows argument shapes to be recovered without risking the
-unit.
+unit. Later owned RAM tests and candidate 02 native WAMP validation completed
+that access milestone without resolving every physical part identity.

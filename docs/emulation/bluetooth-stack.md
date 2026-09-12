@@ -6,10 +6,13 @@ ms.topic: concept
 ---
 
 This document separates current reInvoke behavior from the 2021 final Harman
-firmware. The vendor firmware used Bluedroid; the owned RAM target uses BlueZ
+firmware. The vendor firmware used Bluedroid; the owned target uses BlueZ
 5.55, patched BlueALSA 4.0.0, private D-Bus, and owned HCI/pairing helpers. See
 the [current product and architecture contract](../current-product-contract.md)
 for the normative boundary.
+The detailed bring-up and transport captures below are historical RAM tests.
+Candidate 02 separately demonstrated native NAND pairing, audible playback,
+and rotary volume; see the [native NAND guide](../native-nand-platform.md).
 
 ## Current reInvoke stack
 

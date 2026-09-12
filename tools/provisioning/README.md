@@ -1,6 +1,6 @@
 ---
 title: Secure native provisioning service
-description: Ephemeral authenticated Wi-Fi credential delivery for the reInvoke RAM platform
+description: Ephemeral authenticated Wi-Fi credential delivery with volatile state on RAM and NAND boots
 ms.date: 2026-09-03
 ms.topic: concept
 ---
@@ -15,6 +15,11 @@ root peer on a root-owned Unix socket, derives the WPA2 PSK in memory, writes a
 mode-0600 configuration containing no plaintext passphrase to ramfs/tmpfs, and
 starts fixed root-controlled `wpa_supplicant` and `wpa_cli` paths without a
 shell.
+
+RAM-only here describes configuration lifetime, not the boot medium. Native
+candidate 02 completed the physical AP-to-station flow; keys, credentials,
+and bonds still disappear on power loss. See the
+[native provisioning evidence](../../docs/native-provisioning.md).
 
 Opening a later physical provisioning window cleanly terminates an existing
 root-owned supplicant before applying the replacement network. The total
@@ -74,14 +79,16 @@ socket first. The daemon itself must run as root. Then run:
 
 ```bash
 reinvoke-provisiond \
-  -listen 192.168.43.1:8443 \
+  -listen <ap-address>:8443 \
   -apply-socket /run/reinvoke/wifi-apply.sock \
   -descriptor /run/reinvoke/provisioning.json \
   -apply-timeout 25s \
   -lifetime 5m
 ```
 
-Read `/run/reinvoke/provisioning.json` over USB. Clients must pin the listed
+On RAM recovery, read `/run/reinvoke/provisioning.json` over the reviewed USB
+channel. Native candidate 02 has no USB/ADB; its attended client uses the
+AP descriptor flow recorded in the provisioning guide. Clients must pin the listed
 certificate SHA-256 fingerprint and send its token as:
 
 ```text

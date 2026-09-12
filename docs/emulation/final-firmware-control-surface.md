@@ -6,12 +6,12 @@ ms.topic: concept
 ---
 
 What can and cannot be reached in the preserved `Barracuda_libre-12.2134.0`
-build. The physical unit's extracted active rootfs is the earlier
+build. The physical unit's historical pre-trial rootfs capture is the earlier
 `Barracuda_libre-12.2050.3` release.
 
 > [!IMPORTANT]
 > This is historical vendor-firmware evidence, not the reInvoke public surface.
-> The owned RAM target excludes the vendor supervisor and policy services. See
+> The owned target excludes the vendor supervisor and policy services. See
 > the [current product and architecture contract](../current-product-contract.md).
 
 Everything below is static analysis of the preserved rootfs, corroborated by
@@ -176,6 +176,12 @@ the corpus.
 
 ## Capability versus access
 
+The access question and proposed progression in the remaining sections are
+historical. Later U-Boot/RAM recovery and candidate 02 native functionality
+answered useful closed-unit access; see the
+[native NAND guide](../native-nand-platform.md). They did not prove every
+stock service or universal recovery.
+
 The evidence supports separating two questions. The first is what capabilities
 the software and hardware advertise: an ARM Linux system with Wi-Fi and
 Bluetooth radios, USB gadget configuration, microphone and DSP audio paths,
@@ -194,7 +200,7 @@ speaker, a USB audio endpoint, a local automation target, or a custom voice
 front end. These are feasibility directions, not established physical-device
 results.
 
-## Why NAND writing is not the next step
+## Why NAND writing was not the next step at this checkpoint
 
 A persistent rootfs modification has substantial rewards. It could start a
 local control service at boot, expose the WAMP bus intentionally, change the
