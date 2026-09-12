@@ -6,6 +6,8 @@ const path = require('path');
 const zlib = require('zlib');
 const { patchRuntime } = require('./patch-runtime');
 const { readConfig, installConfig } = require('./private-config');
+const { validateAdbNetwork, installAdbNetwork } = require('./adb-network-config');
+const { readPersistenceConfig, installPersistence } = require('./persistence-config');
 const lib = require('./build-lib');
 const { run, json, hashFile, pins, inventory, verify } = lib;
 const here = __dirname;
@@ -37,6 +39,8 @@ function cpioPack(root, out) {
 }
 function prepare() {
   const privateConfig = readConfig(process.env.PILOT_PRIVATE_CONFIG);
+  validateAdbNetwork(privateConfig.adbNetwork);
+  const persistenceConfig = readPersistenceConfig(process.env.PILOT_PERSISTENCE_CONFIG);
   for (const key of Object.keys(pins)) verify(input(key), pins[key]);
   const original = path.join(output, 'source-rc12'), stock = path.join(output, 'source-stock');
   fs.mkdirSync(original);
@@ -55,7 +59,7 @@ function prepare() {
   json(path.join(output, 'busybox-provenance.json'), {
     sourceSha256: lib.BB_SHA256, packagedSha256: lib.BB_SHA256, binaryUnmodified: true,
     genericStorageApplets: 'retained exactly as RC12; trusted-root DIY system, not a security sandbox',
-    startupPolicy: 'no installer, flash_custk, OTA/autoflash or storage-writing startup invocation',
+    startupPolicy: 'no installer, flash_custk or OTA/autoflash; verified app-filesystem settings writes are enabled',
   });
   const root = path.join(output, 'runtime'), boot = path.join(output, 'bootstrap');
   run('cp', ['-a', original, root]);
@@ -71,6 +75,10 @@ function prepare() {
   link('busybox', path.join(root, 'bin/ash'));
   write(path.join(root, 'etc/profile'), 'export PATH=/sbin:/bin:/usr/sbin:/usr/bin\nexport HOME=/root\numask 022\n');
   installConfig(privateConfig, root);
+  json(path.join(output, 'persistence-manifest.json'), installPersistence(persistenceConfig, root));
+  installAdbNetwork(privateConfig, root);
+  for (const script of ['adb-network-start.sh', 'persistence-start.sh'])
+    install(path.join(here, script), path.join(root, 'usr/libexec/nand-pilot', script), '0644');
   fs.rmSync(path.join(root, 'lib/modules'), { recursive: true });
   const modules = [];
   const suffixes = ['wlan_sd8887/mlan.ko', 'wlan_sd8887/sd8xxx.ko', 'bt_sd8887/bt8xxx.ko'];
@@ -151,14 +159,14 @@ function prepare() {
   const componentManifest = JSON.stringify(components, null, 2) + '\n';
   const manifestHash = lib.sha(componentManifest);
   const release = [
-    'reInvoke NAND 03 (OFFLINE CANDIDATE; normal boot acceptance unproven)',
+    `reInvoke NAND ${lib.CANDIDATE} (OFFLINE CANDIDATE; normal boot acceptance unproven)`,
     `build-id: ${lib.BUILD_ID}`, `source-rc12-sha256: ${pins.rc12.sha256}`,
     `source-stock-rootfs-sha256: ${pins.stock.sha256}`, `original-init-sha256: ${lib.sha(originalInit)}`,
     `runtime-components-sha256: ${manifestHash}`, `bootstrap-source-manifest-sha256: ${lib.sha(JSON.stringify(sourceCode))}`,
     `busybox-sha256: ${lib.BB_SHA256}`,
-    'busybox-policy: exact RC12 binary; generic applets retained; no storage-writing startup commands',
-    'storage-policy: read-only NAND source; mutable runtime/config/bonds/logs only in RAM',
-    'network-policy: existing private RC12 config retained; STA/uAP; provision station each boot; no saved Wi-Fi',
+    'busybox-policy: exact RC12 binary; generic applets retained; no raw-flash write commands in startup',
+    'storage-policy: read-only system; verified app YAFFS2 stores selected settings; runtime/logs/audio remain in RAM',
+    'network-policy: STA/uAP; saved or private seeded station profile; physical setup fallback; bounded optional network ADB',
     'identity-policy: no image self-hash; release and component manifest read-only bind-mounted from source',
     '', 'Original RC12 release (historical metadata; not a claim about this boot):',
     fs.readFileSync(path.join(original, 'etc/reinvoke-release'), 'utf8'),
@@ -262,7 +270,7 @@ function finalize() {
   for (const name of ['source-rc12-manifest.json', 'module-manifest.json', 'runtime-manifest.json',
     'bootstrap-manifest.json', 'runtime-elf-closure.json', 'bootstrap-elf-closure.json',
     'runtime-delta.json', 'validation.json', 'busybox-provenance.json', 'adbd-loader-check.txt',
-    'runtime-loader-checks.json', 'kernel-compatibility.json'])
+    'runtime-loader-checks.json', 'kernel-compatibility.json', 'persistence-manifest.json'])
     fs.copyFileSync(path.join(output, 'build-a', name), path.join(output, name));
   json(path.join(output, 'PROPOSAL.json'), proposal);
   const manifest = inventory(output).filter(v => !v.path.startsWith('build-') && !v.path.startsWith('work/') &&

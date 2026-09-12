@@ -4,7 +4,21 @@
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
-const { run, hashFile } = require('./build-lib');
+const { run, hashFile, BLUETOOTH_NAME } = require('./build-lib');
+
+function localAccountNSS(text) {
+  const missing = new Set(['passwd', 'group', 'shadow']);
+  let result = text.replace(/^[ \t]*(passwd|group|shadow)[ \t]*:[^\r\n]*/gm,
+    (_, database) => {
+      missing.delete(database);
+      return `${database}: files`;
+    });
+  for (const database of missing) {
+    if (result && !result.endsWith('\n')) result += '\n';
+    result += `${database}: files\n`;
+  }
+  return result;
+}
 
 function readConfig(file) {
   if (!file) throw new Error('PILOT_PRIVATE_CONFIG is required for this unit-only build');
@@ -72,6 +86,11 @@ function installConfig(config, root) {
   write('etc/passwd', 'root:x:0:0:root:/root:/bin/sh\n' +
     existing.split('\n').filter(line => line && !line.startsWith('root:')).join('\n') + '\n', 0o644);
   if (!fs.existsSync(path.join(root, 'etc/group'))) write('etc/group', 'root:x:0:\n', 0o644);
+  // Static Dropbear's newer glibc cannot load the vendor's old compat NSS
+  // modules. Local files use its built-in account lookup without replacing libc.
+  const nsswitch = path.join(root, 'etc/nsswitch.conf');
+  write('etc/nsswitch.conf', localAccountNSS(fs.existsSync(nsswitch) ?
+    fs.readFileSync(nsswitch, 'utf8') : ''), 0o644);
   write('etc/shells', '/bin/sh\n/bin/ash\n', 0o644);
   if (config.wifiMAC) write('etc/native-admin/wifi-mac', config.wifiMAC + '\n');
   for (const [key, name] of [['runtimeConfig', 'runtime.conf'], ['apSSID', 'provision-ap-ssid'],
@@ -81,7 +100,7 @@ function installConfig(config, root) {
   const bluez = path.join(root, 'opt/reinvoke/etc/bluez-main.conf');
   let text = fs.readFileSync(bluez, 'utf8');
   if (!/^Name\s*=/m.test(text)) throw new Error('Bluetooth name configuration missing');
-  text = text.replace(/^Name\s*=.*$/m, 'Name = reInvoke-NAND');
+  text = text.replace(/^Name\s*=.*$/m, `Name = ${BLUETOOTH_NAME}`);
   fs.writeFileSync(bluez, text);
 }
-module.exports = { readConfig, installConfig };
+module.exports = { readConfig, installConfig, localAccountNSS };

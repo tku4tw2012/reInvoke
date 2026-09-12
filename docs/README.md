@@ -1,6 +1,6 @@
 ---
 title: reInvoke documentation
-description: Index of the 31 public Markdown pages, grouped by engineering task
+description: Index of the 32 public Markdown pages, grouped by engineering task
 ms.date: 2026-09-12
 ---
 
@@ -17,22 +17,23 @@ RAM measurements and vendor evidence are separate scopes.
 | [Native NAND platform](native-nand-platform.md)      | Current results, artifact identities and installation limits |
 | [Revival roadmap](revival-roadmap.md#remaining-work) | Milestones and remaining engineering gates                   |
 | [Security policy](../.github/SECURITY.md)            | Private reporting, sensitive data and repository checks      |
-| [Documentation index](README.md)                     | All 31 public Markdown pages                                 |
+| [Documentation index](README.md)                     | All 32 public Markdown pages                                 |
 
 ## Operate and develop
 
-| Page                                                  | Purpose                                      |
-| ----------------------------------------------------- | -------------------------------------------- |
-| [Wi-Fi provisioning](native-provisioning.md)          | Volatile onboarding and bootstrap trust      |
-| [Microphone capture](microphone-capture.md)           | Stream protocol and implemented privacy gate |
-| [RAM platform](native-ram-platform.md)                | Host-loaded development/recovery runtime     |
-| [U-Boot access](uboot-access.md)                      | USB recovery procedure and observed limits   |
-| [Control tools](../tools/control/README.md)           | WAMP clients, adapters and Bluetooth helpers |
-| [Kernel tools](../tools/kernel/README.md)             | Kernel/DTB inputs, profiles and checks       |
-| [Capture tools](../tools/mic-capture/README.md)       | Capture service and local client             |
-| [NAND builders](../tools/nand-pilot/README.md)        | Bootstrap, BSL and bundle composition        |
-| [Provisioning tools](../tools/provisioning/README.md) | Parser, network/window services and client   |
-| [USB recovery tools](../tools/usb-boot/README.md)     | Host helper and bounded installation tooling |
+| Page                                                              | Purpose                                         |
+| ----------------------------------------------------------------- | ----------------------------------------------- |
+| [Wi-Fi provisioning](native-provisioning.md)                      | Volatile onboarding and bootstrap trust         |
+| [Microphone capture](microphone-capture.md)                       | Stream protocol and implemented privacy gate    |
+| [RAM platform](native-ram-platform.md)                            | Host-loaded development/recovery runtime        |
+| [U-Boot access](uboot-access.md)                                  | USB recovery procedure and observed limits      |
+| [Control tools](../tools/control/README.md)                       | WAMP clients, adapters and Bluetooth helpers    |
+| [Kernel tools](../tools/kernel/README.md)                         | Kernel/DTB inputs, profiles and checks          |
+| [Capture tools](../tools/mic-capture/README.md)                   | Capture service and local client                |
+| [NAND builders](../tools/nand-pilot/README.md)                    | Bootstrap, BSL and bundle composition           |
+| [Settings persistence](../tools/nand-pilot/persistence/README.md) | Guarded app storage, Wi-Fi resume and snapshots |
+| [Provisioning tools](../tools/provisioning/README.md)             | Parser, network/window services and client      |
+| [USB recovery tools](../tools/usb-boot/README.md)                 | Host helper and bounded installation tooling    |
 
 ## Inspect interfaces
 

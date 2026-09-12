@@ -27,6 +27,10 @@ unknown. Earlier audio/control and RAM results do not establish acceptance of
 the installed image. Wi-Fi credentials, Bluetooth bonds and preferences are
 volatile after power loss.
 
+The [offline candidate 04](docs/native-nand-platform.md#candidate-04-offline-successor)
+adds saved settings, station resume, corrected SSH lookup and bounded network
+ADB. It is built and tested offline, not yet installed.
+
 The [native guide](docs/native-nand-platform.md#current-result) owns the result
 ledger and artifact pins. See the [product contract](docs/current-product-contract.md),
 [remaining work](docs/revival-roadmap.md#remaining-work) and

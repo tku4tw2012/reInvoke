@@ -14,6 +14,9 @@ import (
 
 func TestOfflineBuilderAndRetainedShell(t *testing.T) {
 	cmd := exec.Command("node", "../test.js")
+	if archive := os.Getenv("REINVOKE_ARCHIVE"); archive != "" {
+		cmd.Args = append(cmd.Args, archive)
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%v\n%s", err, output)
@@ -128,6 +131,132 @@ func TestReportedBerlinKernelOptions(t *testing.T) {
 	}
 	if _, exists := values["CONFIG_OTHER_PRIVATE_VALUE"]; exists {
 		t.Fatal("unrequested kernel configuration leaked")
+	}
+}
+
+func TestAdminListenerEvidenceDoesNotRevealAddresses(t *testing.T) {
+	root := t.TempDir()
+	if got := adminListeners(root); got["ssh"] != "unavailable" ||
+		got["network_adb"] != "unavailable" {
+		t.Fatal("missing procfs must remain unknown", got)
+	}
+	dir := filepath.Join(root, "proc/net")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	tcp := "sl local_address rem_address st\n" +
+		"0: 0100007F:0016 00000000:0000 01\n" +
+		"1: 0100007F:15B3 00000000:0000 0A\n" +
+		"2: 0100007F:ZZZZ 00000000:0000 0A\n"
+	if err := os.WriteFile(filepath.Join(dir, "tcp"), []byte(tcp), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got := adminListeners(root)
+	if got["ssh"] != "not-observed-in-bounded-scan" ||
+		got["network_adb"] != "listening-observed" {
+		t.Fatal("a connected socket is not a listener", got)
+	}
+	tcp6 := "sl local_address rem_address st\n" +
+		"0: 00000000000000000000000001000000:0016 00000000000000000000000000000000:0000 0A\n"
+	if err := os.WriteFile(filepath.Join(dir, "tcp6"), []byte(tcp6), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got = adminListeners(root)
+	if got["ssh"] != "listening-observed" {
+		t.Fatal("IPv6 listener not detected", got)
+	}
+	data, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "0100007F") ||
+		strings.Contains(string(data), "00000000000000000000000001000000") {
+		t.Fatal("raw network identifiers leaked")
+	}
+}
+
+func TestNetworkADBStatusIsBoundedAndRedacted(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "run/nand-pilot")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, value string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("adb-network-state", "closed\n")
+	write("adb-network-firewall", "installed\n")
+	write("adb-network-result", "expired\n")
+	write("adb-network-deadline", "301\n")
+	write("failure-adb-network", "SECRET-PRIVATE-CONTEXT")
+	write("usb-last-failure", "enable-node-invalid")
+	s := collect(root)
+	if s.NetworkADB.State != "closed" || s.NetworkADB.Firewall != "installed" ||
+		s.NetworkADB.Result != "expired" || s.NetworkADB.MonotonicDeadline != "301" {
+		t.Fatal(s.NetworkADB)
+	}
+	if s.USB.LastFailure != "enable-node-invalid" || s.Failures["adb-network"] == "" {
+		t.Fatal("diagnostic failures were not reported")
+	}
+	write("adb-network-state", "usb-preserved")
+	if collect(root).NetworkADB.State != "usb-preserved" {
+		t.Fatal("retained USB transport was not reported")
+	}
+	write("adb-network-state", "SECRET-PRIVATE-CONTEXT")
+	write("adb-network-deadline", "SECRET-PRIVATE-CONTEXT")
+	s = collect(root)
+	if s.NetworkADB.State != "unknown-or-unavailable" ||
+		s.NetworkADB.MonotonicDeadline != "not-reported" {
+		t.Fatal("unexpected status content was treated as evidence")
+	}
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "SECRET") {
+		t.Fatal("unallowlisted diagnostic details leaked")
+	}
+}
+
+func TestPersistenceStatusRejectsUnsafeOrPrivateContent(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "run/reinvoke")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "persistence-status.json")
+	uid := uint32(os.Getuid())
+	valid := `{"version":1,"phase":"ready","snapshot":"present","wifi_profile":"present","result":"PERSIST_READY"}`
+	if err := os.WriteFile(file, []byte(valid), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := persistenceEvidence(root, uid); got.Phase != "ready" || got.Result != "PERSIST_READY" {
+		t.Fatal(got)
+	}
+	for _, content := range []string{"not JSON", valid + valid, strings.Repeat("x", 513),
+		`{"version":1,"phase":"ready","snapshot":"present","wifi_profile":"present","result":"PERSIST_READY","ssid":"SECRET"}`} {
+		if err := os.WriteFile(file, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if persistenceEvidence(root, uid).Phase != "unknown" {
+			t.Fatal("invalid status accepted")
+		}
+	}
+	if err := os.WriteFile(file, []byte(strings.ReplaceAll(valid, "PERSIST_READY", "PERSIST_SECRET_DATA")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(persistenceEvidence(root, uid))
+	if err != nil || strings.Contains(string(data), "SECRET") {
+		t.Fatal("unknown result data leaked")
+	}
+	if err := os.Chmod(file, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if persistenceEvidence(root, uid).Phase != "unknown" {
+		t.Fatal("unsafe status permissions accepted")
 	}
 }
 

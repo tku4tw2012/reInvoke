@@ -72,6 +72,11 @@ func main() {
 		"",
 		"BlueALSA CLI used for physical rotary volume control",
 	)
+	musicVolumeState := flag.String(
+		"music-volume-state",
+		"",
+		"optional private RAM music-volume preference restored by persistence",
+	)
 	blueALSAPeer := flag.String(
 		"bluealsa-peer",
 		"",
@@ -203,6 +208,18 @@ func main() {
 		)
 		if err != nil {
 			log.Fatal(err)
+		}
+		if *musicVolumeState != "" {
+			if err := validateMusicStateDirectory(*musicVolumeState); err != nil {
+				log.Fatal(err)
+			}
+			volume, err := readMusicVolume(*musicVolumeState)
+			if err != nil {
+				log.Fatal(err)
+			}
+			media.musicStatePath = *musicVolumeState
+			media.savedVolume = volume
+			media.hasSavedVolume = true
 		}
 		inputControls = append(inputControls, media)
 		// A freshly acquired BlueALSA transport starts at maximum volume, so a

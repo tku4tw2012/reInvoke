@@ -21,6 +21,8 @@ lib.verify(vendorPath, {
 });
 const mainManifest = JSON.parse(fs.readFileSync(path.join(pilot, 'PROPOSAL.json'), 'utf8'));
 const bslManifest = JSON.parse(fs.readFileSync(path.join(bsl, 'MANIFEST.json'), 'utf8'));
+assert.equal(mainManifest.buildId, lib.BUILD_ID, 'main candidate does not match this builder');
+assert.equal(bslManifest.buildId, lib.BUILD_ID, 'BSL candidate does not match this builder');
 const rootfsPath = path.join(pilot, 'rootfs.squashfs');
 const bslPath = path.join(bsl, 'bsl.squashfs');
 lib.verify(rootfsPath, mainManifest.image);
@@ -84,12 +86,13 @@ assert.equal(records.find(record => record.name === 'app').dataType, 1);
 const image = Buffer.concat([table, ...payloads]);
 assert.equal(image.length, outputOffset);
 fs.mkdirSync(output, { mode: 0o700 });
-const imagePath = path.join(output, '83_IMAGE.reinvoke-03');
+const imagePath = path.join(output, lib.BUNDLE_NAME);
 fs.writeFileSync(imagePath, image, { flag: 'wx', mode: 0o600 });
 const length = Buffer.alloc(4);
 length.writeUInt32LE(image.length);
 fs.writeFileSync(path.join(output, '07_IMAGE.for-83'), length, { flag: 'wx', mode: 0o600 });
 lib.json(path.join(output, 'MANIFEST.json'), {
+  buildId: lib.BUILD_ID,
   status: 'OFFLINE_CANDIDATE_NOT_NATIVE_BOOT_VERIFIED',
   source: { path: vendorPath, sha256: lib.sha(vendor) },
   image: { file: path.basename(imagePath), bytes: image.length, sha256: lib.sha(image) },
