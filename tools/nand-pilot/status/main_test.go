@@ -3,9 +3,12 @@
 package main
 
 import (
+	"compress/gzip"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -16,6 +19,116 @@ func TestOfflineBuilderAndRetainedShell(t *testing.T) {
 		t.Fatalf("%v\n%s", err, output)
 	}
 	t.Log(string(output))
+}
+
+func TestBoundedRedactedUSBStatus(t *testing.T) {
+	root, err := os.MkdirTemp(".", ".status-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(root)
+	write := func(name, value string) {
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := collect(root)
+	if s.USB.DaemonUSBFD != "daemon-not-observed" || s.USB.Enable != "unknown-or-unavailable" {
+		t.Fatal("missing evidence is not readiness", s.USB)
+	}
+	write("/run/nand-pilot/adbd.pid", "42")
+	write("/run/nand-pilot/failure-runtime", "SECRET-CREDENTIALS")
+	write("/proc/cmdline", "SECRET-COMMANDLINE")
+	write("/sys/class/android_usb/android0/iSerial", "SECRET-SERIAL")
+	write("/proc/self/mountinfo", "SECRET-PATH")
+	write("/run/nand-pilot/usb-last-failure", "fd-unreadable")
+	write("/run/nand-pilot/usb-failure-uptime", "12.34")
+	write("/sys/class/android_usb/android0/enable", "1")
+	write("/sys/class/misc/android_adb/dev", "1:5")
+	if err := os.MkdirAll(filepath.Join(root, "dev"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/dev/zero", filepath.Join(root, "dev/android_adb")); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "/proc/42/fd")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/dev/null", filepath.Join(dir, "0")); err != nil {
+		t.Fatal(err)
+	}
+	s = collect(root)
+	if s.USB.DaemonUSBFD != "not-open-observed" || s.USB.LastFailure != "fd-unreadable" {
+		t.Fatal(s.USB)
+	}
+	if err := os.Symlink("/dev/android_adb", filepath.Join(dir, "3")); err != nil {
+		t.Fatal(err)
+	}
+	s = collect(root)
+	if s.USB.DaemonUSBFD == "open-observed" {
+		t.Fatal("an ADB-looking path alone was accepted as an open device")
+	}
+	if err := os.Remove(filepath.Join(dir, "3")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/dev/zero", filepath.Join(dir, "3")); err != nil {
+		t.Fatal(err)
+	}
+	s = collect(root)
+	if s.USB.DaemonUSBFD != "open-observed" || s.USB.LegacyDevice != "1:5" {
+		t.Fatal(s.USB)
+	}
+	write("/sys/class/misc/android_adb/dev", "1:3")
+	if collect(root).USB.DaemonUSBFD != "device-number-mismatch" {
+		t.Fatal("wrong device number accepted as the kernel's ADB node")
+	}
+	write("/sys/class/misc/android_adb/dev", "1:5")
+	data, _ := json.Marshal(s)
+	if strings.Contains(string(data), "SECRET") {
+		t.Fatal("status leaked nonallowlisted facts")
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if collect(root).USB.DaemonUSBFD != "unreadable-or-exited" {
+		t.Fatal("FD error reported healthy")
+	}
+}
+
+func TestReportedBerlinKernelOptions(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "proc"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(filepath.Join(root, "proc/config.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := gzip.NewWriter(file)
+	if _, err := writer.Write([]byte("CONFIG_USB_G_ANDROID=y\nCONFIG_BERLIN_USBPHY=y\n" +
+		"CONFIG_USB_MV_UDC=m\n# CONFIG_USB_FUNCTIONFS is not set\nCONFIG_OTHER_PRIVATE_VALUE=yes\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	values := kernelConfig(root)
+	if values["CONFIG_USB_G_ANDROID"] != "y" || values["CONFIG_BERLIN_USBPHY"] != "y" ||
+		values["CONFIG_USB_MV_UDC"] != "m" || values["CONFIG_USB_FUNCTIONFS"] != "n" ||
+		values["CONFIG_USB_PHY"] != "not-reported" {
+		t.Fatal(values)
+	}
+	if _, exists := values["CONFIG_OTHER_PRIVATE_VALUE"]; exists {
+		t.Fatal("unrequested kernel configuration leaked")
+	}
 }
 
 func TestOriginRequiresActualMountAndNAND(t *testing.T) {
