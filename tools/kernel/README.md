@@ -1,7 +1,7 @@
 ---
 title: Invoke kernel build
 description: Reproducible RAM-boot kernel build for the Invoke BG2CDP platform
-ms.date: 2026-09-02
+ms.date: 2026-09-12
 ms.topic: how-to
 ---
 
@@ -115,6 +115,97 @@ The Invoke source's Bluetooth directory is selected by
 `BERLIN_SDIO_WLAN_8887`. The builder supplies that selector only to the
 Bluetooth subdirectory build. It does not enable or package the second Wi-Fi
 driver.
+
+### Opt-in MTD removal cleanup fix
+
+Existing profiles remain unchanged unless `--mtd-cleanup-fix` is supplied.
+This variant applies
+[`0005-fix-mtdblock-removal-lifetime.patch`](../../patches/invoke-kernel/0005-fix-mtdblock-removal-lifetime.patch)
+only in a fresh `--source-work-dir` copy. It saves the bad-block map before
+`del_mtd_blktrans_dev()` quiesces the device and releases its private allocation,
+then frees the saved map without dereferencing or freeing the private object
+again. The original source header credits David Woodhouse and licenses this
+file under GPL-2.0-or-later; archive provenance remains
+[`P1-041.json`](../../metadata/P1-041.json).
+
+```bash
+nice -n 10 tools/kernel/build-native-kernel.sh \
+  --profile audio-sd8887 \
+  --mtd-cleanup-fix \
+  --source-work-dir ../reinvoke-archive/build/mtd-cleanup-source \
+  --build-dir ../reinvoke-archive/build/mtd-cleanup-build \
+  --dtb ../reinvoke-archive/build/artifacts/reinvoke-kernel-v14-9-provenance-20260906/reinvoke-audio-sd8887.dtb \
+  --dtb-sha256 4dd7a39aa8c8d23ee824724e3f633ec16bb3a0f28c46cb096f0552dc28737dbb \
+  --output-dir ../reinvoke-archive/build/artifacts/invoke-mtd-cleanup \
+  --jobs 1
+```
+
+The fixed variant refuses existing or overlapping source-work, build, and output
+paths; unlike the baseline path, it never cleans an existing build directory.
+Its default build directory and image filenames gain `-mtd-cleanup`. Kernel
+configuration and `LOCALVERSION` remain unchanged to permit comparison with
+existing modules, not to assert untested compatibility.
+The fixed variant pins `KBUILD_BUILD_VERSION=1-mtd-cleanup`, distinguishing it
+in `uname -v` and `/proc/version` without changing `uname -r` or module vermagic.
+The exact compiled `UTS_VERSION` and expected `/proc/version` line are captured
+in `build-manifest.txt`; `kernel-compile.h` retains the generated header.
+
+All existing checksum gates remain mandatory. The additional gates pin patch 5,
+the original and corrected `mtdblock_ro.c`, and the full corrected source tree.
+`build-manifest.txt` records the variant, both tree identities, patch and source
+hashes, and the exact image digest and size. The retained tree-manifest ordering
+uses the build host's `en_US.UTF-8` locale; use that locale when reproducing these
+pins.
+
+NDK GCC 4.9 embeds absolute source paths in some `__FILE__` diagnostics,
+including `sd8xxx.ko`. Thus an isolated copy can change binary hashes even with
+identical source/configuration. The fixed manifest records its source directory;
+byte-for-byte reproduction requires the same absolute source-copy path, not
+just identical contents. Archive the old copy before recreating that path for
+a second clean build with new build/output directories. Do not repoint or
+replace the preserved baseline source to obtain matching diagnostic strings.
+
+Before pairing the result with an unchanged initramfs, compare configuration,
+DTB, kernel release, module hashes and symbol versions against that initramfs's
+accepted kernel/module set, and inspect the compiled removal callback. Offline
+verification does not authorize a RAM reload or NAND write; hardware acceptance
+remains a separate gate.
+
+Initial offline verification on 2026-09-09 retained a successful clean rebuild under
+`build/artifacts/invoke-kernel-audio-sd8887-mtd-cleanup-20260909T1310Z-repro/`
+in the external archive. This earlier image predates the distinct
+`#1-mtd-cleanup` build identifier and is not the identified recovery handoff:
+
+* Image: `81_IMAGE.reinvoke-audio-sd8887-mtd-cleanup`, 3,548,079 bytes.
+* SHA-256: `d64f6da60f957c6308e81c200179c7ea8b9b0e54b701ebbd0af5c7c1f4ebe985`.
+* Clean rebuild matched the first artifact's image, DTB, configuration,
+  `vmlinux`, `System.map`, `Module.symvers`, and all four modules exactly.
+* Configuration and DTB match RC12. Three modules match RC12 byte-for-byte;
+  `sd8xxx.ko` differs in diagnostic source paths, but its executable disassembly,
+  relocations, imports, export sizes, and module metadata match. Symbol version
+  CRCs are disabled in this configuration; `Module.symvers` remains identical.
+* Linked callback disassembly saves the map before generic deletion and frees
+  it once afterward. Original source/build hashes and RC12's `82_IMAGE` remain
+  unchanged. This establishes offline ABI compatibility, not hardware acceptance.
+
+Verification scripts, disassembly, logs, provenance, and source manifests are
+under `build/invoke-mtd-cleanup-20260909T1310Z/verification/` in the archive.
+
+The identified recovery handoff is
+`build/artifacts/invoke-kernel-audio-sd8887-mtd-cleanup-20260909T1337Z-identified/81_IMAGE.reinvoke-audio-sd8887-mtd-cleanup`
+(3,548,071 bytes), SHA-256
+`708c8a17a2817b1d44216b1597e2e3cf6d59d366d95d804bdb96b16d2ecaf32e`.
+Its compiled `UTS_VERSION` is
+`#1-mtd-cleanup SMP PREEMPT Thu Jan 1 00:00:00 UTC 1970`, unlike RC12's
+`#1 SMP PREEMPT Thu Jan 1 00:00:00 UTC 1970`. The clean build retains identical
+configuration, DTB, symbol ABI, and all four modules from the ABI-verified fixed
+build above. `ram-handoff-manifest.txt` records the full expected `/proc/version`
+line and compatibility with the unchanged `pre-nand-rc12-20260908/82_IMAGE`
+(SHA-256 `a0f273ddfb4a7a3844078b88f4ff826a1f1d1c7ae8c01b77b87533e3bf8985de`).
+A forced version-object incremental rebuild reproduced `vmlinux`, the compiled
+header, configuration, symbol table, `zImage`, and the packaged image exactly.
+Evidence is in the adjacent build's `verification-identified/` directory.
+No recovery bootstrap directory, live device, or NAND-write gate was modified.
 
 The GCC 11 ACast research control remains available separately:
 

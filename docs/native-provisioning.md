@@ -1,7 +1,7 @@
 ---
 title: Native Wi-Fi provisioning boundary
-description: Authenticated RAM-only onboarding architecture for the reInvoke platform
-ms.date: 2026-09-05
+description: Authenticated volatile onboarding architecture for the native reInvoke platform
+ms.date: 2026-09-12
 ms.topic: concept
 ---
 
@@ -10,11 +10,13 @@ and credential application. The HTTPS parser is implemented and verified on the
 physical Invoke. SD8887 access-point mode, station credential application, and
 the owned DHCP/resolver lifecycle are also verified.
 
-These components do **not** yet form an automatic product onboarding flow. The
-MCU service publishes Mic-Mute long press for compatibility, but normal
-physical-button orchestration of the bounded AP, descriptor delivery, parser,
-and station transition remains incomplete. Yellow-mode USB is the current
-trusted development bootstrap. See the
+Candidate 02 now connects these components in a native NAND boot. A Mic-Mute
+long press opened the bounded AP, the client fetched the descriptor over the
+AP, pinned its certificate fingerprint, authenticated with its bearer token,
+and submitted the client's active local Wi-Fi profile. The client restored its
+own network and reached the Invoke's MCU/DSP services there. Credentials remain
+RAM-only, so this is a working attended development path rather than persistent
+consumer onboarding. See the
 [current product and architecture contract](current-product-contract.md).
 
 ## Historical stock boundary
@@ -41,17 +43,16 @@ unauthenticated HTTP and contains `TODO: Encrypt password`.
 
 The onboarding design has four independent components:
 
-1. A physical gate is intended to open a bounded provisioning window; the final
-   orchestration is not yet implemented.
+1. A Mic-Mute long press opens a bounded provisioning window.
 2. A radio adapter creates an isolated WPA2 AP on `p2p0`, without forwarding to
    another interface.
 3. `reinvoke-provisiond` accepts one authenticated TLS request.
 4. A privileged station adapter receives the request over a root-owned Unix
    socket and applies it without shell interpolation.
 
-The accepted RAM product writes only tmpfs configuration and leaves NAND
-unmounted. A future persistent product would need a separately reviewed storage,
-recovery, and secret-management design.
+The current native product writes station configuration only to RAM. Persistent
+credentials still need a separately reviewed storage, recovery, update, and
+secret-management design.
 
 ## Authenticated parser
 
@@ -96,7 +97,7 @@ descriptor.
 
 ## Bootstrap transport
 
-The current trusted development bootstrap is yellow-mode USB:
+The original trusted development bootstrap was yellow-mode USB:
 
 1. Manually start the isolated AP and provisioning daemon during an attended
    bounded window.
@@ -106,8 +107,11 @@ The current trusted development bootstrap is yellow-mode USB:
 5. Send its bearer token and one credential request.
 
 This is sufficient for development and recovery. It is not the finished
-physical-button product flow. A future adapter could deliver the same descriptor
-without weakening the HTTPS API or teaching the parser about radio drivers.
+physical-button product flow. Candidate 02 also serves the root-only descriptor
+through a temporary HTTP bootstrap endpoint on the isolated WPA2 AP. The client
+still verifies the TLS endpoint's certificate fingerprint before sending the
+bearer token and credentials. No network identifier or secret is retained in
+this documentation.
 
 ## Historical artifact identity and physical validation
 
@@ -275,8 +279,7 @@ DHCP, DNS, and default-route acquisition were not expected in this cold-boot
 check. The already validated credentialed station lifecycle remains covered by
 the live RAM-only validation above.
 
-The current network boundaries are accepted into the RAM architecture. Remaining
-product work is physical-button onboarding orchestration; the current image also
-shares the project-wide cold-boot campaign in [PLAN.md](../PLAN.md). Persistent
-storage remains out of scope until backup, rollback, recovery, and secret
-handling are independently proven.
+The network boundaries are accepted into the native architecture. Candidate 02
+completed physical-button onboarding and local-network MCU/DSP access. Persistent
+storage remains deferred until backup, recovery, update preservation, and secret
+handling are explicitly designed.

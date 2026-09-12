@@ -1,14 +1,14 @@
 ---
 title: Current reInvoke product and architecture contract
-description: Canonical behavior, service ownership, dependency boundaries, and acceptance status for the RAM-only reInvoke target
-ms.date: 2026-09-05
+description: Canonical behavior, service ownership, dependency boundaries, and native NAND acceptance status
+ms.date: 2026-09-12
 ms.topic: overview
 ---
 
 # Current reInvoke product and architecture contract
 
 This document is the canonical contract for the current reInvoke target. It
-describes intended product behavior and the accepted RAM architecture. The
+describes intended product behavior and the accepted native architecture. The
 research corpus, firmware analyses, journal, and iteration records are evidence
 for how the project reached this design; they do not override this contract.
 
@@ -24,7 +24,7 @@ Do not merge these three systems into one description.
 |---|---|---|
 | 2017 retail Harman Kardon Invoke | Historical product and hardware evidence | Cortana-era retail speaker with Harman's original cloud, media, MCU, DSP, and update stack |
 | Harman 2021 final Bluetooth firmware | Historical donor and comparison point | `Barracuda_libre-12.2134.0` removes the cloud-assistant components found in earlier images and adds `wifi-blocker`; it is a vendor Bluetooth-speaker firmware, not reInvoke |
-| reInvoke target | Current normative product | Owned RAM-booted Linux lifecycle with local Bluetooth audio, physical controls, microphone privacy, and optional local networking; no Cortana or vendor supervisor |
+| reInvoke target | Current normative product | Owned NAND-started Linux lifecycle with local Bluetooth audio, physical controls, microphone privacy, and local networking; no Cortana or vendor supervisor |
 
 The examined physical sample contained the earlier
 `Barracuda_libre-12.2050.3` rootfs. That installed-image fact does not change the
@@ -32,29 +32,30 @@ identity of either Harman's final firmware or the reInvoke target.
 
 ## Current product contract
 
-The supported target is a closed Invoke running entirely from a reviewed kernel
-and initramfs loaded through yellow-mode U-Boot.
+The supported target is a closed Invoke running the owned runtime from NAND.
+Yellow-mode U-Boot and RAM Linux remain the recovery and development path.
 
 | Capability | Current contract and evidence status |
 |---|---|
-| Boot and recovery | reInvoke owns PID 1 and the service lifecycle. Yellow-mode Micro-USB recovery and RAM boot are verified. A power cycle returns to the installed firmware. |
-| Persistent storage | NAND is not mounted. Ordinary writable MTD nodes are removed; only the explicit read-only NAND node may exist. NAND installation is a separate, unapproved project. |
+| Boot and recovery | reInvoke candidate 02 reached native functionality after an owner-confirmed power-only start with no subsequent helper firmware. Fresh observations confirmed an encrypted Bluetooth connection, audible playback, physical rotary volume adjustment, Mic-Mute indicator changes, physical Wi-Fi provisioning, and local-network MCU/DSP calls. Native USB/ADB remains unavailable. The live session is preserved for diagnosis; see [NAND startup status](nand-write-decision.md). |
+| Persistent storage | The complete reInvoke candidate 02 bundle was installed through one explicitly approved vendor whole-good-block erase/program operation, including the default app seed and paired owned rootfs/BSL. All nine vendor program/read address sets, full transfer length and returned prompt were checked. This is not independent Linux readback or a programmer-grade raw restore image. The cause of the improved native behavior has not been isolated among the combined changes. |
 | Bluetooth playback | BlueZ 5.55 and patched BlueALSA 4.0.0 provide classic A2DP Sink playback. The allowlist, bond state, D-Bus state, and runtime configuration are volatile. Audible playback and rotary volume have been demonstrated; the final accepted image still needs its attended acceptance run. |
 | Speaker safety | The owned MCU service initializes amplifier and DAC muted. It opens the physical path only while ALSA is `RUNNING`, the active-PCM lease thread matches ALSA's owner, and that thread resolves to the packaged player. Disconnect, silence, process exit, or shutdown reasserts mute. A 1.5-second holdoff prevents brief transport gaps from flapping the hardware mute gates. |
 | Microphone capture | `reinvoke-mic-capture` supervises `arecord` on `hw:1,0` and delivers mono left-channel 48 kHz `S32_LE` 256-frame records to consumers at `/run/reinvoke/mic-capture/audio.sock` (mode `0600`). The donor-designated left channel is the voice-recognition path; right channel is call audio. Delivery is gated on `/run/reinvoke/microphone-state`; zero bytes reach consumers while the file reads `muted`. DSP service restart creates a new stream generation. Accepted on hardware: 14 single-press mute/unmute toggles; zero bytes delivered while muted; audio resumes immediately after unmute; DSP restart recovery confirmed. Beamforming and AEC activation are not proven. |
 | Microphone privacy | Mic-Mute means microphone privacy, not speaker mute. One process-lifetime MCU controller owns physical-button/API changes, RAM state, retry, and the red animation. On a configured capture path, attended speech/tap tests measured 99.975% nonzero unmuted and exactly 0/244,736 nonzero muted. This is a trusted software boundary, not an electrical disconnect or protection from arbitrary root-level raw-device access. |
 | Physical controls | Rotary volume, Mic-Mute short press, Action short press, Bluetooth short/long press, and Mic-Mute long press have owned actions. Bluetooth short toggles the bounded pairing window; long retains the validated reopen fallback. Action toggles Bluetooth play/pause. Mic-Mute long requests the isolated provisioning window when the image is booted in STA/uAP mode. Other decoded keys are published for compatibility. |
 | LEDs | Animation transport, `ledOff`, and the separate front/rear `ledSet` transport are recovered. Privacy red-ring on/off and the top-ring white pairing indication were observed. The new state-driven rear pairing/connection policy is host-tested but has not been physically validated under reInvoke. |
-| Networking | SD8887 station and STA/uAP modes work in RAM. `reinvoke-networkd` owns DHCP, route, and resolver state after a root-controlled supplicant connects. The authenticated provisioning parser and privileged apply adapter work, but the final physical-button-to-AP orchestration is not yet a normal product path. |
+| Networking | Candidate 02 opened its isolated provisioning AP from a physical Mic-Mute long press during native NAND startup. The operator client verified the ephemeral TLS descriptor, delivered credentials through the authenticated parser, restored its own network, and reached the Invoke's MCU/DSP services on the shared local network. `reinvoke-networkd` owns DHCP, route, and resolver state. Credentials remain volatile and must be reprovisioned after power loss. |
 | Local control | Bonefish provides a legacy MessagePack WAMP compatibility bus. It is unauthenticated, so it is not a public network API. PID 1 accepts ports 9998 and 9999 from loopback and from configured operator allowlist entries, then drops the rest in the INPUT chain. The allowlist is operator-local configuration and is empty by default. Images before v13 carry no firewall and listen on every interface. |
 
 ## Accepted runtime architecture
 
 ```text
-yellow-mode USB/U-Boot
-  -> reviewed kernel + reInvoke initramfs
-     -> reInvoke-owned PID 1
-        |-- read-only storage boundary, USB ADB/ACM, radio modules
+normal wall-power boot
+  -> retained vendor native boot chain and kernel
+     -> read-only reInvoke NAND bootstrap
+        -> reInvoke-owned PID 1
+        |-- read-only storage boundary, optional USB diagnostics, radio modules
         |-- bounded logger and service supervisors
         |-- reinvoke-networkd
         |-- Bonefish compatibility router
@@ -208,17 +209,18 @@ and resolver lifecycle.
 `reinvoke-provisiond` and `reinvoke-wifi-applyd` are separate on purpose. The
 first parses one token-authenticated TLS request without radio or shell
 privileges. The second accepts only a UID-0 peer on a root-owned Unix socket,
-derives the WPA2 key, and starts fixed supplicant paths. Access-point setup uses
-the isolated `p2p0` interface with no gateway, DNS service, or forwarding.
-Normal physical-button orchestration of these provisioning components remains
-incomplete.
+derives the WPA2 key, and starts fixed supplicant paths. Access-point setup uses the isolated `p2p0` interface with no gateway, DNS
+service, or forwarding. Candidate 02 demonstrated the physical-button path,
+authenticated credential delivery, client-network restoration, and subsequent
+local-network MCU/DSP access.
 
 ## Dependency boundary
 
-### Included in the accepted RAM image
+### Included in the current owned runtime
 
 * reInvoke PID 1, MCU service, DSP service, network daemon, and owned helpers;
-* the reviewed reInvoke kernel and device tree;
+* the retained vendor native kernel, plus the reviewed recovery kernel and
+  device tree outside the normal boot path;
 * BlueZ, patched BlueALSA, D-Bus, and the small Bonefish compatibility runtime;
 * board-specific SD8887 firmware and calibration;
 * the host-loaded `dsp-img.ldr` required at every DSP start; and
@@ -233,22 +235,23 @@ never upgraded by reInvoke.
 
 ### Excluded
 
-The RAM product does not start Harman's `system-manager`, Bluedroid service,
+The owned runtime does not start Harman's `system-manager`, Bluedroid service,
 `audio-ui`, `music-source-manager`, Cortana services, OTA updater, crash-dump
 writers, or flash utilities. It does not require Azure, a cloud assistant, SSH,
-or a persistent NAND modification.
+or an active vendor update service.
 
 ## Physical controls and indications
 
 | Input | Current local action | Evidence limit |
-|---|---|---|| Rotary clockwise/counter-clockwise | Coalesced BlueALSA volume change and compatibility publication | Live in both directions during A2DP playback |
+|---|---|---|
+| Rotary clockwise/counter-clockwise | Coalesced BlueALSA volume change and compatibility publication | Live in both directions during A2DP playback |
 | Mic-Mute short press | Toggle DSP microphone privacy; red ring follows confirmed state | Occasional presses produce no MCU frame under both donor and owned services; software cannot synthesize a missing hardware event |
 | Bluetooth long press | Reopen the bounded allowlisted pairing window | Validated compatibility fallback; donor `audio-ui` defines no long-press action |
 | Action short press | Toggle Bluetooth play/pause and play the reviewed one-shot action animation | Owned reinterpretation; no assistant action is assigned |
 | Action long press | Compatibility publication only | Product action incomplete |
 | Bluetooth short press | Open pairing while idle; cancel pairing while active | Donor-compatible policy is implemented and host-tested; physical toggle and rear indication remain unvalidated |
-| Mic-Mute long press | Request a bounded isolated provisioning window | Requires a STA/uAP boot; physical end-to-end validation remains |
-| Reset short/long press | Compatibility publication only in the RAM runtime | Runtime reset/factory-reset policy intentionally unimplemented |
+| Mic-Mute long press | Request a bounded isolated provisioning window | Native candidate 02 completed the physical AP-to-station flow |
+| Reset short/long press | Compatibility publication only in the owned runtime | Runtime reset/factory-reset policy intentionally unimplemented |
 
 `com.harman.ledAnimate` plays a checksum-gated asset. `com.harman.ledOff`
 cancels an ordinary animation and sends the recovered 41-byte clear packet:
@@ -269,17 +272,27 @@ service. Its first cold boot restored the physical controls and indicators.
 The stock behavior is recorded here so it is not lost, and is deliberately not
 implemented.
 
+Harman's [2017 owner's manual, page 8](https://support.harmankardon.com/on/demandware.static/-/Sites-masterCatalog_Harman/default/dwdac694e8/pdfs/Harman%20Kardon%20Invoke%20Owners%20Manual.pdf#page=8)
+describes the reset pin as resetting settings and restarting the device.
+Page 34 also identifies a factory-reset light pattern. This documents a
+settings reset, not a firmware reinstall or a way to undo modified read-only
+filesystem contents. Availability in the owned runtime is unverified and no factory reset was
+performed during native candidate acceptance.
+
 On the retail unit, holding the recessed Reset pinhole beside Mic-Mute for five
 seconds with the unit booted and USB disconnected, then releasing it, restarts
 the speaker and deletes pairings and other writable user state. Holding Reset
 while applying power is a different, early-boot action and is not this feature.
+That five-second procedure is a retained historical record, not a newly
+performed test or a confirmed handler on the reconstructed 12.2050.3 image.
+The 2017 manual separately assigns a five-second Mic On/Off hold to Wi-Fi
+setup; do not confuse it with factory reset.
 
 reInvoke does not implement it, for a reason that is structural rather than
-incidental. A factory reset is only meaningful against persistent state, and
-this target mounts no NAND: every pairing, bond, key, and configuration value
-already lives in RAM and disappears on power loss. A reset control here would
-either do nothing or would have to reach past the storage boundary the platform
-exists to enforce.
+incidental. A factory reset is only meaningful against persistent mutable state. The system
+image starts read-only from NAND, while pairing, bonds, keys, and configuration
+remain in RAM and disappear on power loss. A reset control would currently add
+no useful behavior or would have to cross a new persistent-storage boundary.
 
 Implementing it therefore belongs to the NAND discussion, not before it, and
 depends on decisions that discussion has to make first:
@@ -328,21 +341,20 @@ differs.
 
 ## Acceptance and remaining gaps
 
-The architecture, source-level safety fixes, fault injection, host/race tests,
-reproducible ARM builds, microphone mute correlation, machine playback
-continuity, and earlier attended audio/controls runs are complete. The current
-accepted image is not a released persistent firmware.
+Candidate 02 has passed the personal-project native milestone: wall-power NAND
+startup, encrypted Bluetooth pairing, audible playback, physical rotary volume,
+Mic-Mute indication, physical Wi-Fi provisioning, and repeated local-network
+MCU/DSP/WAMP calls. Its reproducible builders and targeted failure controls
+remain separate from hardware acceptance.
 
 Remaining gates are:
 
-1. physically confirm the rear connected indication;
-2. complete one attended playback-continuity run; and
-3. finish physical-button orchestration for an isolated provisioning window.
+1. restore native USB/ADB or a separately authenticated administrative path;
+2. repeat microphone capture/privacy measurements on a native NAND boot;
+3. design persistent Wi-Fi and bond state with power-loss and update behavior;
+4. repeat the bounded build and service checks for the approved successor.
 
-`pre-nand-rc11` is the current candidate. It pins the provisioning
-acknowledgement fix and the networkd runtime-directory recovery, and it is
-awaiting a cold boot. `pre-nand-rc10` is the last candidate proven from a cold
-boot; it added the connect volume ceiling.
+### Historical RAM acceptance chronology
 
 The end-to-end setup path works. An external client joined the speaker's setup
 access point, received DHCP from the speaker, authenticated over HTTPS,
@@ -371,32 +383,55 @@ clients, no NAND mount, and full self-cleanup at the 300 second bound. IPv6 is
 not a supported feature; the kernel enables it, so the gate asserts its
 forwarding stays off rather than relying on it being absent.
 
-The NAND phase is not open. A read-only survey shows a single unpartitioned
-256 MiB device with 2 KiB pages and 128 KiB erase blocks. OOB has three
-different meanings in the current evidence: U-Boot exposes 32 bytes, Linux
-declares 64, and upstream identification of the Toshiba ID prefix documents 128
-physical bytes. Live reads return meaningful content only in the first 32 bytes.
-No partition map is published by this kernel, and the main vendor layout
-describes a 512 MiB device that U-Boot rejects on this unit.
+At that historical checkpoint, NAND startup remained a separate qualification.
+The owner-approved complete pilot occupies `[0x02920000,0x04fa0000)`, 308
+erase blocks inside the established 90 MiB rootfs allocation. Its final
+38.5 MiB payload passed data/ECC verification and independent readback.
+That initial rootfs-only operation did not rewrite boot images or bootloaders.
 
-Yellow mode has only ever been entered while the original flash is present.
-It is not established as an escape hatch after a failed write. The two logical
-NAND captures also differ in one early-region erase block for an unknown reason,
-and five pages remain uncorrectable under a controlled counter test. Until the
-physical OOB, the unexplained state change, boot-slot semantics, and recovery
-without NAND are all resolved, this platform stays RAM only. See
-[NAND write evidence and decision gates](nand-write-decision.md).
+On September 10, a USB-loaded custom kernel and RC12 RAM bridge mounted that
+NAND copy read-only and handed PID 1 into its bootstrap. The pilot reached its
+runtime and repeated real shells, with the runtime init hash matching the
+installed manifest. This advances NAND runtime execution evidence, not
+vendor-kernel or host-independent boot acceptance.
+
+The normal power-on at 23:52 UTC on 2026-09-09 remained at the Marvell `FF`
+download endpoint with no pilot USB product or ADB. It did not demonstrate
+standalone reInvoke. The installed pilot is being retained at the owner's
+request; at that checkpoint, the next work concerned the boot path rather than
+another speculative flash.
+The pilot's new network credentials and Bluetooth bonds are also RAM-only,
+so persistent configuration remains a product gap even if startup succeeds.
+
+The later owner-approved vendor-stack flash on September 11 reported erasing
+2,046 good blocks before programming its eight records. Normal boot then
+changed to spinning lights without an observed USB endpoint, not a working
+reInvoke runtime. Yellow-mode U-Boot and RAM ADB remained accessible after
+owner-assisted re-entry. Independent rootfs readback still matches the pilot;
+the old update/status data were erased. The owner prohibits restoration and
+requests a forward startup variation. These later facts supersede the earlier
+rootfs-only write boundary for the current physical unit.
+
+Earlier, the two-block diagnostic and its approved restoration passed storage
+checks. Full main-data and exposed-OOB comparison then matched the September 7
+capture. Host-supplied RAM recovery remained usable, including attachment to a
+present `FF` endpoint without another physical reset. Those historical results
+do not prove stock boot, permanent ADB access or physical-OOB clone fidelity.
+
+Use [NAND startup status and the minimal workflow](nand-write-decision.md) for
+the current result, artifact pins, remaining unknowns and operating instructions.
 
 ## Open defects and unexplained observations
 
 These are recorded so a later session does not rediscover them or misdiagnose a
 recurrence.
 
-**One early NAND erase block changed without an attributed operation.** Two
+**One factory-setting erase block changed without an attributed operation.** Two
 complete 2026-09-07 logical reads match each other, but differ from the
 2026-09-02 image in `0x00660000-0x0067ffff`. The block previously held 13,040
-non-`0xFF` bytes and now reads entirely `0xFF`. Both vendor maps place it in an
-early trusted or TrustZone-related region. No preserved console log contains an
+non-`0xFF` bytes and now reads entirely `0xFF`. The decoded captured version
+table places it in `factory_setting`; earlier example-layout labels were
+incorrect. No preserved console log contains an
 operator-issued NAND write or erase. The earlier block was not independently
 reread, so a 2026-09-02 read artifact remains possible; an autonomous erase is
 also not excluded. The cause and time are unknown.
@@ -502,9 +537,9 @@ chain ordering, and the drop target on this kernel, which structural inspection
 alone could not establish.
 
 Source matching was tested separately without disrupting the live WAMP clients.
-An isolated listener on port 19997 used temporary source aliases
-`192.168.4.27` and `192.168.4.28`. With the same ordered source-accept and
-default-drop rules, `.27` connected and echoed data while `.28` timed out.
+An isolated listener on port 19997 used two temporary local source aliases.
+With the same ordered source-accept and default-drop rules, the allowed alias
+connected and echoed data while the denied alias timed out.
 Packet counters advanced on both rules. The aliases, listener, and test rules
 were then removed, and the original six WAMP rules compared byte for byte with
 their pre-test capture. Combined with the direct port-9999 DROP test, this

@@ -1,15 +1,14 @@
 ---
 title: Historical U-Boot console access over Micro-USB
 description: Previously verified procedure and evidence limits for reaching an interactive U-Boot prompt
-ms.date: 2026-09-05
+ms.date: 2026-09-12
 ms.topic: how-to
 ---
 
-Status: verified on hardware on 2026-09-02 and reproduced twice in the same
-session. This is retained as historical access evidence, not approval to repeat
-the powered procedure while another session uses the unit. The current NAND
-plan is software-only and does not require disassembly or whole-chip erasure.
-Any reboot or NAND operation needs a scheduled owner-approved window. See
+Status: verified on hardware and retained as the recovery path for the native
+NAND runtime. This page does not authorize a powered procedure, reboot, or
+write. The demonstrated complete vendor installation erased all good NAND
+blocks; any repeat requires a separately reviewed owner-approved scope. See
 [NAND write evidence and decision gates](nand-write-decision.md) and the
 [current product and architecture contract](current-product-contract.md).
 
@@ -33,8 +32,9 @@ MV88DE3100|>
 > Do not interrupt the microphone session's live device. These historical
 > access steps are not NAND-write approval.
 
-The host tool must already be polling before the device attaches. It reacts to a
-USB hotplug event, so a device that is already connected will not be picked up.
+The original proprietary tool must already be polling before attachment. The
+separately pinned open-source helper can also attach to the observed existing
+`FF` endpoint; that later path is described below.
 
 1. Start the capture and boot tool with `08_IMAGE` absent:
 
@@ -188,13 +188,57 @@ replacement architecture.
 
 ## Reconnecting to a live session
 
-A session cannot be resumed by restarting the host tool alone. `usb_boot` waits
+The original Marvell `usb_boot` session cannot generally be resumed by
+restarting that tool alone. It waits
 for a hotplug event, and a `USBDEVFS_RESET` ioctl is not sufficient because the
 device keeps its address. Reattaching mid-session lands in the tool's
 request-serving state machine, which reports `img transfer status 1?` and shuts
 its poll thread down.
 
 Repeat the yellow sequence from step 3 instead. It is reproducible.
+
+### Later observed attachment to an existing FF device
+
+On 2026-09-09, the separately retained open-source helper at revision
+`63444e82cc5274abe31ec49ad55ee552b50b64b3` attached to an already-present `FF`
+endpoint without a physical reset or USB replug. Unlike the original helper,
+it enumerates existing devices during startup. It supplied the RAM bootstrap,
+observed `FE`, served the `09_IMAGE` recovery chain and reached U-Boot.
+The known corrected kernel and RC12 RAM runtime were then loaded successfully.
+
+This is verified for the observed persistent `FF` state, not arbitrary
+mid-session attachment or proof that the original yellow sequence was never
+needed. `FE` by itself is still a download stage, not Linux or ADB.
+
+The loader's initial ADB timeout was host-side: its selected server on port
+5038 had no transport, while the existing server on port 5037 had the working
+RAM device. Inspect the actual USB product and both existing server contexts
+before requesting another reset. No new NAND erase/program command was used
+for this recovery.
+
+Evidence: sibling archive
+`evidence/nand-restored-ram-inspection-20260909/`.
+
+### Recovery after the 12.2134.0 early-ADB trial
+
+On September 11 at 16:31 UTC, the pinned open-source helper again attached
+to an existing FF endpoint without Reset or a USB replug. This followed the
+owner's normal power cycle of the independently verified 12.2134.0 early-ADB
+NAND diagnostic. A fresh `version` command returned the helper-loaded U-Boot
+banner and prompt. The known RAM kernel and RC12 handoff diagnostic returned
+ADB at 16:34:40 UTC.
+
+Read-only `help` and `printenv bootcmd bootargs` showed that this recovery
+U-Boot's `nandrd` displays NAND bytes, while its default `bootcmd` uses
+development TFTP/NFS placeholders. Neither is an established method of launching
+the installed NAND kernel/container. No generic `boot`, broad memory dump or
+NAND erase/program command was issued.
+
+The later RAM inspection verified the persisted NAND filesystem and selected
+boot-region bytes, without mounting NAND or executing its startup scripts.
+It does not establish which stage failed during helper-free startup.
+Evidence: sibling archive
+`evidence/nand2134-helper-inspection-20260911T1632Z/`.
 
 ## What this does not establish
 
