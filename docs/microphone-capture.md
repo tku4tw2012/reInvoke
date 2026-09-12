@@ -1,6 +1,7 @@
 ---
 title: Privacy-gated microphone capture
-description: Local capture-owner protocol, privacy contract, and audio format
+description: Implemented RAM capture protocol, historical acceptance, and deferred synchronous privacy design
+ms.date: 2026-09-12
 ---
 
 ## Scope
@@ -11,6 +12,14 @@ recognition and remote assistant behavior are intentionally outside this
 component.
 
 The capture path is volatile. It writes no audio or configuration to NAND.
+
+The accepted sample/capture measurements are from host-loaded RAM boots.
+Native candidate 02 demonstrated Mic-Mute indicator changes only; its
+microphone data path has not repeated those measurements.
+
+The checked-in implementation uses a polled state-file gate. The stronger
+synchronous authority protocol retained below is a design, not implemented
+behavior and not a candidate 02 or candidate 03 acceptance claim.
 
 ## Audio source
 
@@ -91,10 +100,35 @@ Every record is exactly 1,048 bytes:
 
 Unix streams do not preserve write boundaries. Consumers must use exact-length
 reads. EOF in the middle of a header or record invalidates that partial data.
-A generation never continues across mute, DSP restart, capture restart, or MCU
-privacy-authority restart.
+A capture restart, including one triggered by a changed DSP process/socket,
+creates a new generation and closes old clients. Ordinary mute drops captured
+periods but does not itself close clients or advance the generation in the
+checked-in implementation.
 
-## Privacy contract
+## Implemented privacy boundary
+
+The MCU owns privacy policy and writes `/run/reinvoke/microphone-state`.
+The capture service starts muted and polls that file every 100 ms. Missing,
+invalid, oversized, or `muted` state causes periods to be discarded;
+`unmuted` permits delivery after the next poll. It checks the DSP executable,
+PID/start time, and microphone-socket identity every 250 ms and restarts capture
+if that identity changes.
+
+This is not a synchronous mute fence. Already queued records and the polling
+interval prevent a guarantee of zero delivery immediately upon a mute request.
+The service does not currently negotiate MCU authority epochs or prove an
+ALSA reconfiguration drain. Historical zero-delivery tests describe their
+measured windows, not an instantaneous, adversarial privacy guarantee.
+See the implementation in [main.go](../tools/mic-capture/main.go),
+[state.go](../tools/mic-capture/state.go), and
+[hub.go](../tools/mic-capture/hub.go).
+
+## Deferred synchronous privacy design
+
+The following stronger design was previously written as though implemented.
+It is retained to preserve that intent and the correction. `BLOCKED`, `DRAIN`,
+`DRAINED`, authority epochs, and `ALLOW` are not part of the checked-in capture
+protocol. Implementing and validating them would be separate work.
 
 The MCU privacy controller remains the only privacy policy authority.
 The capture owner cannot send DSP Mic-Mute commands directly.
@@ -138,7 +172,7 @@ be revoked by any IPC design. The owner keeps queues shallow, closes all
 connections at the synchronous fence, and guarantees that it queues no new
 record after returning `BLOCKED`.
 
-## Failure and restart behavior
+### Failure and restart behavior required by the deferred design
 
 The capture owner starts blocked. It closes every client and restarts its
 capture generation when:

@@ -13,6 +13,12 @@ The source archive and all generated binaries remain outside Git. The
 repository contains only provenance metadata, the compatibility patch, and the
 build driver.
 
+This is the custom RAM/recovery kernel track. Native candidate 02 retains the
+vendor 12.2134.0 bootloaders, TrustZone image, and native kernel containers
+byte-identically; the builds and hardware tests below must not be presented as
+measurements of its unread running kernel. See the
+[native NAND guide](../../docs/native-nand-platform.md).
+
 ## Inputs
 
 | Input | Identity |

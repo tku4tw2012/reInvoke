@@ -1,13 +1,20 @@
 ---
 doc_id: hki-research-framework
 title: Harman Kardon Invoke — Research Framework and Rubber-Duck Critique
+description: Preserved exploratory hardware framework, not the current closed-unit execution plan
 version: "0.2"
 date: "2026-08-25"
 status: exploratory
 canonical_claims: false
 ---
 
-# Research Framework and Rubber-Duck Critique
+## Historical scope
+
+This exploratory framework predates owned RAM bring-up and native candidate
+02. Its proposals for electrical probing, connector mapping, and replacement
+compute are retained research ideas, not approved tasks for this closed-unit
+DIY project. Use the [current roadmap](../revival-roadmap.md) and
+[native NAND guide](../native-nand-platform.md) for present priorities.
 
 ## 1. Reframing the goal
 
@@ -437,7 +444,7 @@ Recommended next corpus additions:
 
 These should keep the same evidence grammar and bibliography discipline as this corpus.
 
-# Bibliography
+## Bibliography
 
 ## HARMAN-SPEC
 HARMAN International Industries, *Harman Kardon Invoke Specification Sheet*, 2017.  

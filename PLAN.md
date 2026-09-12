@@ -23,20 +23,21 @@ explicitly labeled when they no longer describe the target.
 |---|---|
 | Acquisition — locate and retrieve artifacts | **Done** |
 | Storage architecture — repo / archive / cold storage split | **Done** |
-| Publication — firmware mirrored with attribution | **Done** |
+| Publication | Source and documentation are public; no GitHub releases exist as of 2026-09-12 UTC. Vendor firmware and custom images remain private |
 | Analysis — unpack and understand the firmware | **Done** |
 | Control-plane emulation — device userland runs off-device | **Done** — see [control-plane-emulation.md](docs/emulation/control-plane-emulation.md) |
 | Evidence closure — FCC exhibits, OTA2, sibling cross-index | **Done** |
-| Hardware validation, closed device available | **Native milestone reached**: candidate 02 starts from NAND and has demonstrated Bluetooth pairing, audible playback, rotary volume, physical provisioning, and local-network MCU/DSP calls |
+| Hardware validation, closed device available | **Native milestone reached**: candidate 02 demonstrated Bluetooth audio, rotary volume, physical provisioning, and MCU/DSP calls. Installed candidate 03 now has a changed live Bluetooth identity after a power-only start; broader 03 acceptance remains open |
 | Owned service replacement | **Accepted architecture**: owned PID 1 supervises the MCU, DSP, network, BlueZ/BlueALSA, Bonefish compatibility, logging, and bounded helper services |
-| Persistent installation | **Demonstrated**: a complete vendor-format bundle starts the owned runtime from NAND; settings remain volatile and native USB/ADB remains unresolved |
+| Persistent installation | **Demonstrated**: the candidate 03 vendor flash and readback wrapper completed in 36.819 seconds, followed by a native startup indicator; settings remain volatile and native USB/ADB remains unresolved |
 
 ### The finding that reframes the project
 
 Harman's final firmware, `Barracuda_libre-12.2134.0` in the OTA2 bundle, removes
 Cortana, the Cortana harness, Spotify, and the Skype call library. It adds
-`oobe-ui` and a `wifi-blocker` service. The examined physical sample carries the earlier
-`Barracuda_libre-12.2050.3` rootfs.
+`oobe-ui` and a `wifi-blocker` service. Before the approved NAND experiments,
+the examined physical sample carried `Barracuda_libre-12.2050.3`; candidate 02
+replaced that installation, followed by the current candidate 03.
 
 Artifact-backed finding: Harman shipped a firmware line whose service set is
 consistent with a local Bluetooth-speaker role after the cloud assistant was
@@ -69,7 +70,13 @@ I2C device identities.
 
 ### Current evidence split
 
-Verified facts:
+Verified acquisition and historical RAM-platform facts:
+
+The list below combines artifact analysis and earlier host-loaded RAM tests.
+In particular, the rebuilt kernel, USB timing, microphone samples, firewall
+checks, and service-restart observations are not observations of candidate
+02's unshelled native kernel. Its current acceptance is summarized in the
+[native NAND guide](docs/native-nand-platform.md#current-result).
 
 - OTA2 contains `Barracuda_libre-12.2134.0`; its rootfs removes the Cortana,
   Spotify, and Skype components listed above and adds `oobe-ui` plus
@@ -136,24 +143,30 @@ Historical inference:
 
 ```text
 ~/<workspace>/
-├── reinvoke/           about 3.5 MB this Git repository
-└── reinvoke-archive/   about 7.3 GB bulk payloads, NOT under Git control
-    ├── originals/      569 MB   firmware, byte-for-byte as retrieved
-    ├── git-mirrors/    4.3 GB   bare mirrors of donor source trees
+├── reinvoke/           this Git repository
+└── reinvoke-archive/   private bulk payloads, NOT under Git control
+    ├── originals/      firmware, byte-for-byte as retrieved
+    ├── git-mirrors/    bare mirrors of donor source trees
     ├── extracted/               unpacked material, incl. binaries kept out of the repo
     └── web-pages/               captured HTML (GitHub Discussions etc.)
 ```
 
-The two directories must remain **siblings**: `tools/acquire.py` derives the archive
-location from its own path. Override with `--archive-root` or `$REINVOKE_ARCHIVE`.
+The default layout uses sibling directories: `tools/acquire.py` derives the
+archive location from its own path. Override with `--archive-root` or
+`$REINVOKE_ARCHIVE`; native builders take explicit private archive paths.
 
 ### Three-tier storage
 
 | Tier | Contents | Location |
 |---|---|---|
-| 1 | Docs, metadata, hashes, extracted text layer | This repository (~1.5 MB) |
-| 2 | Firmware bundles (569 MB) | [GitHub Releases](https://github.com/tku4tw2012/reInvoke/releases/tag/invoke-firmware-mirror) |
-| 3 | Full working set including Git mirrors (4.9 GB) | Private operator-managed cold archive |
+| 1 | Source, docs, acquisition metadata, extracted text layer | This repository |
+| 2 | Vendor firmware and upstream inputs | Private archive; public vendor inputs originate at [coggy9/HKHacking releases](https://github.com/coggy9/HKHacking/releases) |
+| 3 | Working set, captures, and native build manifests | Private operator-managed archive and cold storage |
+
+The fresh release-list/API check on 2026-09-12 UTC returned no releases for
+this repository. Earlier mirror/upload notes are historical, not a working
+download route. Acquisition metadata does not index every later private
+native artifact.
 
 No archive credentials, signed URLs, account names, or container names belong
 in Git. The local archive, private cold copy, and published release were verified
@@ -293,8 +306,9 @@ build of the pinned open-source flasher at commit `63444e82`.
 3. Repeat the microphone data-path/privacy measurements on a native NAND boot.
 4. Design persistence for Wi-Fi profiles and Bluetooth bonds together with
    power-loss and update-preservation behavior.
-5. Publish the native milestone, recovery limits, reproducible source, and
-   preserved engineering history.
+5. Publish the native milestone documentation, recovery limits, available
+   source and reproducibility gaps, and preserved engineering history.
+   Firmware packages remain private.
 
 The occasional Mic-Mute press for which the companion MCU produces no event
 remains a hardware/firmware observation. Both the donor and owned service show
@@ -374,15 +388,17 @@ human-approved recovery and rollback plan.
   zlib, curl, Breakpad, OpenSSL, Opus, etc.), not source code. See
   `docs/corpus/02_CLAIM_EVIDENCE_LEDGER.md` and the updated entry in
   `docs/acquisition/invoke_berlin_artifact_acquisition_manifest.md`.
-- **Regenerate `docs/corpus/99_CORPUS_HASHES.md`** whenever a corpus document changes.
+- Preserve the dated corpus hash snapshot when annotating its surrounding
+  navigation; do not silently replace acquisition-time integrity records.
 
 ### Open software work, no hardware required
 
 - **MCU register capture.** **Done as an emulation trace.** Three I2C slave
   addresses and their bring-up writes were recovered under emulation and aligned
   to service log stages. See [mcu-boundary.md](docs/emulation/mcu-boundary.md).
-  Current limit: no physical I2C bus was accessed, no real-device responses were
-  captured, and no part identities are claimed. The ARM guest-side ioctl shim
+  Limit of that emulation record: no physical I2C bus was accessed and no
+  real-device responses were captured. Later owned RAM tests exercised the MCU;
+  exact external part identities remain unclaimed. The ARM guest-side ioctl shim
   answers raw `I2C_RDWR` without exposing a host bus; `i2c-stub` cannot do this
   because it implements SMBus rather than raw I2C.
 - **Volume setter arguments.** **Done.** A guest-side shim now supplies the ALSA
@@ -446,9 +462,9 @@ human-approved recovery and rollback plan.
    Litmus test: *would I ever read this in a diff?*
 4. **No credentials or signed URLs in Git.** Presigned query strings are redacted in
    sidecars; the stable public `source_url` is retained.
-5. **GitHub limits:** files over 100 MB are rejected outright. Bulk material goes to
-   Releases, never into history — a large blob committed once persists in every clone
-   forever.
+5. **Keep bulk artifacts private.** Firmware packages, captures, and generated
+   images belong in the operator archive, not Git history or releases.
+   Documentation publication does not authorize binary redistribution.
 
 See [docs/acquisition/storage-policy.md](docs/acquisition/storage-policy.md) for the
 measurements behind these rules and

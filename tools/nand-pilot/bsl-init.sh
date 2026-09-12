@@ -64,7 +64,7 @@ done
   ${BB} cat /proc/version /proc/cmdline /proc/mtd /proc/self/mountinfo
 } >/run/reinvoke-bsl/entry.txt
 
-PILOT_ADBD_PRODUCT=reInvoke-BSL-v3
+PILOT_ADBD_PRODUCT=reInvoke-NAND-03
 PILOT_ADBD_STARTED_PHASE=adb-started
 PILOT_ADBD_DEGRADED_PHASE=adb-degraded
 PILOT_ADBD_ENABLE_DEV_FILE=/sys/class/misc/android_adb_enable/dev
@@ -72,10 +72,7 @@ PILOT_ADBD_ENABLE_NODE=/dev/android_adb_enable
 PILOT_ADBD_TTYGS0_DEV_FILE=/sys/class/tty/ttyGS0/dev
 PILOT_ADBD_TTYGS0_NODE=/dev/ttyGS0
 PILOT_ADBD_RUNTIME_ROOT=""
-bsl_usb_started=0
-if pilot_usb_adbd_launch; then
-  bsl_usb_started=1
-else
+if ! pilot_usb_adbd_launch; then
   pilot_log "early USB diagnostics unavailable; continuing to NAND handoff"
 fi
 
@@ -108,12 +105,12 @@ if test -n "${rootfs_index}"; then
   make_block_node "${rootfs_index}" "${source}" || stop_boot rootfs-node
 elif test -n "${master_index}"; then
   test ! -e /sys/block/loop0/loop/backing_file || stop_boot loop-in-use
-  ${BB} mkdir -m 0700 /tmp/nand-root-inspect || stop_boot loop-directory
-  make_block_node "${master_index}" /tmp/nand-root-inspect/mtd ||
+  ${BB} mkdir -m 0700 /run/reinvoke-bsl/loop-view || stop_boot loop-directory
+  make_block_node "${master_index}" /run/reinvoke-bsl/loop-view/mtd ||
     stop_boot master-node
-  source=/tmp/nand-root-inspect/loop
+  source=/run/reinvoke-bsl/loop-view/loop
   ${BB} mknod -m 0400 "${source}" b 7 0 || stop_boot loop-node
-  ${BB} losetup -r "${source}" /tmp/nand-root-inspect/mtd ||
+  ${BB} losetup -r "${source}" /run/reinvoke-bsl/loop-view/mtd ||
     stop_boot loop-associate
   /sbin/set-private-loop-offset || stop_boot loop-bounds
 else
@@ -127,26 +124,14 @@ ${BB} sha256sum -c /etc/reinvoke-bsl-target.sha256 \
 ${BB} cat /proc/self/mountinfo >/run/reinvoke-bsl/source-mountinfo
 echo rootfs-verified >/run/reinvoke-bsl/phase
 
-if [ "${bsl_usb_started}" = 1 ]; then
-(
-  ${BB} sleep 45
-  pid="$(${BB} cat /nand-root/run/nand-pilot/adbd.pid 2>/dev/null)"
-  case "${pid}" in
-    ''|*[!0-9]*|0|1) ;;
-    *) if ${BB} kill -0 "${pid}" 2>/dev/null; then exit 0; fi ;;
-  esac
-  pilot_failure adb "NAND handoff has no live adbd; restoring only the RAM diagnostic"
-  configure_adb reInvoke-BSL-v3-fallback || {
-    pilot_failure usb-gadget "fallback gadget reconfiguration failed; continuing handoff"
-    exit 0
-  }
-  ${BB} rm -f /run/reinvoke-bsl/stop-adb
-  adb_loop
-) &
-echo "$!" >/run/reinvoke-bsl/fallback.pid
-fi
+# Never resurrect a second USB opener after handing ownership to main.
 ${BB} touch /run/reinvoke-bsl/stop-adb || stop_boot stop-adb
-while test -f /run/reinvoke-bsl/adbd.pid; do ${BB} sleep 1; done
+bsl_stop_wait=0
+while test -f /run/reinvoke-bsl/adbd-supervisor.pid; do
+  bsl_stop_wait=$((bsl_stop_wait + 1))
+  test "${bsl_stop_wait}" -le 5 || stop_boot usb-owner-not-stopped
+  ${BB} sleep 1
+done
 echo handoff >/run/reinvoke-bsl/phase
 exec ${BB} chroot /nand-root /bin/busybox sh /init
 stop_boot runtime-exec

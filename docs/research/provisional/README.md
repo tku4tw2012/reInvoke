@@ -25,6 +25,14 @@ here is not an authoritative implementation plan.
 
 ## Canonical references
 
+The imported Fable memo contains obsolete review conclusions and tool paths
+from another project. Those paths are not reInvoke public recipes.
+Later observations superseded the early `0xFE`-means-no-console interpretation,
+confirmed 256 MiB NAND and 512 MiB DRAM, and demonstrated owned native candidate
+02. The original memo remains intact below its annotations.
+
+* [Current native result](../../native-nand-platform.md)
+* [Verified recovery boundary](../../uboot-access.md)
 * [Project plan](../../../PLAN.md)
 * [Claim evidence ledger](../../corpus/02_CLAIM_EVIDENCE_LEDGER.md)
 * [USB service-mode record](../../usb-service-mode.md)

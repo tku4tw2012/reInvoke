@@ -53,7 +53,8 @@ audio checks. The original
 as the historical plan; [U-Boot access](uboot-access.md) is the current USB
 procedure.
 
-The sample carries `Barracuda_libre-12.2050.3`, not the 2021 final image.
+The pre-trial sample carried `Barracuda_libre-12.2050.3`, not the 2021 final image;
+candidate 02 has since replaced that installation.
 Yellow-mode USB and owned RAM boot are resolved and no longer a project gate.
 
 This warning was satisfied before the first approved writes: bounded image
@@ -65,7 +66,8 @@ its own explicit owner-approved scope.
 The required MCU, DSP, audio, button, LED, and microphone contracts were
 recovered without opening the enclosure. Owned MCU and DSP services now
 implement the target boundary. Physical meanings for every button/animation,
-occasional missing MCU Mic-Mute events, and onboarding orchestration remain
+occasional missing MCU Mic-Mute events, native microphone acceptance, and
+persistent onboarding state remain
 explicit gaps rather than blockers hidden behind donor binaries.
 
 Electrical characterization and replacement-compute design are optional future
@@ -87,7 +89,8 @@ The owned PID 1, Bluetooth playback, volume, speaker safety, microphone privacy,
 LED transport, networking, provisioning boundary, and safe shutdown are
 implemented. Candidate 02 starts from NAND and has demonstrated audible
 Bluetooth playback, rotary volume, physical provisioning, and local-network
-MCU/DSP control. Native administration and persistent settings remain open.
+MCU/DSP control. Native administration, microphone data-path/privacy acceptance,
+and persistent settings remain open.
 
 ### 7. Hardening and preservation release
 

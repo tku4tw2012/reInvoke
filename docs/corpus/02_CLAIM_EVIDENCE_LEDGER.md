@@ -1,12 +1,33 @@
 ---
 doc_id: hki-claim-ledger
 title: Harman Kardon Invoke — Claim and Evidence Ledger
+description: Atomic hardware claims, preserved original status, and later observation corrections
 version: "0.2"
 date: "2026-08-25"
 status: working-ledger
 ---
 
-# Claim and Evidence Ledger
+## Later observation corrections
+
+The original rows remain below so their earlier limits are not erased.
+As of the 2026-09-12 documentation audit:
+
+* `HKI-COMP-005` is superseded by the direct U-Boot `bdinfo` observation of
+  512 MiB DRAM; RAM technology and exact part remain unknown.
+* `HKI-STOR-004` combines two questions: the NAND manufacturer is identified
+  as Toshiba by ID `98 DA 90 15 76 16`, while the exact full part number is not
+  independently established. Main capacity is 256 MiB; exposed OOB is not a
+  full physical-OOB capture.
+* The original LED/protocol and microphone unknowns concern physical identity
+  or the earlier checkpoint. Owned [MCU](../emulation/mcu-boundary.md),
+  [DSP](../emulation/dsp-boundary.md), and
+  [RAM capture](../microphone-capture.md) interfaces are now documented without
+  claiming complete physical topology or native microphone acceptance.
+
+See [direct U-Boot evidence](../uboot-access.md#board-and-storage-facts-read-from-the-prompt)
+and the [current native result](../native-nand-platform.md). These annotations
+do not turn the old rows into observations of candidate 02's unread native
+kernel or mount table.
 
 ## How to use this document
 
@@ -214,7 +235,7 @@ flowchart TD
     CONN --> K["device-tree / pinctrl correlation"]
 ```
 
-# Bibliography
+## Bibliography
 
 ## PHASE3-FINDINGS
 

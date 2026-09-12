@@ -5,11 +5,14 @@ ms.date: 2026-09-05
 ms.topic: concept
 ---
 
-The RAM-only BlueZ and BlueALSA path now delivers audible A2DP to the Invoke
-speakers. This changes the replacement boundary: neither donor
+The RAM-tested BlueZ and BlueALSA path delivers audible A2DP to the Invoke
+speakers and was subsequently demonstrated on native NAND candidate 02.
+Neither donor
 `music-source-manager` nor donor `audio-ui` is in the media data path.
 The [current product and architecture contract](../current-product-contract.md)
 is normative.
+The detailed test values below remain historical RAM/emulation evidence,
+not a fresh read of the current native session.
 
 ## Minimum autonomous stack
 
