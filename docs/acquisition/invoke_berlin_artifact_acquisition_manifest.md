@@ -1,4 +1,24 @@
-# Invoke / Marvell Berlin Artifact Acquisition Manifest
+---
+title: Historical Invoke and Marvell Berlin acquisition manifest
+description: Dated acquisition seed, preserved discovery proposals, and current custody corrections
+ms.date: 2026-09-12
+---
+
+## Reading boundary
+
+This seed was generated on 2026-08-25 and later annotated with acquired
+results. `LIVE_CONFIRMED`, discovery actions, and execution ordering below
+describe those checkpoints, not fresh URL checks or unfinished tasks approved
+for automatic execution. Use `tools/acquisitions.json` and the corresponding
+public metadata sidecars for acquisition status; private native builds have
+separate manifests.
+
+As verified through the release list and API on 2026-09-12 UTC, this repository
+has no releases. Original public vendor inputs came from
+[coggy9/HKHacking releases](https://github.com/coggy9/HKHacking/releases).
+The custom image is not published, and firmware packages remain private.
+Earlier mirror proposals or dated upload records do not establish current
+public availability.
 
 **Generated:** 2026-08-25  
 **Purpose:** seed manifest for automated preservation of Harman Kardon Invoke / Marvell 88DE3006 (BG2CDP) firmware, BSPs, GPL drops, SDKs, donor trees, and reverse-engineering material.
@@ -28,9 +48,9 @@ reinvoke-archive/         # bulk payloads, never in Git; mirrored to cold storag
 The operational manifest is `tools/acquisitions.json`; this document is the seed
 specification and rationale.
 
-# P0 — acquire immediately
+## Historical P0 acquisition queue
 
-## P0-001 — Harman Citation GPL/Open-Source package
+### P0-001 — Harman Citation GPL/Open-Source package
 
 ```yaml
 id: P0-001
@@ -52,7 +72,7 @@ Galois galois Marvell mrvl u-boot uboot linux kernel defconfig
 .dts .dtsi NAND mtd 88W8887 toolchain buildroot busybox
 ```
 
-## P0-002 — Official Google Chromecast / Nest open-source archive
+### P0-002 — Official Google Chromecast / Nest open-source archive
 
 ```yaml
 id: P0-002
@@ -89,7 +109,7 @@ Historical high-value lead:
 
 Do not assume the current Drive hierarchy still matches the historical hierarchy. Search recursively by filename.
 
-## P0-003 — Google/Nest Marvell Berlin bootloader source
+### P0-003 — Google/Nest Marvell Berlin bootloader source
 
 ```yaml
 id: P0-003
@@ -110,7 +130,7 @@ https://nest-open-source.googlesource.com/manifest_repos/bootloader/+/836ad32e08
 https://nest-open-source.googlesource.com/manifest_repos/bootloader/+/836ad32e08388e0e4ce8d03fe4f14d2c3ea8ba13/berlin_tools/bootloader/bootloader.lds
 ```
 
-## P0-004 — Harman Kardon Invoke flashing bundle
+### P0-004 — Harman Kardon Invoke flashing bundle
 
 ```yaml
 id: P0-004
@@ -143,7 +163,12 @@ mload*
 
 Also archive the complete discussion page above.
 
-## P0-005 — historical Harman Invoke OSS page
+Later acquisition resolved this lead as P0-004a/b/c. See the
+[retention record](source-retention-ranking.md#local-capture-status-for-top-custody-gap-items)
+and their metadata sidecars. The discovery instructions above are retained
+history, not a request to search for or republish these packages.
+
+### P0-005 — historical Harman Invoke OSS page
 
 ```yaml
 id: P0-005
@@ -152,11 +177,11 @@ status: ACQUIRED
 kind: historical_web_target
 historical_url: "https://www.harmankardon.com/cortana-sdk-opensource.html"
 current_parent: "https://www.harmankardon.com/opensource.html"
-destination: reinvoke-archive/web-pages/harman-cortana-sdk-opensource-20231203010301.html
+destination: web-pages/harman-cortana-sdk-opensource-20231203010301.html
 action: WAYBACK_CDX_ENUMERATE_ALL_CAPTURES_AND_LINKS
 ```
 
-Resolved: the live URL still redirects (`REDIRECTS_TODAY` was accurate for
+Resolved at acquisition: the live URL redirected (`REDIRECTS_TODAY` was accurate for
 direct access), but the Wayback Machine CDX index
 (`http://web.archive.org/cdx/search/cdx?url=harmankardon.com/cortana-sdk-opensource.html&output=json`)
 has two `200`-status captures (2023-03-29, 2023-12-03). The 2023-12-03
@@ -177,7 +202,7 @@ source GPL SDK firmware .zip .tgz .tar.gz demandware.static downloads
 
 For every discovered asset URL, archive the asset itself plus all available Wayback captures.
 
-# P1 — mirror donor source trees
+## Historical P1 donor-source queue
 
 Google/Nest repository index:
 
@@ -224,7 +249,7 @@ repositories:
     dest: git-mirrors/google-nest/ffmpeg.git
 ```
 
-## P1-020 — Valve Steam Link SDK
+### P1-020 — Valve Steam Link SDK
 
 ```yaml
 id: P1-020
@@ -247,9 +272,9 @@ MARVELL_SDK_PATH bg2cd bg2cd_penguin_mlc_defconfig Berlin
 Galois Marvell Vivante NAND mtd uImage
 ```
 
-# P1 — Kinoma preservation
+## Historical P1 Kinoma preservation
 
-## P1-030 — KinomaJS
+### P1-030 — KinomaJS
 
 ```yaml
 id: P1-030
@@ -273,7 +298,7 @@ release beta xsedit KPL KPR
 
 Extract and preserve every historical firmware-update URL or manifest URL found.
 
-## P1-031 — Kinoma Acorn kernel
+### P1-031 — Kinoma Acorn kernel
 
 ```yaml
 id: P1-031
@@ -284,7 +309,7 @@ destination: git-mirrors/kinoma/acorn_kernel.git
 action: GIT_MIRROR
 ```
 
-## P1-032 — Kinoma Acorn U-Boot
+### P1-032 — Kinoma Acorn U-Boot
 
 ```yaml
 id: P1-032
@@ -295,7 +320,7 @@ destination: git-mirrors/kinoma/acorn_uboot.git
 action: GIT_MIRROR
 ```
 
-## P1-033 — entire public Kinoma GitHub organization
+### P1-033 — entire public Kinoma GitHub organization
 
 ```yaml
 id: P1-033
@@ -306,7 +331,7 @@ destination: git-mirrors/kinoma/
 
 Record the repository inventory, default branch, HEAD commit, and last update time.
 
-# P1 — Linux Berlin maintainer tree
+## Historical P1 Linux Berlin maintainer tree
 
 ```yaml
 id: P1-040
@@ -326,9 +351,9 @@ Search history for:
 ARMADA 1500 Mini Plus chromecast kinoma
 ```
 
-# P2 — community preservation
+## Historical P2 community preservation
 
-## P2-001 — HKHacking
+### P2-001 — HKHacking
 
 ```yaml
 id: P2-001
@@ -361,7 +386,7 @@ berlin2cdp-dongle 79_IMAGE.examples 81_IMAGE 82_IMAGE 83_IMAGE
 99_IMAGE mload l2nand GCastSDK anchovy galois tz_en reboot_usb.sh
 ```
 
-## P2-002 — google/adb-sync
+### P2-002 — google/adb-sync
 
 ```yaml
 id: P2-002
@@ -372,9 +397,9 @@ action: GIT_MIRROR
 why: "Referenced by Invoke investigators while pulling mounted flash contents."
 ```
 
-# Archival discovery jobs
+## Historical archival discovery jobs
 
-## DISCOVERY-001 — Kinoma HD firmware / recovery / GPL / SDK
+### DISCOVERY-001 — Kinoma HD firmware / recovery / GPL / SDK
 
 ```yaml
 id: DISCOVERY-001
@@ -418,7 +443,7 @@ downloads.kinoma.com
 marvell.com
 ```
 
-## DISCOVERY-002 — Kinoma Studio / Kinoma Code installers
+### DISCOVERY-002 — Kinoma Studio / Kinoma Code installers
 
 ```yaml
 id: DISCOVERY-002
@@ -436,7 +461,7 @@ file_patterns: ["*.dmg","*.pkg","*.exe","*.msi","*.zip"]
 
 Preserve installers; never execute automatically.
 
-## DISCOVERY-003 — exact Chromecast SDK bundles
+### DISCOVERY-003 — exact Chromecast SDK bundles
 
 ```yaml
 id: DISCOVERY-003
@@ -454,7 +479,7 @@ destination: originals/google/chromecast-1.56/
 
 Preserve all byte-distinct copies and provenance.
 
-## DISCOVERY-004 — Harman Demandware OSS assets
+### DISCOVERY-004 — Harman Demandware OSS assets
 
 ```yaml
 id: DISCOVERY-004
@@ -475,7 +500,7 @@ demandware.static downloads opensource source GPL cortana invoke citation
 .zip .tgz .tar.gz
 ```
 
-## DISCOVERY-005 — standalone Marvell BG2CDP / 88DE3006 BSP
+### DISCOVERY-005 — standalone Marvell BG2CDP / 88DE3006 BSP
 
 ```yaml
 id: DISCOVERY-005
@@ -500,7 +525,7 @@ file_patterns: ["*.tar.gz","*.tgz","*.zip","*.7z"]
 
 Search public package indexes, old FTP indexes, GitHub forks, Google/Nest history, OEM GPL drops, Harman packages, Chromecast mirrors, and preservation sites.
 
-# Provenance pages to archive
+## Historical provenance-page queue
 
 ```yaml
 provenance_targets:
@@ -514,7 +539,7 @@ provenance_targets:
   - "https://kernel.googlesource.com/pub/scm/linux/kernel/git/jszhang/linux-berlin/"
 ```
 
-# Post-download indexing
+## Post-download indexing
 
 Recursively index these tokens across extracted archives and all Git history where feasible:
 
@@ -535,7 +560,7 @@ Index at least these extensions/types:
 .bin .img .elf .axf .uImage .ubi .squashfs .tgz .tar.gz .zip
 ```
 
-# Immediate execution order
+## Historical proposed execution order
 
 ```text
 01  P0-001        Download Harman Citation.zip
@@ -557,7 +582,7 @@ Index at least these extensions/types:
 17  HASH           Generate hashes/provenance/deduplication report
 ```
 
-# Suggested metadata sidecar
+## Suggested metadata sidecar
 
 ```json
 {
@@ -589,7 +614,7 @@ Git metadata:
 }
 ```
 
-# Confidence labels
+## Confidence labels
 
 ```text
 LIVE_CONFIRMED       URL/repository currently responds and is identifiable.
@@ -600,5 +625,3 @@ NOT_FOUND_YET        Search target only.
 ```
 
 Do not upgrade `DISCOVERY_REQUIRED` or `NOT_FOUND_YET` without recording the exact retrieved URL and content hash.
-
-# End

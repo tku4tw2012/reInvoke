@@ -84,7 +84,7 @@ assert.equal(records.find(record => record.name === 'app').dataType, 1);
 const image = Buffer.concat([table, ...payloads]);
 assert.equal(image.length, outputOffset);
 fs.mkdirSync(output, { mode: 0o700 });
-const imagePath = path.join(output, '83_IMAGE.reinvoke-02');
+const imagePath = path.join(output, '83_IMAGE.reinvoke-03');
 fs.writeFileSync(imagePath, image, { flag: 'wx', mode: 0o600 });
 const length = Buffer.alloc(4);
 length.writeUInt32LE(image.length);

@@ -1,26 +1,53 @@
 ---
-title: Offline self-contained NAND pilot
-description: Reproducible RC12-derived rootfs proposal with independent diagnostics and exact rollback
-ms.date: 2026-09-11
+title: Offline NAND image builders
+description: Candidate 02 history and candidate 03 private-input builds, with explicit hardware qualification limits
+ms.date: 2026-09-12
 ---
 
 ## Scope and acceptance boundary
 
-Candidate 02 removes the NAND bootstrap's compulsory USB/ADB dependency.
+Candidate 02 was installed by one approved whole-good-block vendor operation
+and demonstrated power-only startup, Bluetooth audio, physical controls,
+authenticated provisioning, and local WAMP control. Native USB/ADB and native
+microphone acceptance remain open. Exact installed hashes and verification
+limits are in the [native NAND guide](../../docs/native-nand-platform.md).
+Candidate 03 is now installed and has answered a fresh Bluetooth name query
+with its changed `reInvoke-NAND` identity after a power-only boot. USB remains
+absent and native SSH is not yet verified. Its separate
+[successor appendix](../../docs/native-nand-platform.md#offline-successor-appendix-candidate-03)
+preserves the offline build history; this startup indicator does not transfer
+candidate 02's broader acceptance to 03.
+
+These builders require private accepted RC12 artifacts and declared source
+pins. Deterministic composition from held inputs is not a public fresh-clone
+rebuild of every dependency. Generated images and configuration remain private.
+
+The bundle manifest is also consumed by the
+[offline-tested host wrapper](../usb-boot/README.md#offline-tested-native-flash-wrapper).
+Its default inspection reads regular files only. Its separately gated flash
+path passed mocks and archived candidate 02 replay checks, then completed
+the approved candidate 03 installation in 36.819 seconds including validation,
+vendor program/read coverage and cleanup. A compatible bundle is not thereby
+approved, and program/read verification is not native service acceptance.
+
+## Candidate 02 packaging
+
+Candidate 02 removed the NAND bootstrap's compulsory USB/ADB dependency.
 Missing gadget support, failed setup, missing PTYs and an exited early daemon
 produce explicit diagnostic failures, but the caller continues to payload
 verification and the owned runtime. Working USB retains the early-to-runtime
 ADB supervisor handoff and the ADB-only fallback when ACM is unavailable.
-The base RC12 RAM image is unchanged. This fixes a source-level startup blocker;
-it does not establish the cause of the separate StockRoot boot result or prove
-native execution of candidate 02.
+The base RC12 RAM image was unchanged. This removed a source-level startup
+blocker, but the successful native trial changed several variables together.
+It does not isolate the cause of the separate StockRoot or candidate 01 results.
 
 The BSL builder accepts an optional main-pilot artifact directory. It verifies
 that artifact's rootfs and embeds the selected init/runtime hashes in a
-read-only checksum file, rather than retaining pilot-01 target hashes. The
-existing read-only loop helper still has a 38.5 MiB bound; an oversized pilot
-is rejected. Pair a candidate-02 rootfs with a BSL built against that same
-artifact, not an older launcher.
+read-only checksum file, rather than retaining pilot-01 target hashes. At the
+candidate 02 checkpoint the read-only loop helper had a 38.5 MiB bound; an
+oversized pilot was rejected. Candidate 03 derives its bounded extent from the
+selected main image. Pair a candidate-02 rootfs with a BSL built against that
+same artifact, not an older launcher.
 
 The compact BSL builder can likewise consume a new BSL artifact directory,
 while retaining its existing load-equivalence and extracted-tree checks.
@@ -30,7 +57,13 @@ That bundle is for the vendor programming path, whose observed whole-good-block
 erase is a different, broader operation than a bounded Linux code update.
 The builder does not authorize that operation.
 
-Current result: this complete pilot was installed, independently read back, and
+## Historical pilot and BSL trials on September 10-11
+
+The paragraphs below preserve earlier artifacts and acceptance failures, not
+candidate 02's installed state. In particular, independent Linux readback of
+pilot 01 is not evidence of such a read before candidate 02's first native boot.
+
+The original complete pilot was installed, independently read back, and
 executed from a read-only NAND view through a USB-loaded custom kernel and RAM
 bridge on September 10. PID 1 reached its runtime and repeated real ADB shell
 checks passed. The owner's normal host-independent power-on still remained at
@@ -39,7 +72,7 @@ the Marvell `FF` downloader. Leave the image installed; see
 remaining boot-chain question. The commands below reproduce an artifact, not
 permission to flash.
 
-The subsequent vendor-stack attempt reported a whole-chip good-block erase
+The subsequent eight-record vendor-stack attempt reported a whole-chip good-block erase
 and failed normal-boot acceptance with spinning lights and no observed USB.
 Yellow-mode U-Boot and RAM ADB survived; a fresh full rootfs readback still
 matches this pilot. The new [BSL launcher](bsl-init.sh) is a forward variation
@@ -75,23 +108,29 @@ normal boot and a second connected-USB early-boot observation both returned
 the FF downloader without BSL/pilot ADB. Reducing size did not resolve the
 observed failure; the actual failing boot stage remains unknown.
 
-This pilot packages the actual RC12 reInvoke services, not a startup marker.
+## Offline builder and historical sparse-write boundary
+
+The pilot packages the actual RC12 reInvoke services, not a startup marker.
 The builder operates on regular archive files only. It does not discover a
 device, run ADB, mount a filesystem, program NAND, reboot, or authorize a writer.
 `PROPOSAL.json` explicitly carries `authorization: false`.
 
 Rootfs allocation is `[0x02920000,0x08320000)`, with 128 KiB erase blocks and
-2,048-byte pages. Only the erase-rounded candidate extent is proposed. Remaining
+2,048-byte pages. The historical rootfs-only proposal covered just the
+erase-rounded candidate extent. Remaining
 old rootfs bytes beyond that extent are untouched, as are `app`, boot selectors,
 kernels, factory data and every other allocation.
 
-Normal NAND entry and stock-kernel execution remain unproven. In particular,
+At that rootfs-only checkpoint, normal NAND entry and stock-kernel execution
+were unproven. In particular,
 rootfs-only replacement does not establish that persistent FF/FF downloader
 selection is fixed. The corrected custom kernel remains RAM-only. An owner
 power cycle without a host RAM download, followed by external observations and
-readback, is still necessary for acceptance.
+readback, was still required by that trial's acceptance plan. Candidate 02's
+later complete vendor bundle has a broader erase boundary and demonstrated
+native operation; it did not insert independent Linux readback before boot.
 
-## Boot architecture
+## Candidate 02 boot architecture
 
 1. A read-only gzip SquashFS contains `/init`, `/sbin/init -> /init`, a static
    BusyBox, retained RC12 `adbd-root` with its soft-float loader closure, the
@@ -135,7 +174,7 @@ than reporting a successful boot. Early ADB continues when already initialized.
 These memory ceilings are not proof that the stock kernel has adequate free RAM
 for every service workload.
 
-## Kernel and network policy
+## Candidate 02 kernel and network policy
 
 Only `3.8.13-yocto-standard` and `3.8.13-reinvoke-audio-sd8887` are accepted.
 Each has exactly its own `mlan`, `sd8xxx` and `bt8xxx` modules, verified against
@@ -145,7 +184,7 @@ Berlin ASoC, WM8904 and ALSA loopback built-ins; this does not prove equivalent
 audio behavior, sound-card numbering, DSP access or microphone functionality.
 
 The stock startup's firmware, calibration, transmit power and Bluetooth
-parameters are retained. RC12's `mlan` interface naming, locally administered MAC
+parameters are retained. RC12's `mlan` interface naming, private local address
 and STA/uAP mode are explicit choices for its existing provisioning contract.
 An unsupported kernel or failed required module load still stops runtime
 dispatch. An unavailable gadget ABI is a recorded diagnostic degradation, not
@@ -182,7 +221,7 @@ sandbox against arbitrary root code: root still has ordinary diagnostic tools,
 can create device nodes and can bypass mount policy. ADB is deliberately an
 unauthenticated root diagnostic interface; restrict physical USB access.
 
-## Identity and status
+## Candidate 02 identity and status
 
 `/usr/sbin/reinvoke-status` and `/usr/sbin/reinvoke-status --json` report the
 following. `/usr/bin/reinvoke-status` remains available as the executable target.
@@ -212,10 +251,135 @@ The component manifest excludes those identity files to avoid self-reference;
 the independent outer artifact manifests cover their final contents. No image
 SHA is embedded within the image it would identify.
 
-## Rebuild and validate offline
+## Offline candidate 03 implementation appendix
 
-Use the existing sibling archive and its Go 1.18/ARM-emulation tools. The default
-output is `archive/build/artifacts/reinvoke-nand-pilot-01-20260909/`. Existing
+This successor is not installed or hardware-accepted. Candidate 02's status
+fields and boot observations above remain scoped to that image.
+
+The successor code introduces asynchronous USB prerequisite retry bounded to 30
+attempts, validates legacy misc-node identity/ownership/mode, and checks the
+actual ADB USB descriptor by character-device major/minor, not its procfs
+pathname. Procfs-read errors remain unknown without restarting a potentially
+healthy daemon. It preserves an already-matching gadget, uses one
+supervisor for early/runtime child handoff, removes BSL fallback resurrection,
+and does not make PTY readiness a USB prerequisite.
+
+The successor status output intentionally reports bounded facts and redacted
+named failures instead of command-line, mount, log, serial, environment, or
+private-path dumps; arbitrary arguments are not accepted.
+The separate static public-key-only Dropbear implementation has passed
+host-loopback QEMU authentication controls, not native login acceptance.
+See the [offline milestone details](../../docs/native-nand-platform.md#offline-successor-appendix-candidate-03)
+for its source pin and remaining qualification boundary.
+
+The current `build.sh` requires `PILOT_PRIVATE_CONFIG` and defaults to
+`<archive>/build/artifacts/reinvoke-native-03-20260912/main`.
+It still requires the private accepted RC12 inputs and pinned tools.
+
+The final main double-build, paired BSL, compact BSL, and complete bundle pass
+offline identity/extraction/metadata/library and nine-record CRC/SHA checks.
+Qualification is `OFFLINE_CANDIDATE_NOT_NATIVE_BOOT_VERIFIED`, not native
+acceptance. The build identity is `reInvoke-NAND-03-20260912`, and the complete
+image is named `83_IMAGE.reinvoke-03`. Use only the final
+`complete/MANIFEST.json`; do not select artifacts from the retired
+`intermediate` directory.
+The complete output contains `83_IMAGE.reinvoke-03`, `07_IMAGE.for-83`, and
+`MANIFEST.json`. Private `EXECUTION.txt` and `OFFLINE-EVIDENCE.json` at the
+candidate root retain the exact build and validation record.
+Packaged Bluetooth and USB identities are `reInvoke-NAND` and
+`reInvoke-NAND-03`, respectively; neither is a native observation.
+
+Exact verified hashes and the preserved BSL-bound rejection, final-pin
+correction, and USB edge-case history are in the
+[offline build checkpoint](../../docs/native-nand-platform.md#final-build-checkpoint).
+The final read-only BSL helper uses a 40,894,464-byte bound at fixed offset
+`0x02920000`, with allocation and ioctl checks; it has not run on the device.
+This enlarges only the bounded read-only view within the existing 90 MiB
+rootfs allocation, not the partition layout. Kernel and module binaries are
+unchanged; the exact existing stock/RC12 kernel-release dispatch is retained.
+Fifteen original core runtime binaries remain unchanged. Candidate 02 is
+untouched, and no candidate 03 flash or boot has occurred. Markdown files are
+excluded from the frozen code-source manifest, which includes C sources.
+
+### Private build inputs
+
+The current implementation lives in this directory; there is no separate
+`tools/native-admin/` source package. `build-ssh.sh` builds the pinned static
+Dropbear input, `private-config.js` installs private deployment material, and
+`ssh-start.sh` owns the successor's SSH startup. These are candidate 03
+interfaces, not candidate 02 behavior.
+
+`PILOT_PRIVATE_CONFIG` names an existing JSON file outside Git. It does not
+make a public clone self-contained. Its required fields are:
+
+| Field | Input |
+|---|---|
+| `authorizedKey` | Path to one plain ED25519 operator public key; comments are stripped when installed |
+| `sshHostKey` | Path to the unique server private host key, with no group/other permissions |
+| `sshBinary` | Path to the reviewed static ARM Dropbear multicall binary |
+| `sshBinarySHA256` | Exact lowercase SHA-256 pin for that binary |
+| `sshLicense` | Path to Dropbear's retained `LICENSE`, with the builder's companion dependency notices beside it |
+| `sshCIDRs` | Nonempty explicit restricted IPv4 peer list; the parser accepts one to eight `/24` through `/32` entries |
+
+Optional `runtimeConfig`, `apSSID`, and `apPSK` fields name private files;
+`wifiMAC` supplies a private address only when deliberately configured.
+Without `wifiMAC`, vendor identity is retained; there is no public hardcoded
+replacement address.
+The final candidate retains the existing restrictive operator policy and
+pairing/AP settings. Do not publish a filled configuration or its values.
+
+The private image includes the server host key and operator public key, never
+the operator private key. Keys are generated offline per installation, without
+personal SSH-directory access or a shared fleet key. Future approved clients
+use dedicated private `known_hosts`/`HostKeyAlias` pinning with
+`StrictHostKeyChecking=yes`. The server host key and installed operator public
+key are mode `0600`; their containing private directories are mode `0700`.
+Dropbear and static-library licence notices remain in the image. Password/PAM
+authentication, TCP/agent/X11 forwarding, and the SFTP server are compiled
+out; do not infer those features from the presence of an SSH server.
+The port 22 firewall must be installed before its listener starts. This does
+not enable network `adbd` as a fallback or depend on TCP 5555. WAMP remains a
+compatibility bus, not an administrative shell.
+
+### Offline composition interface
+
+Use the intended frozen source revision and already prepared private inputs.
+All output directories below must be fresh, outside Git, and distinct from
+the retained final/intermediate artifacts. These commands do not flash:
+
+```bash
+bash tools/nand-pilot/build-ssh.sh "<archive>" "<new-private-ssh-output>"
+
+PILOT_PRIVATE_CONFIG="<private-config.json>" \
+  bash tools/nand-pilot/build.sh "<archive>" "<new-main-output>"
+
+fakeroot node tools/nand-pilot/build-bsl.js \
+  "<archive>" "<new-bsl-output>" "<new-main-output>"
+
+fakeroot node tools/nand-pilot/compact-bsl.js \
+  "<archive>" "<new-compact-bsl-output>" "<new-bsl-output>"
+
+node tools/nand-pilot/native-bundle.js \
+  "<archive>" "<new-main-output>" "<new-compact-bsl-output>" "<new-complete-output>"
+```
+
+Before the main build, bind the private configuration to the newly reviewed
+SSH binary and its exact digest; building it does not update that configuration
+automatically. Existing private RC12, captured BSL, vendor, compiler, and QEMU
+inputs are still required. Pair the BSL with that exact main output, not an
+earlier artifact that merely has the same size.
+
+The main/SSH build limits use `GOMAXPROCS=2`, Go `-p 1`, `make -j1`, and
+`nice -n 10` where applicable. The verified candidate pipeline performs no
+kernel build or device operation.
+
+## Historical candidate 01 rebuild and offline checks
+
+These original commands record the candidate 01 workflow and need its matching
+source pins and private archive. For candidate 02 composition, use the
+[native NAND build guide](../../docs/native-nand-platform.md#build-and-reproducibility-boundary).
+The original default output was
+`archive/build/artifacts/reinvoke-nand-pilot-01-20260909/`. Existing
 completed outputs are never overwritten. Each output directory is mode `0700`
 because both images and extracted trees contain private RC12 configuration.
 

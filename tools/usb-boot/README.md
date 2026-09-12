@@ -1,17 +1,31 @@
 ---
 title: USB boot and RAM-runtime tooling
 description: Host tools for verified yellow-mode U-Boot access and the owned reInvoke RAM lifecycle
-ms.date: 2026-09-05
+ms.date: 2026-09-12
 ms.topic: how-to
 ---
 
-Host-side tooling for reaching yellow-mode U-Boot and loading the owned reInvoke
-runtime over Micro-USB without writing NAND. The current entry sequence is in
+Host-side recovery and RAM-development tooling for reaching U-Boot and loading
+the owned runtime over Micro-USB without issuing intentional NAND writes.
+Candidate 02's ordinary operation starts from NAND without this helper. The
+recovery entry sequence is in
 [U-Boot console access](../../docs/uboot-access.md). The older
 [service-mode investigation](../../docs/usb-service-mode.md) is historical
 failed-attempt evidence. The
 [current product contract](../../docs/current-product-contract.md) defines the
 runtime assembled here.
+
+Here, “native RAM” means ARM Linux running on the Invoke after a host loads it,
+not host-independent NAND startup. The builders require private donor/RC12
+artifacts and pinned toolchains; this is not a complete public fresh-clone
+firmware kit. Recovering with this helper replaces a native session and loses
+its volatile diagnostic state. Do not arm it over a working session without
+explicit approval.
+
+Native candidate 02 does not enumerate USB, and default network ADB on TCP
+5555 explicitly refused connections while WAMP worked. Host ADB ports
+5037/5038 and helper-console port 8141 are different services. USB ADB itself
+has no IP port.
 
 No proprietary files are included here. The Marvell `usb_boot` binary and the
 boot-chain images come from the community flashing bundle and must be staged
@@ -28,10 +42,107 @@ separately.
 | `capture-attempt.sh` | Creates a timestamped evidence bundle containing usbmon, kernel, ADB, descriptor, protocol, and console logs |
 | `capture-descriptor.sh` | Dumps the full USB descriptor when the device appears. The boot window is only a few seconds, too short to run `lsusb -v` by hand |
 | `build-native-initramfs.sh` | Builds a sanitized RAM-only initramfs from reviewed held artifacts |
+| `flash-native-once.mjs` | Offline-tested bundle inspector and explicitly gated one-command vendor flash wrapper; first live use installed candidate 03 |
+| `flash-native-once-test.mjs` | Focused offline wrapper tests with mocked transport |
 | `monitor-descriptors.sh` | Polls sysfs during an attempt and captures every distinct Marvell enumeration |
 | `native-ram-init` | Owned PID 1 for volatile filesystems, NAND isolation, USB, radio setup, networking, bounded logs, and supervised product services |
 | `uboot-console.py` | Console client for the `usb_boot` TCP relay. Strips telnet negotiation, logs the transcript, and forwards commands from a FIFO |
 | `start-session.sh` | Brings up either reviewed boot tool and refuses to run if flashable images or automatic commands are staged |
+
+## Offline-tested native flash wrapper
+
+`flash-native-once.mjs` is a thin host wrapper, not the tool used to establish
+candidate 02's native acceptance. Its default action is regular-file-only
+inspection:
+
+```bash
+node tools/usb-boot/flash-native-once.mjs "<bundle-dir>"
+node tools/usb-boot/flash-native-once.mjs "<bundle-dir>" inspect
+```
+
+The bundle directory contains the image and `MANIFEST.json` produced by the
+native bundle builder. Inspection checks the known vendor source and fixed
+boot payloads, nine-record layout and CRCs, selected main rootfs/BSL, image
+length, and manifest agreement. Candidate 03 uses the same manifest schema;
+schema compatibility is not native boot acceptance.
+
+Offline validation now passes 30 focused tests, including the new controls
+below and the real archived candidate 02 bundle/transcript checks.
+On 2026-09-12, its first approved live invocation installed candidate 03 and
+verified all nine program/read address sets, exact transfer length, known
+geometry/bad blocks, and a fresh returned prompt. Validation through helper
+shutdown and staging cleanup took 36.819 seconds; command submission through
+verified program/read coverage took 32.440 seconds. Neither figure is pure
+NAND programming time. The subsequent power-only boot returned the new
+Bluetooth identity; USB still did not enumerate and native SSH is unverified.
+See [native startup evidence](../../docs/native-nand-platform.md#candidate-03-startup).
+One successful run does not authorize another flash or qualify every failure
+path, device, or layout.
+
+The initial 21-test checkpoint missed two issues found and fixed during review
+before any hardware invocation:
+
+* The wrapper now binds the helper's actual open USB file descriptor to the
+  selected physical port and rejects multiple matching recovery devices.
+  Matching a descriptor or a supplied path alone was insufficient.
+* Growing console logs are read as bounded snapshots. Ordinary appends are not
+  mistaken for corruption of an immutable input; strict image/manifest input
+  checks remain separate.
+
+### Future explicitly approved flash interface
+
+> [!CAUTION]
+> This invokes the vendor whole-good-block erase/program path, not a sparse
+> rootfs update. Image 99 is excluded. The acknowledgement below is an error
+> guard, not owner approval. Do not run it from this documentation alone.
+
+```bash
+node tools/usb-boot/flash-native-once.mjs "<bundle-dir>" flash \
+  --expected-sha256 "<reviewed-bundle-sha256>" \
+  --confirm ERASE-AND-FLASH-NATIVE \
+  --approval-ref "<explicit-owner-approval-reference>" \
+  --firmware-dir "<private-firmware-dir>" \
+  --session-dir "<private-recovery-session-dir>" \
+  --usb-path "<physical-usb-path>" \
+  --evidence "<new-private-evidence-dir>"
+```
+
+The existing helper must already be recovery-ready. This wrapper does not
+start the helper, reset the unit, boot RAM Linux, or perform a native reboot.
+It does not alter the existing session-start or helper-readiness implementation.
+The operator-first ordering below is for future attended operations, not a request
+to start or keep a helper waiting while the owner is absent.
+Use the reviewed physical USB path from private operator configuration; never
+publish that binding.
+
+For an approved run, the wrapper:
+
+1. Validates the bundle and existing recovery context, requires one matching
+   recovery device, and checks the helper's open USB descriptor against the
+   selected physical port.
+2. Requires fresh `version` and `nandinit` geometry responses.
+3. Stages `83_IMAGE` and its correct `07_IMAGE` transfer length.
+4. Durably records an intent/no-reissue marker before issuing exactly one
+   vendor flash command.
+5. Captures timestamps, transfer completion, expected per-record write/read
+   loops, errors, and a fresh returned post-flash prompt.
+6. Only after completed verification, stops its identified helper/client PIDs,
+   removes active `83_IMAGE`, restores `07_IMAGE`, and leaves the owner's
+   physical power gate untouched.
+
+For development, keep USB connected to a passive observer during the next
+owner-controlled normal boot, with the firmware-loading helper stopped.
+Disconnecting USB is a separately chosen host-independence test, not an
+established boot requirement or a step to repeat after every flash. A cable
+does not launch the helper, but whether USB power/presence affects this unit's
+boot selection or initialization remains unknown. Late attachment alone cannot
+settle that question. Candidate 03's first test used disconnected USB; its
+changed Bluetooth identity proves runtime progress, not early USB behavior.
+
+Intent and evidence require durable private storage, not tmpfs/ramfs. Failure
+preserves state and evidence rather than retrying, reflashing, or clearing the
+helper. Do not delete the intent marker to turn an uncertain result into
+another attempt. Independent review must resolve it first.
 
 ## Setup
 
@@ -62,7 +173,7 @@ sudo udevadm trigger --subsystem-match=usbmon
 Install the udev rule once:
 
 ```bash
-sudo cp 99-marvell-invoke.rules /etc/udev/rules.d/
+sudo cp tools/usb-boot/99-marvell-invoke.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 ```
 
@@ -207,7 +318,12 @@ gaps without flapping the hardware gates.
 Service output passes through BusyBox syslog with a 256 KiB active file and one
 rotated backup. If syslog is unavailable, services use the bounded kernel log.
 
-## Collect autonomous acceptance evidence
+## Collect RAM-boot acceptance evidence
+
+These collectors depend on the host-loaded RAM ADB path. They are historical
+RAM acceptance tools, not an available way to inspect candidate 02's
+unshelled native session. Their device calls are not implied by an offline
+build or documentation task.
 
 The packaged `/usr/sbin/reinvoke-acceptance` command is structural smoke only:
 runtime hashes, NAND isolation, raw MTD-node removal, radio/audio devices,
@@ -225,9 +341,9 @@ The collector also calls MCU status, requires DSP `getVer` and version event
 post-probe service logs. It exits nonzero after evidence collection if any check
 fails.
 
-Button presses reach the services as MCU publications, so they cannot be
-injected over WAMP and the control and indicator gates need a person at the
-speaker. Run the capture harness for that session and simply press the buttons:
+Physical policy consumes decoded MCU events rather than accepting a WAMP
+publication as a physical press. Control and indicator gates need a person at
+the speaker. In a separately approved session, run the capture harness:
 
 ```bash
 tools/usb-boot/collect-physical-controls.sh \
@@ -280,12 +396,18 @@ yellow-mode U-Boot appears, without imposing an operator timeout. Use
 `capture-attempt.sh` owns the USB interface, pass its isolated ADB server port
 to the loader. The default capture port is 5038.
 
+The waiting loader does not keep an absent-device helper alive. The pinned
+helper can time out after 120 seconds without an endpoint. Have the operator
+and passive observer ready first; start or attach the helper only when the
+endpoint is present. A stale relay or waiting status file is not proof that
+the helper will catch a future power cycle.
+
 One host-wide loader lock covers staging, waiting, and injection. A second
 loader fails before it can replace shared `81_IMAGE`/`82_IMAGE` or send commands.
-Operationally, start a fresh USB session, verify exactly one loader, then ask
-the operator for the yellow-mode power cycle. The armed loader injects as soon
-as it sees the new U-Boot banner and prompt; no second authorization message is
-required.
+Operationally, prepare the passive observer and owner-agreed power step first.
+Once the endpoint is present, start/attach the helper and verify the live relay
+and exactly one loader. Within that explicitly approved RAM-recovery scope,
+the armed loader injects as soon as it sees the new U-Boot banner and prompt.
 
 The loader writes its current state to `--status-file`, which defaults to
 `${XDG_RUNTIME_DIR:-/tmp}/reinvoke-loader-status`. The file always holds one
@@ -301,7 +423,8 @@ States progress `staged`, `waiting-for-uboot`, `uboot-acquired`,
 loader is armed it refreshes `waiting-for-uboot` every fifteen seconds, so a
 stale timestamp means the loader died rather than that the window was missed.
 An operator therefore never has to guess after a reset: `uboot-acquired` proves
-the prompt was caught, and `adb-ready` proves the candidate booted.
+the prompt was caught, and `adb-ready` proves the loader's RAM ADB criterion
+passed. Neither proves host-independent NAND startup or full product acceptance.
 
 Children are spawned with the lock descriptor closed. The ADB fork-server
 daemonizes and would otherwise inherit that descriptor and hold the lock for the
@@ -407,6 +530,11 @@ reports `READY` only after the selected tool enters its device polling loop:
 INVOKE_FIRMWARE_DIR=../invoke-boot tools/usb-boot/start-session.sh stock
 ```
 
+Prepare the operator and passive observer before this step, and start/attach
+only when the endpoint is present. The helper's 120-second absent-device
+timeout is independent of any loader wait. Do not compensate with an
+unapproved reset or automatic helper restart.
+
 The argument controls what is served for image type `0x08`:
 
 | Variant | Effect |
@@ -431,14 +559,14 @@ Send a command to the prompt:
 echo 'printenv' > /tmp/uboot_cmd
 ```
 
-## Interrupting an autoboot countdown
+## Historical autoboot-countdown experiment
 
 `interrupt-autoboot.py` feeds harmless newlines into the console FIFO so
 keystrokes are already waiting when the brief USB window opens. Start it, then
 power cycle:
 
 ```bash
-python3 interrupt-autoboot.py 180
+python3 tools/usb-boot/interrupt-autoboot.py 180
 ```
 
 This tests whether the device's request for image type `0x08` comes from a
@@ -467,6 +595,7 @@ request-serving phase. `attach-console.sh` handles both orderings.
 `79_IMAGE` contains a non-comment command. The first is used by the vendor NAND
 workflow; the second is reported to brick the unit unrecoverably.
 
-The boot chain loads into RAM and writes nothing on its own. Avoid `nand`,
+The served boot chain loads into RAM; complete absence of autonomous
+device-side writes has not been proved by this procedure. Avoid `nand`,
 `nandinit`, `nanderase`, `tftp2nand`, `l2nand`, and `saveenv` at the prompt on a
 working unit.

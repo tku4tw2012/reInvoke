@@ -6,7 +6,8 @@ umask 022
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "${here}/../.." && pwd)"
 archive="$(realpath "${1:-${repo}/../reinvoke-archive}")"
-output="${2:-${archive}/build/artifacts/reinvoke-nand-pilot-02-20260911}"
+output="${2:-${archive}/build/artifacts/reinvoke-native-03-20260912/main}"
+[[ -n "${PILOT_PRIVATE_CONFIG:-}" ]] || { echo "PILOT_PRIVATE_CONFIG is required" >&2; exit 1; }
 mkdir -p "${output}"
 chmod 0700 "${output}"
 output="$(realpath "${output}")"

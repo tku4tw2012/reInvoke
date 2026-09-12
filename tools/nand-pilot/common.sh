@@ -37,10 +37,18 @@ pilot_check_pty_node() {
 configure_adb() {
   gadget="${PILOT_ADBD_GADGET:-/sys/class/android_usb/android0}"
   ${BB} test -d "${gadget}" || return 1
-  echo 0 >"${gadget}/enable" || return 1
   usb_functions=adb
   if ${BB} test -d "${gadget}/f_acm"; then
     usb_functions=acm,adb
+  fi
+  if [ "$(${BB} cat "${gadget}/enable" 2>/dev/null)" = 1 ] &&
+     [ "$(${BB} cat "${gadget}/functions" 2>/dev/null)" = "${usb_functions}" ] &&
+     [ "$(${BB} cat "${gadget}/iProduct" 2>/dev/null)" = "$1" ] &&
+     [ "$(${BB} cat "${gadget}/idProduct" 2>/dev/null)" = 0d02 ]; then
+    return 0
+  fi
+  echo 0 >"${gadget}/enable" || return 1
+  if [ "${usb_functions}" = acm,adb ]; then
     echo 1 >"${gadget}/f_acm/instances" || return 1
   fi
   echo 0d02 >"${gadget}/idProduct" &&
@@ -48,7 +56,8 @@ configure_adb() {
     echo "${usb_functions}" >"${gadget}/functions" &&
     echo 1 >"${gadget}/enable" || return 1
   ${BB} test "$(${BB} cat "${gadget}/enable")" = 1 &&
-    ${BB} test "$(${BB} cat "${gadget}/iProduct")" = "$1"
+    ${BB} test "$(${BB} cat "${gadget}/iProduct")" = "$1" &&
+    ${BB} test "$(${BB} cat "${gadget}/functions")" = "${usb_functions}"
 }
 
 pilot_adbd_run() {
@@ -59,7 +68,24 @@ pilot_adbd_run() {
 }
 
 adb_loop() {
+  adb_pid=""
+  adb_attempt=0
+  trap '
+    if [ -n "${adb_pid}" ]; then
+      ${BB} kill "${adb_pid}" 2>/dev/null || true
+      wait "${adb_pid}" 2>/dev/null || true
+    fi
+    ${BB} rm -f "${PILOT_STATE}/adbd.pid" "${PILOT_STATE}/adbd-supervisor.pid"
+    ${BB} rmdir "${PILOT_STATE}/adb-owner" 2>/dev/null || true
+  ' EXIT
+  trap 'exit 0' TERM INT
   while ! ${BB} test -e "${PILOT_STATE}/stop-adb"; do
+    if ! pilot_usb_prerequisites; then
+      adb_attempt=$((adb_attempt + 1))
+      [ "${adb_attempt}" -lt 30 ] || break
+      ${BB} sleep 1
+      continue
+    fi
     adb_root=early
     if [ -n "${PILOT_ADBD_RUNTIME_ROOT:-}" ] &&
        ${BB} test -f "${PILOT_STATE}/runtime-ready"; then
@@ -69,6 +95,7 @@ adb_loop() {
     adb_pid=$!
     echo "${adb_pid}" >"${PILOT_STATE}/adbd.pid"
     echo "${adb_root}" >"${PILOT_STATE}/adbd-root"
+    adb_unready=0
     while ${BB} kill -0 "${adb_pid}" 2>/dev/null; do
       if ${BB} test -e "${PILOT_STATE}/stop-adb" ||
          { [ "${adb_root}" = early ] &&
@@ -78,13 +105,43 @@ adb_loop() {
           pilot_failure adb "daemon exited while switching diagnostic roots"
         break
       fi
+      if pilot_adbd_usb_open "${adb_pid}"; then
+        echo open >"${PILOT_STATE}/adb-transport"
+        adb_unready=0
+        adb_attempt=0
+      else
+        adb_fd_status=$?
+        if [ "${adb_fd_status}" = 2 ]; then
+          pilot_usb_failure fd-unreadable
+          # Missing evidence is not proof that an existing transport is bad.
+          # Keep this child; never reset a potentially healthy opener merely
+          # because procfs could not be inspected.
+          adb_unready=0
+        else
+          pilot_usb_failure usb-fd-not-open
+          adb_unready=$((adb_unready + 1))
+        fi
+        if [ "${adb_unready}" -ge 3 ]; then
+          # The retained daemon selects USB just once. Re-evaluate only an
+          # unready child; never toggle the gadget merely because a PID exists.
+          ${BB} kill "${adb_pid}" 2>/dev/null || true
+          break
+        fi
+      fi
       ${BB} sleep 1
     done
     wait "${adb_pid}"
     echo "adbd exited $?" >"${PILOT_STATE}/adbd-exit"
     ${BB} rm -f "${PILOT_STATE}/adbd.pid"
+    adb_pid=""
+    adb_attempt=$((adb_attempt + 1))
+    [ "${adb_attempt}" -lt 30 ] || break
     ${BB} sleep 1
   done
+  echo stopped >"${PILOT_STATE}/adb-transport"
+  if ! ${BB} test -e "${PILOT_STATE}/stop-adb"; then
+    pilot_usb_failure retry-budget-exhausted
+  fi
 }
 
 pilot_node_from_sysfs() {
@@ -94,8 +151,67 @@ pilot_node_from_sysfs() {
   node_dev="$(${BB} cat "${dev_file}")" || return 1
   node_major="${node_dev%:*}"
   node_minor="${node_dev#*:}"
-  ${BB} test -c "${node_path}" ||
-    ${BB} mknod -m 0600 "${node_path}" c "${node_major}" "${node_minor}"
+  case "${node_major}:${node_minor}" in
+    *[!0-9:]*|:*|*:) return 1 ;;
+  esac
+  [ "${node_dev}" = "${node_major}:${node_minor}" ] || return 1
+  [ "${node_major}" -gt 0 ] && [ "${node_major}" -le 4095 ] &&
+    [ "${node_minor}" -le 1048575 ] || return 1
+  expected_dev="$(printf '%x:%x' "${node_major}" "${node_minor}")"
+  if ! ${BB} test -e "${node_path}" && ! ${BB} test -L "${node_path}"; then
+    ${BB} mknod -m 0600 "${node_path}" c "${node_major}" "${node_minor}" || return 1
+  fi
+  ${BB} test ! -L "${node_path}" &&
+    ${BB} test -c "${node_path}" &&
+    [ "$(${BB} stat -c '%t:%T' "${node_path}" 2>/dev/null)" = "${expected_dev}" ] || return 1
+  ${BB} chown 0:0 "${node_path}" && ${BB} chmod 0600 "${node_path}" || return 1
+  [ "$(${BB} stat -c '%t:%T:%a:%u:%g' "${node_path}" 2>/dev/null)" = "${expected_dev}:600:0:0" ]
+}
+
+pilot_adbd_usb_open() {
+  ${BB} test -c "${PILOT_ADBD_NODE:-/dev/android_adb}" || return 2
+  adb_node_dev="$(${BB} stat -L -c '%t:%T' "${PILOT_ADBD_NODE:-/dev/android_adb}" 2>/dev/null)" || return 2
+  adb_fd_dir="${PILOT_ADBD_PROC:-/proc}/$1/fd"
+  ${BB} test -r "${adb_fd_dir}" && ${BB} test -x "${adb_fd_dir}" || return 2
+  adb_fd_seen=0
+  for adb_fd in "${adb_fd_dir}"/*; do
+    ${BB} test -L "${adb_fd}" || continue
+    adb_fd_seen=$((adb_fd_seen + 1))
+    [ "${adb_fd_seen}" -le 128 ] || return 2
+    adb_fd_target="$(${BB} readlink "${adb_fd}" 2>/dev/null)" || return 2
+    # A runtime chroot opens through a bind mount; procfs may show its outer
+    # /runtime/dev path. Device identity, not that spelling, identifies the FD.
+    adb_fd_dev="$(${BB} stat -L -c '%F:%t:%T' "${adb_fd}" 2>/dev/null)" || return 2
+    if [ "${adb_fd_dev}" = "character special file:${adb_node_dev}" ]; then
+      return 0
+    fi
+  done
+  [ "${adb_fd_seen}" -gt 0 ] || return 2
+  return 1
+}
+
+pilot_usb_failure() {
+  echo "$1" >"${PILOT_STATE}/adb-transport"
+  if [ "$(${BB} cat "${PILOT_STATE}/usb-last-failure" 2>/dev/null)" != "$1" ]; then
+    echo "$1" >"${PILOT_STATE}/usb-last-failure"
+    ${BB} cut -d' ' -f1 /proc/uptime >"${PILOT_STATE}/usb-failure-uptime"
+    pilot_failure usb "$1"
+  fi
+}
+
+pilot_usb_prerequisites() {
+  if ! ${BB} test -d "${PILOT_ADBD_GADGET}"; then
+    pilot_usb_failure gadget-absent
+    return 1
+  fi
+  configure_adb "${PILOT_ADBD_PRODUCT}" || {
+    pilot_usb_failure gadget-config-failed
+    return 1
+  }
+  pilot_node_from_sysfs "${PILOT_ADBD_DEV_FILE}" "${PILOT_ADBD_NODE}" || {
+    pilot_usb_failure node-invalid-or-absent
+    return 1
+  }
 }
 
 pilot_usb_adbd_launch() {
@@ -109,56 +225,19 @@ pilot_usb_adbd_launch() {
 
   if [ "${PILOT_ADBD_PTY_READY:-1}" != 1 ] ||
      ! pilot_check_pty_node "${PILOT_ADBD_PTMX}"; then
-    pilot_failure pty "early ADB requires /dev/ptmx character device 5:2 mode 0666"
-    pilot_phase "${PILOT_ADBD_DEGRADED_PHASE}"
-    return 1
+    pilot_failure pty "PTY degraded; USB transport startup remains independent"
   fi
 
-  if ! ${BB} test -d "${PILOT_ADBD_GADGET}"; then
-    pilot_failure usb-gadget "android_usb gadget absent for actual kernel; continuing without early adbd"
-    pilot_phase "${PILOT_ADBD_DEGRADED_PHASE}"
+  # The sole supervisor owns prerequisite retry and the early/runtime handoff.
+  # Startup returns immediately; neither missing PTYs nor late drivers gate PID 1.
+  if ! ${BB} mkdir "${PILOT_STATE}/adb-owner" 2>/dev/null; then
+    pilot_failure usb-owner "supervisor already owns transport or owner state is stale"
     return 1
   fi
-
-  configure_adb "${PILOT_ADBD_PRODUCT}" || {
-    pilot_failure usb-gadget "USB gadget configuration failed"
-    pilot_phase "${PILOT_ADBD_DEGRADED_PHASE}"
-    return 1
-  }
-
-  pilot_node_from_sysfs "${PILOT_ADBD_DEV_FILE}" "${PILOT_ADBD_NODE}" || {
-    pilot_failure android-adb-node "kernel has no legacy /dev/android_adb ABI required by retained adbd"
-    pilot_phase "${PILOT_ADBD_DEGRADED_PHASE}"
-    return 1
-  }
-
-  if ${BB} test -n "${PILOT_ADBD_ENABLE_DEV_FILE:-}" &&
-     ${BB} test -n "${PILOT_ADBD_ENABLE_NODE:-}"; then
-    pilot_node_from_sysfs "${PILOT_ADBD_ENABLE_DEV_FILE}" "${PILOT_ADBD_ENABLE_NODE}" ||
-      pilot_failure android-adb-enable "optional android_adb_enable misc node missing"
-  fi
-  if ${BB} test -n "${PILOT_ADBD_TTYGS0_DEV_FILE:-}" &&
-     ${BB} test -n "${PILOT_ADBD_TTYGS0_NODE:-}"; then
-    pilot_node_from_sysfs "${PILOT_ADBD_TTYGS0_DEV_FILE}" "${PILOT_ADBD_TTYGS0_NODE}" ||
-      pilot_failure ttyGS0 "optional ttyGS0 misc node missing"
-  fi
-
+  echo pending >"${PILOT_STATE}/adb-transport"
   adb_loop &
   echo "$!" >"${PILOT_STATE}/adbd-supervisor.pid"
-  adb_wait=0
-  while ! ${BB} test -s "${PILOT_STATE}/adbd.pid" && [ "${adb_wait}" -lt 5 ]; do
-    ${BB} sleep 1
-    adb_wait=$((adb_wait + 1))
-  done
-  ${BB} sleep 1
-  if ${BB} test -s "${PILOT_STATE}/adbd.pid" &&
-    ${BB} kill -0 "$(${BB} cat "${PILOT_STATE}/adbd.pid")" 2>/dev/null; then
-    pilot_phase "${PILOT_ADBD_STARTED_PHASE}"
-    return 0
-  fi
-  pilot_failure adb "early adbd did not remain alive; runtime continuing"
-  pilot_phase "${PILOT_ADBD_DEGRADED_PHASE}"
-  return 1
+  return 0
 }
 
 pilot_verify_payload() {

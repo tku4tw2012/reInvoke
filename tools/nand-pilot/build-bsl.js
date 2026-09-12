@@ -19,12 +19,13 @@ const pilot = path.join(pilotArtifact, 'rootfs.squashfs');
 const pilotProposal = JSON.parse(fs.readFileSync(path.join(pilotArtifact, 'PROPOSAL.json'), 'utf8'));
 const rc12 = path.join(archive, 'build/artifacts/rc12-nand-handoff-20260910/root');
 const readback = path.join(archive, 'evidence/nand-postbundle-yellow-20260911T0149Z/readback');
-const helper = path.join(archive, 'evidence/nand-kernel-only-recovery-20260910/set-private-loop-offset');
+const helper = path.join(output, 'set-private-loop-offset');
 lib.verify(pilot, pilotProposal.image);
 assert.equal(pilotProposal.extent.start, 0x02920000);
-assert(pilotProposal.image.bytes <= 0x02680000,
-  'pilot exceeds the qualified read-only loop helper length');
-assert.equal(lib.hashFile(helper), '004f9ed54055c770ef4dce3ce6d521d82dd677c6cb911d7dec0cb9df5fd05ca0');
+const loopBytes = Math.ceil(pilotProposal.image.bytes / 131072) * 131072;
+assert(loopBytes > 0 && loopBytes <= 0x05a00000, 'pilot exceeds rootfs allocation');
+lib.run('arm-linux-gnueabihf-gcc', ['-Os', '-static', '-s', '-Wall', '-Wextra', '-Werror',
+  `-DPILOT_ROOTFS_BYTES=${loopBytes}`, path.join(__dirname, 'bsl-loop-view.c'), '-o', helper]);
 assert.equal(lib.hashFile(path.join(rc12, 'sbin/ueventd')), '878cefdf48568f08e3fee7c26e93ba790787c67f082170ff80d8b3a264f71891');
 assert.equal(lib.hashFile(path.join(rc12, 'ueventd.rc')), '832846abb447cb538fe125dc90c07e9074c3672cc5b11016e9b66a2f8484d20d');
 assert.equal(lib.hashFile(path.join(rc12, 'lib/libglibc_bridge.so')), '6d23bd1152e8f71abb212b2d637ea3728f1d36d5663bc80ccfc2c756a71de45c');
@@ -95,6 +96,10 @@ lib.json(path.join(output, 'MANIFEST.json'), {
   targetRootfsSHA256: pilotProposal.image.sha256,
   targetInitSHA256,
   targetRuntimeSHA256,
+  loopView: { offset: 0x02920000, bytes: loopBytes, readOnly: true,
+    helperSHA256: lib.hashFile(helper), sourceSHA256: lib.hashFile(path.join(__dirname, 'bsl-loop-view.c')),
+    compiler: lib.run('arm-linux-gnueabihf-gcc', ['--version']).split('\n')[0],
+    execution: 'not executed on host or device; actual native loop ioctl support remains unverified' },
   extracted,
   noRestoration: true,
   intendedWritesOutsideBSL: false,

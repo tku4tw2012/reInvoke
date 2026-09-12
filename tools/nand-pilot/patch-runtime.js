@@ -12,7 +12,7 @@ function patchRuntime(source) {
     if (text.split(old).length !== 2) throw new Error('ambiguous/missing RC12 patch context');
     text = text.replace(old, value);
   }
-  replace('export PATH\n', 'export PATH\n. /usr/libexec/nand-pilot/common.sh\n. /usr/libexec/nand-pilot/kernel.sh\n');
+  replace('export PATH\n', 'export PATH\n. /usr/libexec/nand-pilot/common.sh\n. /usr/libexec/nand-pilot/kernel.sh\n. /usr/libexec/nand-pilot/ssh-start.sh\n');
   replace('  echo "reInvoke: $*" > /dev/kmsg', `  pilot_log "runtime: $*"
   case "$*" in
     *failed*|*incomplete*|*invalid*|*missing*|*unavailable*|*"not initialized"*)
@@ -37,6 +37,8 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
   replace(text.slice(hardwareStart, hardwareEnd), `pilot_load_modules || pilot_fatal "kernel/radio compatibility failed; early ADB remains supervised"
 
 `);
+  replace('  . "${runtime_root}/etc/runtime.conf"\n',
+    '  . "${runtime_root}/etc/runtime.conf"\n  pilot_ssh_start || log "SSH fallback unavailable; runtime continuing"\n');
   replace('log "native RAM environment is running"', `pilot_phase runtime-dispatched
 log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence, not this message"`);
   return text;

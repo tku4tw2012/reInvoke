@@ -1,4 +1,9 @@
-# Invoke OTA2 Driver Bundle Analysis
+---
+title: Historical Invoke OTA2 driver bundle analysis
+description: Static inventory and interpretation of the retained final vendor firmware kit
+---
+
+## Evidence scope
 
 > [!NOTE]
 > This is static evidence for Harman's 2021 final Bluetooth firmware,
@@ -6,7 +11,8 @@
 > target. See the [current contract](../../current-product-contract.md).
 
 Static analysis of `Harman.Kardon.INVOKE.Driver.OTA2.zip`. Nothing in this
-bundle was executed. Every claim below traces to a file path, byte offset, or
+bundle was executed during this static-analysis stage. Later controlled donor
+reuse and native installation are separate records. Every claim below traces to a file path, byte offset, or
 SHA-256 recorded during extraction. Inferences are labeled as such.
 
 ## Source and provenance

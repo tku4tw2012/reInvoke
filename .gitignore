@@ -27,6 +27,8 @@ sources/
 
 # Local noise
 .copilot-bt-emulation/
+# Keep assistant research and planning records locally, not in the public tree.
+/.copilot-tracking/
 __pycache__/
 *.pyc
 .DS_Store

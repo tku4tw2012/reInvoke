@@ -1,20 +1,49 @@
 ---
-title: NAND startup status and next step
-description: Current result, practical operating rules, and the remaining boot-path question
+title: NAND decision and experiment history
+description: Candidate 03 startup, candidate 02 acceptance, failed NAND trials, recovery limits, and dated decisions
 ms.date: 2026-09-12
 ms.topic: reference
 ---
 
 ## Current result
 
-The goal is wall-power-only reInvoke as a thin endpoint for the owner's local
-assistant. This session owns storage and startup, not microphone or assistant
-development.
+Candidate 02 reached the wall-power-only functional milestone. Candidate 03
+is now installed and has an image-dependent native startup indicator. Use the
+[native NAND guide](native-nand-platform.md) for current operation, exact
+installed hashes, private build prerequisites, and remaining gaps.
+The chronology here preserves the reasoning and failed work, not an active
+flash plan.
+
+### Candidate 03 installation and startup
+
+On 2026-09-12, the approved one-shot vendor operation installed bundle SHA-256
+`8a26ac4e2160802fb0a5451c8d856bb7d70177e70a07991326ac65c4c159988f`.
+All nine record program/read address sets, the exact transfer length, 2,046
+good-block erase count, known bad blocks, and a fresh U-Boot response passed.
+The complete wrapper took 36.819 seconds; command submission to verified
+program/read coverage took 32.440 seconds. Those intervals include verification.
+The helper stopped and active flash staging was removed before the owner's
+power-only start. No RAM Linux was inserted between flash and native boot.
+
+At 12:10:02 UTC a fresh Bluetooth remote-name query returned `reInvoke-NAND`
+from the known unit, replacing candidate 02's `reInvoke-RAM`; active inquiry
+also found it. This verifies changed native runtime behavior, not complete
+03 acceptance. Initial radio checks had returned no response. Native USB
+remained absent and the old LAN address was unreachable before reprovisioning;
+SSH is not yet native-accepted. No new audio, controls, or microphone campaign
+was performed. The first helper attachment also failed during recovery USB
+transitions before U-Boot; reattachment to the stable downloader succeeded
+without another physical request. The failed attempt and negative observations
+remain in the private evidence.
+
+See the [current startup result](native-nand-platform.md#candidate-03-startup).
+The candidate 02 section below preserves that earlier session's observations
+and decisions, not the currently installed image or a request to replay them.
 
 ### Functional boot before diagnostics
 
-The next trial need not start ADB early or expose native USB ADB to count as
-progress. Acceptance should first look for an unmistakable image-dependent
+Native acceptance need not start ADB early or expose native USB ADB to count as
+progress. It first requires an unmistakable image-dependent
 change and useful operation after normal power-on without a firmware-serving
 host: for example, a changed startup cue and working Bluetooth or Wi-Fi.
 Ordinary stock-like Bluetooth behavior alone does not identify the modified
@@ -77,6 +106,22 @@ audible playback, rotary volume, physical provisioning and local-network
 MCU/DSP control are demonstrated. Native USB/ADB and remaining product
 acceptance still require work.
 
+On 2026-09-12, 02:43:39-02:44:54 UTC, native validation passed all eight
+RawSocket WAMP groups, including rejected unknown procedures/malformed
+arguments, fresh MCU/DSP sessions/events, real `44 -> 43 -> 44` volume,
+music-mute/event checks, and restored baseline music `44` unmuted/system `70`.
+A 75-second watch saw no heartbeat. At 02:46:14 UTC, WebSocket WAMP on 9998
+also passed the `wamp.2.msgpack` handshake, MCU/volume reads, and
+unknown-procedure rejection. This was protocol verification, not just an
+open TCP port. Neither check used helper firmware, reboot, playback, or a
+microphone-state change. See the [current evidence summary](native-nand-platform.md#current-result)
+and private
+`evidence/reinvoke-native-02-fullflash-20260911/WAMP-WEBSOCKET-OVERNIGHT.json`.
+TCP 5555 explicitly refused ADB while WAMP remained reachable; USB did not
+enumerate. This is not evidence of a native shell, process list, or mount
+table. Port 5037 is the host ADB server, 8141 is the host recovery-helper
+console, and USB ADB has no IP port.
+
 Evidence is in sibling archive
 `evidence/reinvoke-native-02-fullflash-20260911/NATIVE-FUNCTIONAL-PROGRESS.json`
 and `native-bt-session/NATIVE-BLUETOOTH-CONFIRMED.json`.
@@ -88,6 +133,10 @@ established the current method. Commands and “next” statements below are
 checkpoint-era records, not current execution instructions. Do not remove this
 history: it records false-positive tests, failed assumptions, recovery evidence,
 and operations that must not be repeated without a new review.
+September 9-11 sections retain their original per-trial state and chronology,
+including uses of “current”, “now”, and “next”. Candidate 01 and other earlier
+trials failed their observed acceptance gates; a missing USB endpoint or ADB
+alone did not conclusively locate their boot failure.
 
 ### Completed trial: published StockRoot
 
@@ -361,7 +410,7 @@ ECC events. Execution evidence is in `evidence/2134-early-adb-01-20260911/`.
 The observer was running and calibrated before the normal power-cycle request.
 The subsequent speed review measured a redundant 104-second standalone
 preflight and substantially longer manual preparation. The
-[host trial runner](../tools/nand-inspect/trial-runner.md) removes that duplicate
+private host trial runner, `tools/nand-inspect/trial-runner.md`, removes that duplicate
 preflight and hand-assembled staging, while keeping the engine's own checks.
 Its live read-only protocol checks exposed legacy ADB incompatibilities missed
 by the original mocks; those were fixed and retested with positive and
@@ -724,7 +773,7 @@ a new collector. No automatic switch to Linux physical-memory reads is approved
 by this review. Any resumed device investigation needs its own explicit scope
 and time limit, and another missing response ends the attempt.
 
-## What is installed
+## Historical installed pilot on September 9
 
 | Item | Value |
 |---|---|
@@ -750,11 +799,13 @@ The first pilot also keeps new Wi-Fi credentials and bonds in RAM. Even a
 successful boot would not yet deliver persistent network provisioning across
 power cycles. That product gap must not be called a finished installation.
 
-## Kernel-only test history and remaining question
+## Historical kernel-only tests on September 10
 
 The known kernel can mount this already-written SquashFS and execute its
 `/init` through the demonstrated RAM bridge. Whether the installed boot chain
-can start a compatible kernel and runtime without a host remains unresolved.
+could start a compatible kernel and runtime without a host was unresolved at
+that checkpoint. Candidate 02 later established useful native startup, without
+isolating the cause of these earlier failures.
 
 The first attempted experiment supplied a **host-loaded known kernel,
 NAND-loaded runtime**, without a RAM bridge:
@@ -825,7 +876,13 @@ Neither is a documented decoder for a failed signature, NAND fault or boot
 strap. Bounded research found no Invoke-specific explanation for why this
 ordinary boot remains at `FF`.
 
-## One minimal workflow for future runs
+## Historical workflow recommendation before candidate 02
+
+This rootfs-writer workflow records the earlier bounded-write policy. It is
+not the later whole-good-block vendor operation: candidate 02 used nine
+vendor write/read loops and went directly from U-Boot to the owner's first
+native boot without independent Linux readback. Any successor needs its own
+explicitly reviewed operation and approval.
 
 | Step | Required result |
 |---|---|
@@ -923,12 +980,12 @@ ECC-failing pages.
 All firmware, private configuration and generated artifacts stay in the sibling
 `reinvoke-archive`, not Git.
 
-* Installed artifact: `build/artifacts/reinvoke-nand-pilot-01-20260909-pty01/`
+* Historical pilot artifact: `build/artifacts/reinvoke-nand-pilot-01-20260909-pty01/`
 * Final write/readback: `evidence/nand-pilot-uniform-resume-20260909/`
 * Failed normal boot: `normal-boot-watch.log` in that evidence directory
 * Earlier full restored comparison: `evidence/nand-restored-ram-inspection-20260909/`
 * Preserved pre-consolidation runbooks: `evidence/nand-workflow-consolidation-20260909/`
-* [Writer contracts](../tools/nand-inspect/probe-writer.md)
+* Private/deferred writer contracts: `tools/nand-inspect/probe-writer.md`
 * [Recovery access](uboot-access.md)
 * [Earlier two-block experiment history](nand-startup-probe.md)
 * [Runtime contract](current-product-contract.md)

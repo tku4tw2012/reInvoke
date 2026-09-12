@@ -1,4 +1,9 @@
-# Phase 3 extracted analysis
+---
+title: Historical Phase 3 extracted analysis
+description: Authored boot, update, and radio interpretation beside unchanged vendor originals
+---
+
+## Evidence scope
 
 > [!NOTE]
 > **Historical firmware evidence.** This Phase 3 text layer does not describe

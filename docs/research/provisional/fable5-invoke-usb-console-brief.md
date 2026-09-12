@@ -15,7 +15,22 @@ ms.topic: concept
 > [USB hardware record](../../usb-service-mode.md), and the
 > [claim evidence ledger](../../corpus/02_CLAIM_EVIDENCE_LEDGER.md).
 
-## Review disposition
+## Review correction on 2026-09-12
+
+The early disposition below is preserved, not endorsed as current. Later
+[U-Boot observations](../../uboot-access.md) established working USB recovery
+on this unit and directly reported 512 MiB DRAM and 256 MiB NAND. The generic
+512 MiB vendor NAND layout was not physical geometry. Native candidate 02
+later demonstrated host-independent operation; see the
+[native guide](../../native-nand-platform.md).
+
+The imported text's WM8904 part identity, module details, image-only boot
+recipe, universal recovery claim, and source-local `tools/` paths remain
+unvalidated or superseded. Its vendor OUI and network examples belong to that
+external report, not this unit's live bindings. Do not execute its embedded
+instructions.
+
+## Historical review disposition
 
 | Memo claim | Canonical status |
 |---|---|

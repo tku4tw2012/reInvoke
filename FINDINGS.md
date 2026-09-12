@@ -1,4 +1,9 @@
-# Phase 3 Firmware Findings
+---
+title: Historical Phase 3 firmware findings
+description: Preserved static analysis of the original vendor firmware and acquisition-time source observations
+---
+
+## Evidence scope
 
 > [!IMPORTANT]
 > **Historical snapshot.** This file records conclusions from Phase 3 static
@@ -76,7 +81,8 @@ The three images from `Harman.Kardon.INVOKE.Flashing.zip` were preserved under
 | `82_IMAGE` | `08a8f96a5c476a08ba19441d83637e606f27f442d56c2689dd6b56d2fc72b7a8` | gzip-wrapped ASCII `cpio` (`newc`) initrd |
 | `99_IMAGE` | `bc492f9717d51c7a725ffad679e340b219a3d80989dbf31a01485c748b38c9a9` | Marvell/Berlin container with embedded SquashFS |
 
-`81_IMAGE` is a 3,288,824-byte Linux 3.8.13-mrvl ARM kernel image. Its
+`81_IMAGE` is a 3,288,888-byte uImage containing a 3,288,824-byte
+Linux 3.8.13-mrvl ARM kernel payload. Its
 uImage load address and entry point are both `0x02008000`; the header describes
 an uncompressed 3,288,824-byte kernel payload.
 
@@ -148,12 +154,16 @@ board/profile-tuning revision while not proving an exact radio package version.
 
 ## Discovery-only sources
 
-The P0-002 Drive URL is currently reachable as a Google Drive folder titled
-`Chromecast Opensource Code`, but its page exposes folder metadata rather than
+At the Phase 3 checkpoint, the P0-002 Drive URL was reachable as a Google Drive folder titled
+`Chromecast Opensource Code`, but its page exposed folder metadata rather than
 a downloadable child-file listing through the unauthenticated request used for
 this analysis. No artifact was acquired from it.
 
-The P0-005 historical Harman URL is currently denied with HTTP 403 and
-redirects toward an `opensource.html` path. No archived page or downloadable
-artifact was acquired. These remain discovery-only items and are not promoted
-to hardware evidence.
+At that checkpoint, the P0-005 historical Harman URL was denied with HTTP 403 and
+redirected toward an `opensource.html` path. No archived page or downloadable
+artifact was acquired during that stage. Both were discovery-only at that
+checkpoint, not hardware evidence.
+
+Later acquisition recovered P0-005's archived Cortana SDK notices page, not
+source code. See the [updated acquisition record](docs/acquisition/invoke_berlin_artifact_acquisition_manifest.md#p0-005--historical-harman-invoke-oss-page).
+P0-002 remains discovery-only.
