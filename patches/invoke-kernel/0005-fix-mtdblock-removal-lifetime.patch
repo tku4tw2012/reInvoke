@@ -1,0 +1,16 @@
+--- a/drivers/mtd/mtdblock_ro.c
++++ b/drivers/mtd/mtdblock_ro.c
+@@ -188,10 +188,11 @@
+ static void mtdblock_remove_dev(struct mtd_blktrans_dev *dev)
+ {
+ 	struct mtdblock_priv *priv = dev2priv(dev);
++	u16 *bb_map = priv->bb_map;
+ 
++	/* The block translation layer owns and releases the embedded device. */
+ 	del_mtd_blktrans_dev(dev);
+-	kfree(priv->bb_map);
+-	kfree(priv);
++	kfree(bb_map);
+ }
+ 
+ static struct mtd_blktrans_ops mtdblock_tr = {

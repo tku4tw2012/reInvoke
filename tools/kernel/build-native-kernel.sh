@@ -29,6 +29,11 @@ readonly YAFFS_PATCH_SHA256="e520068b84dd8ca3e6592444e1a78f284fcabf5474bae9a4aa7
 readonly LZO_SOURCE_SHA256="ab1933ac33d984fe0565b7053502c2b6499260b1fe7f6b37f6883a134c87dffa"
 readonly LZO_PATCHED_SOURCE_SHA256="e0a247828ed4f283043c5ee9f74b3938354f08f4a778c89be873cb11a2f28013"
 readonly LZO_PATCH_SHA256="609b241a5317906a8ae4990e0ef6a8e7641f3817fd8a31416e6384ac213df0d7"
+readonly MTD_CLEANUP_SOURCE_SHA256="64f08a3a4c45f3443b7dda4223abe41788b7ea28d9c7c35c4a820f0ff51d9b66"
+readonly MTD_CLEANUP_PATCHED_SOURCE_SHA256="3380c5891573e861f20eb8ccc8e177e5ef8c8aeb4cbcd83b79b34beda397fce1"
+readonly MTD_CLEANUP_PATCH_SHA256="60f2adea13f59c734479d9be002c6aa632e890e20baebba247a7e1df0c7230c7"
+readonly MTD_CLEANUP_TREE_MANIFEST_SHA256="73d4b151ed3a6d17063e1830a4e505fde66b19b85b5e3c7ab9cb6ae8628bd6ad"
+readonly MTD_CLEANUP_BUILD_VERSION="1-mtd-cleanup"
 readonly LOAD_ADDRESS="0x02008000"
 
 usage() {
@@ -48,6 +53,9 @@ Profiles:
 Options:
   --archive-root PATH  External reInvoke archive root
   --source-dir PATH    Preserved extracted Invoke kernel source
+  --mtd-cleanup-fix    Opt in to the mtdblock removal lifetime fix
+  --source-work-dir PATH
+                       Required fresh source copy for --mtd-cleanup-fix
   --ndk-dir PATH       Extracted Android NDK r10e host directory
   --build-dir PATH     Out-of-tree kernel build directory
   --jobs COUNT         Parallel build jobs
@@ -99,6 +107,10 @@ main() {
   local source_archive
   local ndk_archive
   local source_dir=""
+  local source_work_dir=""
+  local mtd_cleanup_fix=0
+  local mtd_cleanup_patch
+  local mtd_cleanup_source
   local ndk_dir=""
   local build_dir=""
   local output_dir=""
@@ -111,6 +123,8 @@ main() {
   local image_suffix
   local image_name
   local kernel_release
+  local kernel_uts_version
+  local kernel_proc_version
   local jobs
   local tool_bin
   local cross_prefix
@@ -146,6 +160,15 @@ main() {
       --source-dir)
         [[ -n "${2:-}" ]] || err "--source-dir requires a path"
         source_dir="$2"
+        shift 2
+        ;;
+      --mtd-cleanup-fix)
+        mtd_cleanup_fix=1
+        shift
+        ;;
+      --source-work-dir)
+        [[ -n "${2:-}" ]] || err "--source-work-dir requires a path"
+        source_work_dir="$2"
         shift 2
         ;;
       --ndk-dir)
@@ -216,12 +239,21 @@ main() {
       ;;
   esac
 
+  if ((mtd_cleanup_fix == 1)); then
+    [[ -n "${source_work_dir}" ]] ||
+      err "--mtd-cleanup-fix requires a fresh --source-work-dir"
+    # Preserve LOCALVERSION and module ABI, but never reuse baseline build paths.
+    image_suffix="${image_suffix}-mtd-cleanup"
+  elif [[ -n "${source_work_dir}" ]]; then
+    err "--source-work-dir requires --mtd-cleanup-fix"
+  fi
+
   archive_root="$(realpath "${archive_root}")"
   source_archive="${archive_root}/originals/harman/invoke/Invoke-kernel.tar"
   ndk_archive="${archive_root}/toolchains/android-ndk-r10e/android-ndk-r10e-linux-x86_64.zip"
   source_dir="${source_dir:-${archive_root}/sources/harman/invoke-kernel/Invoke-kernel}"
   ndk_dir="${ndk_dir:-${archive_root}/toolchains/android-ndk-r10e/extracted/android-ndk-r10e/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64}"
-  build_dir="${build_dir:-${archive_root}/build/invoke-kernel-gcc49-${profile}-build}"
+  build_dir="${build_dir:-${archive_root}/build/invoke-kernel-gcc49-${image_suffix}-build}"
   partial_output="${output_dir}.partial"
 
   [[ -n "${output_dir}" ]] || err "--output-dir is required"
@@ -238,6 +270,33 @@ main() {
   [[ ! -e "${partial_output}" ]] ||
     err "stale partial output exists: ${partial_output}"
 
+  if ((mtd_cleanup_fix == 1)); then
+    source_dir="$(realpath "${source_dir}")"
+    source_work_dir="$(realpath -m "${source_work_dir}")"
+    build_dir="$(realpath -m "${build_dir}")"
+    output_dir="$(realpath -m "${output_dir}")"
+    partial_output="${output_dir}.partial"
+    local destination other
+    for destination in "${source_work_dir}" "${build_dir}" \
+      "${output_dir}" "${partial_output}"; do
+      [[ ! -e "${destination}" && ! -L "${destination}" ]] ||
+        err "fixed variant requires fresh paths: ${destination}"
+      for other in "${source_dir}" "${source_work_dir}" "${build_dir}" \
+        "${output_dir}" "${partial_output}"; do
+        if [[ "${destination}" == "${other}/"* ||
+              "${other}" == "${destination}/"* ]]; then
+          err "fixed variant paths must not overlap: ${destination}, ${other}"
+        fi
+      done
+    done
+    [[ "${source_work_dir}" != "${build_dir}" &&
+       "${source_work_dir}" != "${output_dir}" &&
+       "${source_work_dir}" != "${partial_output}" &&
+       "${build_dir}" != "${output_dir}" &&
+       "${build_dir}" != "${partial_output}" ]] ||
+      err "fixed variant source, build, and output paths must be distinct"
+  fi
+
   for command_name in \
     cut find lzop make mkimage patch realpath sha256sum sort xargs; do
     require_command "${command_name}"
@@ -253,6 +312,11 @@ main() {
   export KBUILD_BUILD_USER="reinvoke"
   export KBUILD_BUILD_HOST="reinvoke"
   export SOURCE_DATE_EPOCH=0
+  if ((mtd_cleanup_fix == 1)); then
+    # Distinguish the fixed kernel in /proc/version without changing module ABI.
+    export KBUILD_BUILD_VERSION="${MTD_CLEANUP_BUILD_VERSION}"
+    require_command strings
+  fi
 
   printf "%s  %s\n" "${SOURCE_ARCHIVE_SHA256}" "${source_archive}" |
     sha256sum --check --status ||
@@ -277,6 +341,17 @@ main() {
   verify_host_tool "${HOSTCC1_SHA256}" "$(gcc -print-prog-name=cc1)" "HOSTCC cc1"
   verify_host_tool "${HOST_AS_SHA256}" "$(command -v as)" "host assembler"
   verify_host_tool "${HOST_LD_SHA256}" "$(command -v ld)" "host linker"
+
+  if ((mtd_cleanup_fix == 1)); then
+    mtd_cleanup_patch="${repo_root}/patches/invoke-kernel/0005-fix-mtdblock-removal-lifetime.patch"
+    printf "%s  %s\n" "${MTD_CLEANUP_PATCH_SHA256}" "${mtd_cleanup_patch}" |
+      sha256sum --check --status ||
+      err "MTD cleanup patch checksum mismatch"
+    mkdir -p "$(dirname "${source_work_dir}")"
+    mkdir "${source_work_dir}"
+    cp -a "${source_dir}/." "${source_work_dir}/"
+    source_dir="${source_work_dir}"
+  fi
 
   spi_patch="${repo_root}/patches/invoke-kernel/0002-bound-spi-gpio-ready-wait.patch"
   spi_source="${source_dir}/drivers/spi/spi-dw.c"
@@ -353,6 +428,21 @@ main() {
   [[ "${actual_source_manifest}" == "${SOURCE_TREE_MANIFEST_SHA256}" ]] ||
     err "kernel source-tree manifest mismatch"
 
+  if ((mtd_cleanup_fix == 1)); then
+    mtd_cleanup_source="${source_dir}/drivers/mtd/mtdblock_ro.c"
+    printf "%s  %s\n" "${MTD_CLEANUP_SOURCE_SHA256}" "${mtd_cleanup_source}" |
+      sha256sum --check --status ||
+      err "MTD cleanup source checksum mismatch"
+    patch --batch --forward --fuzz=0 --directory="${source_dir}" --strip=1 \
+      < "${mtd_cleanup_patch}"
+    printf "%s  %s\n" "${MTD_CLEANUP_PATCHED_SOURCE_SHA256}" "${mtd_cleanup_source}" |
+      sha256sum --check --status ||
+      err "failed to apply the MTD cleanup fix"
+    actual_source_manifest="$(tree_manifest_sha256 "${source_dir}")"
+    [[ "${actual_source_manifest}" == "${MTD_CLEANUP_TREE_MANIFEST_SHA256}" ]] ||
+      err "MTD cleanup source-tree manifest mismatch"
+  fi
+
   actual_dtb_sha256="$(sha256sum "${dtb_path}" | cut -d " " -f 1)"
   [[ "${actual_dtb_sha256}" == "${dtb_sha256}" ]] ||
     err "device-tree checksum mismatch"
@@ -361,6 +451,8 @@ main() {
   # clean one. A stale shared build directory once yielded 150275c6... where a
   # clean tree reproduced the gated d29a0075..., so always start from scratch.
   if [[ -e "${build_dir}" ]]; then
+    ((mtd_cleanup_fix == 0)) ||
+      err "fixed variant refuses to clean an existing build directory: ${build_dir}"
     printf "Removing existing kernel build directory: %s\n" "${build_dir}"
     rm -rf -- "${build_dir}"
   fi
@@ -543,11 +635,38 @@ main() {
     wc -l)"
   lzop_version="$(lzop --version | sed -n '1p')"
   mkimage_version="$(mkimage -V)"
+  if ((mtd_cleanup_fix == 1)); then
+    install -m 0644 "${build_dir}/include/generated/compile.h" \
+      "${partial_output}/kernel-compile.h"
+    kernel_uts_version="$(sed -n 's/^#define UTS_VERSION "\(.*\)"$/\1/p' \
+      "${partial_output}/kernel-compile.h")"
+    [[ "${kernel_uts_version}" == "#${MTD_CLEANUP_BUILD_VERSION} "* ]] ||
+      err "compiled kernel is missing the MTD cleanup build identifier"
+    kernel_proc_version="$(strings "${build_dir}/vmlinux" |
+      grep -F "Linux version ${kernel_release} (")"
+    [[ "${kernel_proc_version}" == *" ${kernel_uts_version}" ]] ||
+      err "compiled kernel banner does not match UTS_VERSION"
+  fi
   {
     printf "purpose=native RAM kernel profile %s\n" "${profile}"
     printf "source_archive_sha256=%s\n" "${SOURCE_ARCHIVE_SHA256}"
     printf "source_tree_manifest_sha256=%s\n" \
-      "${SOURCE_TREE_MANIFEST_SHA256}"
+      "${actual_source_manifest}"
+    if ((mtd_cleanup_fix == 1)); then
+      printf "variant=mtd-cleanup\n"
+      printf "source_directory=%s\n" "${source_dir}"
+      printf "kbuild_build_version=%s\n" "${MTD_CLEANUP_BUILD_VERSION}"
+      printf "kernel_uts_version=%s\n" "${kernel_uts_version}"
+      printf "expected_proc_version=%s\n" "${kernel_proc_version}"
+      printf "baseline_source_tree_manifest_sha256=%s\n" "${SOURCE_TREE_MANIFEST_SHA256}"
+      printf "mtd_cleanup_patch_sha256=%s\n" "${MTD_CLEANUP_PATCH_SHA256}"
+      printf "mtd_cleanup_source_sha256=%s\n" "${MTD_CLEANUP_SOURCE_SHA256}"
+      printf "mtd_cleanup_patched_source_sha256=%s\n" "${MTD_CLEANUP_PATCHED_SOURCE_SHA256}"
+      printf "kernel_image_sha256=%s\n" \
+        "$(sha256sum "${partial_output}/81_IMAGE.reinvoke-${image_suffix}" | cut -d ' ' -f 1)"
+      printf "kernel_image_size=%s\n" \
+        "$(wc -c < "${partial_output}/81_IMAGE.reinvoke-${image_suffix}")"
+    fi
     printf "ndk_archive_sha256=%s\n" "${NDK_ARCHIVE_SHA256}"
     printf "device_tree_sha256=%s\n" "${actual_dtb_sha256}"
     printf "kernel_release=%s\n" "${kernel_release}"
