@@ -1,268 +1,169 @@
 ---
 title: reInvoke control tools
-description: Host-side diagnostics, donor decoders, and reference adapters for the reInvoke control plane
-ms.date: 2026-09-05
+description: WAMP diagnostics, offline DSP decoding and gated Bluetooth helper builds
+ms.date: 2026-09-12
 ms.topic: how-to
 ---
 
-`wamp-call.mjs` is a dependency-free MsgPack WAMP rawsocket client. It speaks
-directly to Bonefish and does not require Harman's test client, Python, or an
-external JavaScript package.
+Host diagnostics and contract references live here; the target runs static
+ARM MCU/DSP services, not Node.js. Commands use the repository root.
+Builds require retained donor inputs, toolchains, sysroot and D-Bus archives,
+not supplied by a public clone. Use fresh private outputs.
 
-These are host-side diagnostics and contract references. The accepted target
-runs static ARM `reinvoke-mcu-interface` and `reinvoke-dsp-interface` services;
-it does not run Node.js. See the
-[current product and architecture contract](../../docs/current-product-contract.md).
+## Query and monitor WAMP
 
-Candidate 02 demonstrated local-network MCU/DSP WAMP control and passed the
-bounded eight-group RawSocket check. A separate external check also verified
-WebSocket WAMP on 9998 with `wamp.2.msgpack`, MCU/volume reads, and
-unknown-procedure rejection; `wamp-call.mjs` remains a RawSocket client.
-These checks did not demonstrate a native shell or heartbeat delivery.
-See the [native evidence summary](../../docs/native-nand-platform.md#current-result).
-WAMP is unauthenticated, not an administration shell;
-live calls and state changes still need a separately approved device scope.
-Keep peers, network addresses, and captured configuration private.
+`wamp-call.mjs` is a dependency-free MessagePack RawSocket client:
 
-`wamp-fixed-service.mjs` registers one procedure and returns a fixed JSON
-response. Use it for narrow RAM-only compatibility contracts instead of
-starting a broad donor supervisor:
+```bash
+node tools/control/wamp-call.mjs com.harman.vui.getmcustatus \
+  --host 192.0.2.10 --port 9999
+node tools/control/wamp-monitor.mjs --host 192.0.2.10 --port 9999 --duration 60
+```
+
+| Call option     | Default               |
+| --------------- | --------------------- |
+| `--host HOST`   | `127.0.0.1`           |
+| `--port PORT`   | `19999`               |
+| `--realm REALM` | `default`             |
+| `--args JSON`   | Positional array `[]` |
+| `--kwargs JSON` | Keyword object `{}`   |
+| `--timeout MS`  | `8000`                |
+| `--help`        | Usage                 |
+
+Host port 19999 is a forwarding convention. For an already available RAM
+target, `adb -s "$REINVOKE_ADB_SERIAL" forward tcp:19999 tcp:9999` establishes
+it. Native RawSocket uses 9999 directly. The client does not implement
+WebSocket, even though candidate 02 independently passed a `wamp.2.msgpack`
+handshake on 9998. No native USB/ADB or shell is implied.
+
+The monitor sends only HELLO/SUBSCRIBE, defaults to six MCU topics and emits
+JSON Lines. It opens no hardware or upgrade path; subscription confirmations
+are not physical events. See [MCU contracts](../../docs/emulation/mcu-boundary.md).
+
+> [!WARNING]
+> WAMP is unauthenticated; restrict it to trusted peers. Setters change device
+> state. USB ADB is a root diagnostic channel in the reviewed RAM workflow.
+
+## Host reference services
+
+Run these only on an isolated router: registrations conflict with target
+services. The fixed service returns one configured response; the speaker
+reference exposes the recovered audio/source subset:
 
 ```bash
 node tools/control/wamp-fixed-service.mjs com.example.identity \
   --kwargs '{"product":"Invoke"}'
+node tools/control/speaker-control-service.mjs --music-volume 20 --bluetooth-active
 ```
 
-`speaker-control-state.mjs` is the side-effect-free state core used to design
-the owned Bluetooth speaker bridge. `speaker-control-service.mjs` exposes that core
-as one dependency-free MsgPack WAMP service, replacing the relevant
-`music-source-manager` and `audio-ui` registrations without starting either
-donor binary:
+`speaker-control-state.mjs` is the side-effect-free core.
+`speaker-control-backend.mjs` adds an injectable BlueALSA 4 CLI adapter with
+explicit PCM path, source/transport observers, stereo volume/mute and polling.
+It never guesses a live object path. The
+[speaker boundary](../../docs/emulation/owned-speaker-control.md) distinguishes
+this reference from the MCU-owned target bridge.
+
+## Offline DSP decoding
 
 ```bash
-node tools/control/speaker-control-service.mjs \
-  --music-volume 20 \
-  --bluetooth-active
+node tools/control/dsp-frame-decode.mjs --log "<services.log>"
 ```
 
-The service is independently runnable and testable.
-`speaker-control-backend.mjs` adds an injectable BlueALSA 4 CLI adapter for an
-explicit PCM path, stereo volume and mute, BlueZ source and transport
-observations, polling, and event projection. The target mapping remains
-explicit so the service never guesses a live object path. Run the state,
-backend, and WAMP protocol tests with:
+Other modes are `--readmsg <bytes>` for donor id/payload tuples,
+`--device <bytes>` for full device wire frames,
+`--command <procedure> [arguments]` for encoding without transmission, and
+`--list` for vocabulary. None opens a device. The
+[SPI comparator](../emulation/spi-capture-label.mjs) reuses the decoder for
+byte-exact capture/image comparison. Frame details and side effects are in the
+[DSP reference](../../docs/emulation/dsp-boundary.md).
 
-```bash
-node --test \
-  tools/control/speaker-control-state.test.mjs \
-  tools/control/speaker-control-backend.test.mjs \
-  tools/control/speaker-control-service.test.mjs
-```
+## Build Bluetooth helpers
 
-The historical WAMP inventory, host reference, and current static target are
-documented in
-[Owned Bluetooth speaker control boundary](../../docs/emulation/owned-speaker-control.md).
-
-`wamp-monitor.mjs` is passive MCU instrumentation. It sends only WAMP
-`HELLO` and `SUBSCRIBE` messages, never `CALL` or `PUBLISH`, and defaults to
-the known MCU liveness, status, upgrade-result, key, and rotary-input topics:
-
-```bash
-node tools/control/wamp-monitor.mjs --duration 60
-```
-
-Use it through the ADB-forwarded port below. Subscribing changes only volatile
-router session state; it does not open I2C, GPIO, `/dev/mem`, MTD, or the MCU
-upgrade procedures.
-
-`dsp-frame-decode.mjs` is an offline decoder for the donor `dsp-client` SPI
-frame format. It opens no device node and sends nothing; its `--command` mode
-prints the bytes a procedure would put on the wire without emitting them.
-Decode a captured service log, or one frame, or a command encoding:
-
-```bash
-node tools/control/dsp-frame-decode.mjs --log services.log
-node tools/control/dsp-frame-decode.mjs --readmsg 0x00 0x01 0x04
-node tools/control/dsp-frame-decode.mjs --device 00 01 00 01 06 04 00 00
-node tools/control/dsp-frame-decode.mjs --command com.harman.dsp.volumeSet 30
-node tools/control/dsp-frame-decode.mjs --list
-```
-
-`--readmsg` takes the tuple `dsp-client` prints, which is the header id
-followed by the payload. `--device` takes the raw wire frame, which carries
-the same five-byte header as the host direction. Decoding the donor's existing
-log is fully passive instrumentation of the live DSP link. The donor registered
-eight procedures, of which only `com.harman.dsp.getVer` is side-effect free.
-The current DSP service registers seven: `com.harman.dsp.micMute` moved to the
-MCU privacy controller, and raw DSP microphone control is available only through
-the root-only mode-`0600` Unix socket. In both designs,
-`com.harman.stateChanged` is a subscribed topic rather than a registration.
-Run the decoder tests with:
-
-```bash
-node --test tools/control/dsp-frame-decode.test.mjs
-```
-
-The frame format, GPIO handshake, reset path, and replacement contract are
-documented in [DSP boundary](../../docs/emulation/dsp-boundary.md).
-`tools/emulation/spi-capture-label.mjs` reuses this module to label byte-exact
-`SPI_IOC_MESSAGE` captures and diff them against `dsp-img.ldr`.
-
-`a2dp-data-probe.c` is a read-only diagnostic client for Bluedroid's abstract
-`.a2dp_data` socket. Its optional `--start` mode performs the standard
-`CHECK_READY` and `START` control handshake before reading. Build it for the
-Invoke without linking an unreviewed binary:
-
-```bash
-arm-linux-gnueabihf-gcc -static -O2 -Wall -Wextra -Werror \
-  tools/control/a2dp-data-probe.c \
-  -o "${REINVOKE_ARCHIVE}/build/tools/a2dp-data-probe-armhf"
-```
-
-The controlled iPhone and Ubuntu tests connected successfully but received zero
-decoded bytes. `CHECK_READY` returned failure acknowledgement `1`; this is an
-evidence probe, not a working media bridge.
-
-`hci-init.c` and `bluez-pairing-agent.c` are the owned control components for
-the RAM-only BlueZ replacement. No prebuilt copy is committed. Build them as
-static ARM binaries from retained, gated inputs:
+The HCI initializer, pairing agent and media-control helper are static ARM
+binaries. Build from pinned inputs:
 
 ```bash
 tools/control/build-hci-init.sh \
-  --bluez-archive path/to/bluez-5.55.tar.xz \
-  --sysroot path/to/armhf-sysroot \
-  --output path/to/hci-init
-
+  --bluez-archive "<source-dir>/bluez-5.55.tar.xz" \
+  --sysroot "<armhf-sysroot>" --output "<artifact-dir>/hci-init"
 tools/control/build-bluez-pairing-agent.sh \
-  --dbus-source path/to/dbus-1.12.20 \
-  --sysroot path/to/armhf-sysroot \
-  --output path/to/bluez-pairing-agent
-```
-
-The pairing agent limits BlueZ authorization to one supplied peer address and
-the A2DP/AVRCP UUID set. `SIGUSR2` toggles/cancels the bounded pairing window;
-`SIGUSR1` always reopens it. It tracks that peer's `Device1.Connected` property
-and atomically publishes `pairing`, `connected`, or `off` to the optional fourth
-argument, which defaults to `/run/reinvoke/bluetooth-state`. The HCI initializer
-resets the controller and removes volatile keys before a clean reconstruction.
-`--unpair ADDRESS` also performs the advertised standalone MGMT unpair without
-requiring `--reset`; a live test removed one retained RAM-only bond and reported
-`deleted_keys=1`.
-
-The pairing-agent digest gated by `build-native-runtime.sh` is
-`0e2e17763fb9f9212aee30226d2399f2ca7a4a93f7fb275c0fd6e7af6fe54a57`.
-Two consecutive builds produced byte-identical static ARM binaries. The builder
-pins the compiler driver, cc1, collect2, assembler, linker, and strip tool. It
-also gates the D-Bus static archive, D-Bus header manifest, and full resolved
-ARM sysroot manifest. A deliberately altered sysroot is rejected before
-compilation. The resolved sysroot is retained twice under
-`toolchains/armhf-sysroot-gcc11/`; both normalized archives have SHA-256
-`f1f13d539bc70049d77dbf6583ca0819bb90d5f0800c0397ae9145bea3b7e2c1`, and
-extract to the gated manifest
-`bd39640b96ef4adc6ef4bff1870a5bef2ddacb63b06f6f623816136565124012`.
-The exact GCC, binutils, C-library-development, and Linux-header Debian packages
-are retained with `SHA256SUMS` under `toolchains/armhf-gcc11-debs/`.
-
-The built D-Bus input is likewise retained twice under
-`toolchains/dbus-1.12.20-armhf-static/`. Both normalized archives have SHA-256
-`658cdbcfae37f6aad12067c88b7aca78183cfdc31fce57a3e8d8ebff09f75a00` and
-extract to the gated static-library and header manifests. The pairing-agent
-binary can therefore be reconstructed from retained, content-gated inputs on a
-compatible Ubuntu 22.04 host. Rebuilding the D-Bus static archive itself from
-source is a separate provenance layer.
-
-The signal/state precedence seam has a host-only test:
-
-```bash
-cc -std=c11 -O2 -Wall -Wextra -Werror \
-  tools/control/bluez-pairing-policy_test.c \
-  -o "${REINVOKE_ARCHIVE}/build/tools/bluez-pairing-policy-test"
-"${REINVOKE_ARCHIVE}/build/tools/bluez-pairing-policy-test"
-```
-
-`bluez-media-control.c` is the owned Bluetooth transport helper. The MCU service
-runs it to send `Play` or `Pause` on the connected peer's BlueZ `MediaControl1`
-interface when the top Action key is tapped. Build it with
-`build-bluez-media-control.sh`, which checksum-gates the compiler, the strip
-tool, and the resulting static ARM binary:
-
-```bash
+  --dbus-source "<built-dbus-1.12.20>" \
+  --sysroot "<armhf-sysroot>" --output "<artifact-dir>/bluez-pairing-agent"
 tools/control/build-bluez-media-control.sh \
-  --dbus-source path/to/dbus-1.12.20 \
-  --sysroot path/to/armhf-sysroot \
-  --output "${REINVOKE_ARCHIVE}/build/artifacts/bluez-media-control"
+  --dbus-source "<built-dbus-1.12.20>" \
+  --sysroot "<armhf-sysroot>" --output "<artifact-dir>/bluez-media-control"
 ```
 
-Both this helper and the pairing agent need a static `libdbus-1.a` built for the
-target. Reproduce that tree from the pinned source under `sources/upstream/`:
+The HCI helper resets the controller and removes volatile keys.
+`--unpair ADDRESS` performs standalone MGMT unpair without `--reset`.
+The pairing agent accepts only one configured peer and A2DP/AVRCP UUIDs.
+`SIGUSR2` toggles/cancels its window; `SIGUSR1` reopens it.
+Its optional fourth positional argument is the state path, default
+`/run/reinvoke/bluetooth-state`; it atomically publishes `pairing`, `connected`
+or `off`. The MCU maps that to the rear indicator.
+The media helper sends Play/Pause on the connected peer's BlueZ
+`MediaControl1` for the physical Action key.
 
-```bash
-tar -xzf path/to/dbus-1.12.20.tar.gz -C path/to/build-dir
-cd path/to/build-dir/dbus-1.12.20
-./configure --host=arm-linux-gnueabihf --enable-static --disable-shared \
-  --disable-selinux --disable-apparmor --disable-systemd --disable-tests \
-  --disable-doxygen-docs --disable-xml-docs --without-x \
-  --disable-launchd --disable-libaudit \
-  ac_cv_have_abstract_sockets=yes
-make -C dbus libdbus-1.la
-```
+Both D-Bus helpers require target static `libdbus-1.a` and generated headers,
+not just a source archive. The pairing builder gates compiler internals,
+assembler/linker/strip, D-Bus archive/header manifest and the entire resolved
+ARM sysroot. An arbitrary distro sysroot is not interchangeable.
+Retained inputs are catalogued under private
+`toolchains/armhf-sysroot-gcc11/`, `toolchains/armhf-gcc11-debs/` and
+`toolchains/dbus-1.12.20-armhf-static/`.
 
-The sysroot only needs `usr/include` and `usr/lib` pointing at the distribution
-`arm-linux-gnueabihf` cross headers and libraries. The static link warns about
-`getpwuid_r` and `getaddrinfo`; neither path is reached, because the helper
-speaks D-Bus over the private Unix socket and never resolves users or hostnames.
+The retained D-Bus build used `--host=arm-linux-gnueabihf --enable-static
+--disable-shared --disable-selinux --disable-apparmor --disable-systemd
+--disable-tests --disable-doxygen-docs --disable-xml-docs --without-x
+--disable-launchd --disable-libaudit ac_cv_have_abstract_sockets=yes`, then
+`make -C dbus libdbus-1.la`. Those flags are provenance, not a guarantee of
+reproducing the gated archive on another host. The static link warns about
+`getpwuid_r`/`getaddrinfo`; the tested helper path uses a private Unix socket
+without user/hostname resolution.
 
-Recording the configure flags matters. The media-control digest gated by
-`build-native-runtime.sh` was resubstituted once, because its first pin came
-from a D-Bus tree that was not preserved and therefore could not be rebuilt.
-Pin a digest only after two consecutive builds agree byte for byte.
-
-`build-bluealsa-aplay.sh` applies six reviewed patches to pinned BlueALSA 4.0.0:
-active-PCM lease, Invoke ALSA behavior and recovery, decoded PCM jitter
-buffering, SBC RTP-gap concealment, short-clip draining, and closed-FIFO
-draining. It checksum-gates the source, every patch, the compiler, the strip
-tool, and both static ARM binaries:
+## Build patched BlueALSA
 
 ```bash
 tools/control/build-bluealsa-aplay.sh \
-  --source-archive path/to/bluez-alsa-4.0.0.tar.gz \
-  --sysroot path/to/armhf-sysroot \
-  --output "${REINVOKE_ARCHIVE}/build/artifacts/bluealsa-aplay" \
-  --daemon-output "${REINVOKE_ARCHIVE}/build/artifacts/bluealsa"
+  --source-archive "<source-dir>/bluez-alsa-4.0.0.tar.gz" \
+  --sysroot "<armhf-sysroot>" \
+  --output "<artifact-dir>/bluealsa-aplay" \
+  --daemon-output "<artifact-dir>/bluealsa"
 ```
 
-The patched player writes its worker thread ID to the configured RAM lease only
-after receiving positive PCM data. It buffers two seconds of decoded PCM,
-drains complete ALSA periods, recovers partial writes and underruns in place,
-and removes the lease after 100 ms of inactivity once the buffer drains. The
-patched SBC decoder inserts bounded silence for timestamp-confirmed missing PCM
-frames so transport gaps do not starve the hardware ring.
+The builder gates source, all six patches, compiler, strip tool and both
+binaries. Patches cover active-PCM lease, Invoke ALSA recovery, decoded jitter
+buffer, SBC RTP-gap concealment, short-clip drain and closed-FIFO drain.
+The player buffers two seconds of decoded PCM, drains complete ALSA periods,
+recovers partial writes/underruns, and emits the worker-thread lease after
+positive PCM. It removes the lease after 100 ms inactivity once buffered data
+drains. Timestamp-confirmed RTP gaps receive bounded silence.
 
-Forward the RAM-native device's private WAMP port over USB:
+## Historical Bluedroid probe
+
+`a2dp-data-probe.c` reads abstract socket `.a2dp_data`. Optional `--start`
+performs CHECK_READY/START and is not read-only:
 
 ```bash
-adb -s "$REINVOKE_ADB_SERIAL" forward tcp:19999 tcp:9999
+arm-linux-gnueabihf-gcc -static -O2 -Wall -Wextra -Werror \
+  tools/control/a2dp-data-probe.c -o "<artifact-dir>/a2dp-data-probe-armhf"
 ```
 
-Call a procedure:
+Historical phone/Linux trials connected but received zero decoded bytes;
+CHECK_READY returned failure `1`. This is not a working media bridge.
+
+## Offline tests
 
 ```bash
-node tools/control/wamp-call.mjs com.harman.vui.getmcustatus
+node --test tools/control/speaker-control-state.test.mjs \
+  tools/control/speaker-control-backend.test.mjs \
+  tools/control/speaker-control-service.test.mjs \
+  tools/control/dsp-frame-decode.test.mjs
+cc -std=c11 -O2 -Wall -Wextra -Werror \
+  tools/control/bluez-pairing-policy_test.c -o "<artifact-dir>/pairing-policy-test"
+"<artifact-dir>/pairing-policy-test"
 ```
 
-When Wi-Fi is configured, pass the device address and native port instead:
-
-```bash
-node tools/control/wamp-call.mjs \
-  com.harman.vui.getmcustatus \
-  --host 192.0.2.10 \
-  --port 9999
-```
-
-Do not expose the unauthenticated legacy WAMP listener to an untrusted network.
-Prefer a replacement authenticated API for the persistent platform.
-
-SSH is optional. This client can use an ADB-forwarded USB connection during
-development and a direct Wi-Fi connection during normal operation. A future
-provisioning service can expose a temporary access point without making a shell
-part of the product interface.
+Build/offline results do not establish native functionality. Candidate-specific
+WAMP, Bluetooth and authentication results are in the
+[native guide](../../docs/native-nand-platform.md).

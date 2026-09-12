@@ -1,222 +1,132 @@
 ---
 title: reInvoke
-description: Native replacement platform for the Harman Kardon Invoke
+description: An open Linux runtime and local-assistant endpoint project for the Harman Kardon Invoke
 ms.date: 2026-09-12
 ---
 
-Preservation, hardware-research, and owned-runtime project for the **Harman
-Kardon Invoke** (`HKINVOKE`, FCC ID `APIHKINVOKE`) and its Marvell 88DE3006
-(BG2CDP) "Berlin" platform.
+reInvoke is building a local assistant endpoint on the Harman Kardon Invoke
+(`HKINVOKE`, FCC ID `APIHKINVOKE`). Owned Linux services replace the vendor
+application stack while reusing the existing compute, audio and controls.
+Native startup and Bluetooth playback are demonstrated milestones, not a
+complete assistant. Images remain experimental, unit-specific builds.
 
-## What this repository is
+## Current status
 
-This repository holds the **small, durable, high-value layer**: the current
-reInvoke implementation and contract, research documents, evidence ledgers,
-acquisition manifests, provenance metadata with cryptographic hashes, and the
-extracted configuration/script layer of the firmware bundles.
+Results from one closed Invoke, as of 2026-09-12:
 
-It deliberately does **not** contain the multi-gigabyte binary payloads. Those are
-preserved outside Git. See [Storage policy](docs/acquisition/storage-policy.md).
+| Scope                         | Result                                                                                             |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| Installed native candidate 03 | Wall-power startup as `reInvoke-NAND`; reported physical pairing and observed host A2DP connection |
+| Candidate 03 networking       | Attended Wi-Fi provisioning and ping; pinned Dropbear negotiation, then disconnect before login    |
+| Candidate 02 native baseline  | Audible playback, rotary volume, indicators, provisioning and MCU/DSP/WAMP checks                  |
+| RAM platform                  | Detailed microphone capture/privacy, speaker safety, firewall and restart measurements             |
+| Remaining product work        | Native administration and acceptance, persistent settings and assistant integration                |
 
-The governing rule, inherited from the corpus methodology:
+Candidate 03 has no native shell or USB enumeration; its SSH failure cause is
+unknown. Earlier audio/control and RAM results do not establish acceptance of
+the installed image. Wi-Fi credentials, Bluetooth bonds and preferences are
+volatile after power loss.
 
-> A claim must be traceable to evidence, or it remains explicitly unknown or hypothetical.
+The [native guide](docs/native-nand-platform.md#current-result) owns the result
+ledger and artifact pins. See the [product contract](docs/current-product-contract.md),
+[remaining work](docs/revival-roadmap.md#remaining-work) and
+[documentation index](docs/README.md).
 
-## Product generations
+## System overview
 
-Three systems appear in this repository and must not be conflated:
+The packaged runtime separates media, hardware control, capture and network
+ownership. This is software composition, not a board schematic or a native
+process dump.
 
-1. the **2017 retail Invoke**, preserved as Cortana-era historical evidence;
-2. Harman's **2021 final Bluetooth firmware**, version `12.2134.0`, used as a
-   vendor comparison and donor source; and
-3. the **reInvoke target**, an owned Linux runtime that now starts from NAND,
-   with RAM recovery retained for development and repair.
-
-Read the
-**[current product and architecture contract](docs/current-product-contract.md)**
-before treating older research notes as current behavior. See
-**[PLAN.md](PLAN.md)** for completion status and remaining acceptance gates.
-
-## Current reInvoke architecture
-
-The current native runtime uses:
-
-* a read-only NAND bootstrap and paired BSL launcher that enter the owned
-  runtime without requiring USB diagnostics;
-* `reinvoke-mcu-interface` for MCU input, LEDs, speaker mute/power safety, rotary
-  volume, and the public compatibility Mic-Mute API;
-* `reinvoke-dsp-interface` for DSP loading, SPI/GPIO/reset, seven public DSP
-  WAMP procedures, and a root-only mode-`0600` microphone-control socket;
-* the RAM-validated microphone privacy design with restart reconciliation,
-  fail-safe remute, and a protected red indication; native data-path acceptance
-  is still open;
-* BlueZ 5.55 and patched BlueALSA 4.0.0 for local A2DP Sink playback; and
-* supervised network and authenticated provisioning daemons.
-
-Candidate 02 has started from NAND after a wall-power cycle and demonstrated
-Bluetooth pairing, audible playback, rotary volume, physical provisioning, and
-local-network MCU/DSP control without host-supplied firmware. Candidate 03 is
-now installed and has returned its changed `reInvoke-NAND` Bluetooth name
-after an owner-controlled power-only boot. That is a native startup indicator,
-not a repeat of all candidate 02 acceptance. Native USB still does not enumerate;
-03's key-authenticated SSH fallback awaits network provisioning and a native
-login. Persistent settings and native microphone data-path acceptance remain open.
-Start with the [native NAND platform](docs/native-nand-platform.md).
-The [documentation index](docs/README.md) separates current guides from dated
-experiments, vendor evidence, and private operator tooling.
-
-## Layout
-
-```text
-reInvoke/
-├── docs/
-│   ├── corpus/            Hardware baseline, claim/evidence ledger, FCC inventory, cross-index
-│   ├── acquisition/       Artifact manifest, retention ranking, storage policy
-│   ├── bundle-contents/   Extracted text layer + full listings of firmware bundles
-│   ├── emulation/         Donor evidence and current hardware-service boundaries
-│   └── journal.md         Dated record of work, findings, and corrections
-├── metadata/              Provenance sidecars: source URL, UTC time, SHA-256, size
-└── tools/                 Acquisition, offline analysis, runtime builders, and recovery tooling
+```mermaid
+flowchart LR
+    NAND["Vendor boot payloads<br/>and owned bootstrap"] --> Init["Owned init<br/>and supervision"]
+    Init --> Media["BlueZ and BlueALSA<br/>Bluetooth to ALSA playback"]
+    Init --> Control["MCU: I2C controls<br/>DSP: SPI/GPIO control"]
+    Init --> Capture["ALSA capture<br/>Privacy gate and local socket"]
+    Init --> Network["Wi-Fi and provisioning"]
+    Control -. "Privacy state" .-> Capture
+    WAMP["Bonefish<br/>compatibility bus"] <--> Control
 ```
 
-## Notable results
+PCM uses ALSA. MCU I2C and DSP SPI/GPIO carry hardware control, not that audio
+stream. Bonefish supplies compatibility calls, not authentication or a shell.
 
-The device's control plane is a WAMP message bus routed by `bonefish`, an
-open-source router that ships in the firmware. Because the router and every
-service are ordinary ARM executables, the whole control plane runs on a
-workstation under emulation, and a third-party client can call its procedures
-and change state. See [control-plane emulation](docs/emulation/control-plane-emulation.md).
+## Hardware and firmware
 
-Harman's final firmware, `Barracuda_libre-12.2134.0`, removes Cortana and
-Spotify and adds a Wi-Fi blocker, converting the vendor product into a local
-Bluetooth speaker. That 2021 donor firmware is not reInvoke. See
-[OTA2 analysis](docs/bundle-contents/invoke-ota2/ota2-analysis.md) for the
-historical evidence and the
-[current contract](docs/current-product-contract.md) for the owned target.
+| Fact                                                           | Evidence                                      |
+| -------------------------------------------------------------- | --------------------------------------------- |
+| Marvell 88DE3006 / BG2CDP Berlin                               | Firmware and hardware corpus                  |
+| 512 MiB DRAM                                                   | U-Boot observation                            |
+| 256 MiB NAND; 2 KiB pages; 128 KiB erase blocks                | U-Boot, RAM Linux and logical main-data reads |
+| Seven microphones, volume ring, touch panel, service Micro-USB | Manufacturer documentation                    |
+| SD8887 firmware/calibration                                    | Donor assets and RAM driver bring-up          |
 
-## Three-tier storage model
+Seven physical microphones do not imply seven raw ALSA channels or verified
+beamforming/AEC. The [hardware baseline](docs/corpus/01_CANONICAL_HARDWARE_BASELINE.md)
+records unresolved component and signal-path identities.
 
-| Tier | Contents | Location |
-|---|---|---|
-| 1 | Authored source, docs, acquisition metadata, extracted text layer | This repository |
-| 2 | Original firmware inputs and retained upstream sources | Private operator-managed archive; original public firmware source is [coggy9/HKHacking releases](https://github.com/coggy9/HKHacking/releases) |
-| 3 | Working trees, captures, build products, and deployment manifests | Private operator-managed archive and cold storage |
+The original Cortana product, final Bluetooth-oriented `12.2134.0` donor and
+reInvoke are distinct systems. The pre-trial unit contained `12.2050.3`.
+See the [firmware reference](docs/firmware-reference.md).
 
-This repository has **no GitHub releases**, verified through the release list
-and API on 2026-09-12 UTC. The custom reInvoke image is not published.
-[`metadata/`](metadata) indexes acquired evidence; it is not a complete index
-of later private builds and captures. Those use their own private manifests
-and evidence summaries.
+## Repository and build boundary
 
-## Why the split
+| Path                    | Contents                                                    |
+| ----------------------- | ----------------------------------------------------------- |
+| [docs/](docs/README.md) | Contracts, operating guides, journal and reference evidence |
+| [metadata/](metadata/)  | Public acquisition provenance, sizes and hashes             |
+| [tools/](tools/)        | Services, builders, analysis and recovery tools             |
+| [patches/](patches/)    | Kernel and BlueALSA patches                                 |
 
-The bulk payloads are already-compressed firmware images and are effectively
-incompressible: recompressing them yields ~0%, and Git packing barely helps while
-making the bytes permanent in history. Meanwhile the *engineering meaning*
-concentrates in a tiny fraction of the bytes.
+Public Git holds authored material and sanitized metadata; acquired originals
+and generated images/captures remain in separate private storage. Acquisition
+hashes identify originals, while build manifests identify generated artifacts.
+See [storage policy](docs/acquisition/storage-policy.md).
 
-A worked example,
-`docs/bundle-contents/invoke-flashing/marvell_flash_tool/gen-cmd.sh`, is
-596 bytes and yields a generic 512 MiB vendor partition map, serial-console
-parameters (`ttyS0,115200`), and a recovery boot path. Live identification and
-full logical reads establish that this unit instead has **256 MiB NAND**. The
-generic 512 MiB map does not apply to it.
+Builders compose pinned donor and RC12 artifacts. A clean public clone lacks
+some inputs, sysroots and libraries; deterministic composition is not a complete
+reproducible build. See the [build boundary](docs/native-nand-platform.md#build-and-reproducibility-boundary).
 
-That single file is worth more to reverse engineering than the 569 MB it shipped
-alongside — which is precisely why the split exists.
+## Installation and recovery
 
-## Provenance and integrity
+> [!CAUTION]
+> Native installation erased and reprogrammed the whole good-block set.
+> Byte-identical vendor boot payloads do not mean untouched boot-chain regions.
+> Recovery worked after observed trials, not arbitrary boot-chain corruption.
+> Logical main-data and exposed-OOB captures are not raw restore images.
 
-Originals are preserved **byte-for-byte** and are never repacked or recompressed.
-The SHA-256 values recorded in [`metadata/`](metadata) at acquisition time are the
-integrity anchors for the corresponding acquired artifacts. Native build
-manifests separately bind private inputs, source pins, and generated images.
+Use [U-Boot access](docs/uboot-access.md) and the
+[NAND installation boundary](docs/native-nand-platform.md#installation-boundary),
+not an inferred flash recipe.
 
-Note that `83_IMAGE` exists in two distinct variants of identical length
-(107,934,810 bytes) but different SHA-256: the standalone `StockRoot` release asset
-is a patched variant, not a duplicate of the copy inside the flashing bundle.
+## Documentation checks
 
-## Safety
+With Node.js 20.19 or later, run from the repository root:
 
-Acquisition tooling downloads, mirrors, archives, hashes, extracts, indexes,
-and documents evidence. Native-image builders operate on regular files and do
-not authorize hardware operations. NAND writes require a separately reviewed
-scope and explicit owner approval; image 99 remains excluded. The
-[U-Boot procedure](docs/uboot-access.md) is the recovery boundary, not ordinary
-product startup.
+```bash
+npm --prefix scripts ci
+npm --prefix scripts test
+npm --prefix scripts run validate
+```
 
-Treat peer addresses, credentials, account names, serial numbers, machine names,
-usernames, and host paths as operator-local data. Documentation examples use
-placeholders such as `<allowlisted-peer>`, `<archive>`, and `<workspace>`.
+The checker validates tracked Markdown, relative links/anchors and selected
+credential patterns in tracked text. Tests include broken links and synthetic
+private-data fixtures. Keep real identifiers in external private rules and
+render changed Mermaid diagrams separately. See [coverage and limits](.github/SECURITY.md#repository-checks).
 
 ## Licensing and attribution
 
-The original work in this repository — documentation, research notes, and the
-tooling under [`tools/`](tools) — is released under the [MIT License](LICENSE).
+Authored source, documentation and metadata use [MIT](LICENSE).
+[Kernel patches](patches/invoke-kernel/) are GPL-2.0 derivatives;
+[BlueALSA patches](patches/bluealsa/) retain MIT attribution.
+Vendor evidence retains its original terms.
 
-Third-party material is not covered by that licence and retains its own terms.
-Material originates from multiple parties under differing terms — Harman, Google/Nest,
-Valve, Kinoma, and community researchers. Provenance for each artifact is recorded in
-[`metadata/`](metadata), and per-source attribution and status are documented in
-[docs/acquisition/source-retention-ranking.md](docs/acquisition/source-retention-ranking.md).
+Firmware inputs came from [coggy9/HKHacking releases](https://github.com/coggy9/HKHacking/releases).
+Public availability does not grant redistribution rights, and forks do not
+preserve release assets. Custom deployment images remain private.
 
-### What MIT covers
-
-| Path | Licence |
-|---|---|
-| Authored `tools/` source and `docs/` research and analysis, including authored bundle analyses | MIT |
-| `metadata/` provenance sidecars authored here | MIT |
-| `patches/invoke-kernel/` | GPL-2.0 — derivative of the Linux kernel |
-| `patches/bluealsa/` | MIT — derivative of BlueALSA, which is MIT |
-| Original vendor text, scripts, drivers, and PDFs in `docs/bundle-contents/` | Retain original vendor terms; not relicensed by this project |
-
-Adding an MIT licence cannot relicense material this project does not own.
-The vendor-derived and GPL-derived paths above are included as research
-evidence under their own terms.
-
-### Build-time dependencies
-
-The runtime image uses upstream projects and private donor inputs. Generated
-firmware images are not committed here. Rebuilding candidate 02 requires the
-private accepted RC12 artifacts and declared source pins as well as upstream
-sources and toolchains. A public fresh clone is not a one-command, from-source
-reproduction of the whole image. See the
-[build boundary](docs/native-nand-platform.md#build-and-reproducibility-boundary).
-
-| Dependency | Version | Licence |
-|---|---|---|
-| [BlueALSA](https://github.com/arkq/bluez-alsa) | 4.0.0 | MIT |
-| [BlueZ](https://www.bluez.org/) | 5.55 | GPL-2.0-or-later (daemon), LGPL-2.1-or-later (libraries) |
-| [SBC](https://www.kernel.org/pub/linux/bluetooth/) | 2.0 | GPL-2.0-or-later |
-| [D-Bus](https://dbus.freedesktop.org/) | 1.12.20 | AFL-2.1 OR GPL-2.0-or-later |
-
-Recorded URLs, checksums, and build flags for each are in
-[metadata/P1-045.json](metadata/P1-045.json).
-These entries describe candidate 02's media-stack lineage. The offline
-candidate 03 SSH dependency and its separate source pin are recorded in the
-[successor appendix](docs/native-nand-platform.md#offline-ssh-implementation-milestone);
-they are not candidate 02 functionality or a native login acceptance result.
-
-`patches/bluealsa/` applies to BlueALSA, which is MIT, so the patch is MIT and
-retains upstream copyright. The copyleft dependencies are used unmodified at
-build time and reached over D-Bus at runtime; because this repository conveys
-no binary built from them, their distribution obligations are not triggered
-here. They would apply to anyone who chooses to distribute a built image.
-
-### Firmware source and publication status
-
-The preserved vendor Invoke firmware was obtained from
-[coggy9/HKHacking](https://github.com/coggy9/HKHacking/releases).
-Credit for locating and publishing those inputs belongs to that project and
-its contributors. This repository does not currently mirror them in releases.
-
-Git mirrors and ordinary repository forks do not preserve release assets.
-Private byte-for-byte retention protects the acquired evidence without
-claiming that another public custodian or current public mirror exists.
-Dated records of earlier upload activity remain historical records, not proof
-of present release availability.
-
-Vendor firmware retains its original ownership and licence provenance.
-Firmware packages and private deployment material are not to be published by
-this project. Public availability elsewhere does not grant redistribution
-rights, and the project's MIT licence does not cover vendor firmware.
+BlueALSA 4.0.0, BlueZ 5.55, SBC 2.0 and D-Bus 1.12.20 provenance is recorded
+in [P1-045](metadata/P1-045.json); [Dropbear provenance](docs/native-nand-platform.md#offline-ssh-implementation-milestone)
+is separate. Image distributors must assess each dependency's license
+obligations. Report vulnerabilities through the [security policy](.github/SECURITY.md).

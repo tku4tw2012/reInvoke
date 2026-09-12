@@ -1,54 +1,58 @@
 ---
 title: reInvoke microphone capture owner
-description: Build and protocol reference for the local privacy-gated microphone service
+description: Build and client reference for the privacy-gated local capture service
+ms.date: 2026-09-12
+ms.topic: how-to
 ---
 
-## Purpose
+`reinvoke-mic-capture` is the packaged capture-PCM owner. It supervises the
+pinned donor `arecord`, polls MCU privacy state and serves channel 0 over a
+root-only Unix socket. The [wire/privacy contract](../../docs/microphone-capture.md)
+is authoritative; synchronous per-delivery fencing is deferred, not implemented.
+Data-path/privacy hardware acceptance remains RAM-scoped.
 
-`reinvoke-mic-capture` is the only packaged owner of the Invoke capture PCM.
-It supervises the checksum-gated donor ALSA `arecord` helper, polls the MCU
-privacy state file, selects the donor voice-recognition channel, and
-serves fixed-format records over a root-only Unix socket.
+## Runtime interface
 
-See [Privacy-gated microphone capture](../../docs/microphone-capture.md) for the
-wire format, privacy contract, failure behavior, and threat model.
-The synchronous authority/fence protocol described there is deferred, not
-implemented. Hardware capture acceptance is historical RAM evidence; candidate
-02 has not repeated native data-path/privacy acceptance.
+Default input is `hw:1,0`, stereo `S32_LE`, 48 kHz, 256-frame periods and a
+4,096-frame buffer. Output is mono `S32_LE`, without resampling; this does not
+establish AEC or beamforming activation.
 
-## Build
+Default socket is `/run/reinvoke/mic-capture/audio.sock`. Each connection
+starts with a 32-byte `RINVOMIC` version-1 header, followed by records containing
+a 24-byte generation/sequence/timestamp header and 1,024 PCM bytes.
+Numeric fields are little-endian; exact offsets are in [protocol.go](protocol.go).
+Polled privacy state does not fence every delivery; queued data and root bypass
+remain part of the threat model.
 
-```bash
-tools/mic-capture/build.sh \
-  --output <archive>/build/artifacts/reinvoke-mic-capture \
-  --client-output <archive>/build/artifacts/reinvoke-mic-capture-client
-```
+## Build and test
 
-The build uses the archived Ubuntu Go 1.18.1 compiler and produces static ARMv7
-binaries with deterministic flags. That private toolchain must already exist;
-the public clone does not contain it.
-
-## Test
+Run from the repository root with the retained Ubuntu Go 1.18.1 toolchain and
+fresh private outputs; the compiler is not in the public clone:
 
 ```bash
-tools/mic-capture/test.sh
+tools/mic-capture/build.sh --archive-root "${REINVOKE_ARCHIVE}" \
+  --output "<artifact-dir>/reinvoke-mic-capture" \
+  --client-output "<artifact-dir>/reinvoke-mic-capture-client"
+tools/mic-capture/test.sh --archive-root "${REINVOKE_ARCHIVE}"
 ```
 
-The suite runs `go vet` and `go test -race`.
+The build produces deterministic static ARMv7 binaries; tests run `go vet`
+and `go test -race`.
 
-## Test client
+## Target test client
 
-On the target:
+Requires an existing target access channel; native SSH login is not established.
+
+> [!WARNING]
+> This captures microphone audio. Use an attended, consented test and private
+> RAM-backed output, never raw audio in a public issue.
 
 ```bash
-<staged-client> \
-  -socket /run/reinvoke/mic-capture/audio.sock \
-  -duration 10s \
-  -output <private-ram-output>
+"<absolute-staged-client>" -socket /run/reinvoke/mic-capture/audio.sock \
+  -duration 10s -output "<private-ram-output>"
 ```
 
-The client prints JSON Lines generation, progress, and summary records. With
-`-reconnect`, it waits through unavailable service generations and reconnects
-when a new stream appears. Ordinary mute does not itself create a new
-generation. Capture is an attended, separately approved action, not an
-instruction to collect microphone audio during an offline build.
+The client emits JSON Lines generation/progress/summary records.
+`-reconnect` waits through unavailable generations and reconnects; ordinary mute
+does not create a new generation. Omit `-output` for statistics without retained
+PCM. Build or host-test success is not native capture acceptance.

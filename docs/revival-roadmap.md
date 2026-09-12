@@ -1,107 +1,73 @@
 ---
 title: reInvoke revival roadmap
-description: Staged roadmap and completed milestones for closed-unit reInvoke software replacement
+description: Milestones and remaining work toward a maintained local assistant endpoint
 ms.date: 2026-09-12
 ms.topic: overview
 ---
 
-## End state
+The target is a local assistant endpoint on the Invoke's existing compute,
+speakers, microphones and controls. The project retains BG2CDP rather than
+replacing working electronics. Native startup and Bluetooth playback are
+milestones, not a complete assistant or a 1.0.0 release.
 
-The [current product and architecture contract](current-product-contract.md)
-defines the accepted target. This roadmap retains completed stages as historical
-milestones and identifies the remaining product work.
+## Completed milestones
 
-Reach **repurposing completeness (L2)**: a documented, reproducible way to
-reuse the Invoke enclosure, speakers, microphones, UI, and/or compute module,
-with every required electrical and protocol assumption marked as proven,
-measured, or unresolved. The first practical target is not a complete Cortana
-replacement; it is a safe local network/audio/control stack that can preserve
-the useful hardware.
+| Milestone            | Outcome                                                                                               | Reference                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Preservation         | Firmware acquired, hashed, classified and extracted; originals retained separately from authored work | [Firmware reference](firmware-reference.md)                                            |
+| Software mapping     | Boot/update, services, WAMP, audio, radio and hardware-control boundaries recovered                   | [Control-plane reference](emulation/control-plane-emulation.md#vendor-control-surface) |
+| Emulation            | Bonefish and selected ARM services accepted WAMP calls and changed state under `qemu-user`            | [Emulation](emulation/control-plane-emulation.md)                                      |
+| Closed-unit bring-up | External USB/U-Boot, RAM Linux, NAND logical reads and usable audio/radio/control interfaces          | [Journal](journal.md#closed-unit-bring-up)                                             |
+| Owned services       | MCU/DSP, media, privacy/capture and provisioning implemented; detailed safety/restart tests in RAM    | [Product contract](current-product-contract.md)                                        |
+| Native operation     | Candidate 02 audio/control baseline; candidate 03 startup, provisioning and SSH negotiation           | [Native results](native-nand-platform.md#current-result)                               |
 
-## Stages
+The evidence does not establish a full schematic, every upstream build input,
+or arbitrary-corruption recovery. Unknown part identities and connector
+pinouts do not prevent maintaining the recovered software interfaces.
 
-### 1. Preservation and firmware map — complete
+## Remaining work
 
-Acquire, hash, mirror, classify, and extract the firmware without executing or
-flashing it. Maintain the claim/evidence ledger and keep binaries outside Git.
+1. Establish native administrative access. Candidate 03 negotiates the pinned
+   Dropbear host identity, then closes at user authentication. Obtain a shell
+   or trace before treating account/NSS/toolchain hypotheses as a diagnosis or
+   claiming native kernel, PID 1, mount or firewall inspection.
+2. Repeat bounded candidate-03 audio, rotary, indicator and service checks.
+   Its observed A2DP connection is not acoustic acceptance; candidate-02
+   results remain separately scoped.
+3. Validate microphone capture/privacy under native startup. Decide whether
+   the implemented polled gate meets the intended consumer contract before
+   adopting the [synchronous design](microphone-capture.md#deferred-synchronous-privacy-design).
+4. Design persistence for Wi-Fi, Bluetooth bonds and preferences, including
+   secret handling, power loss, updates, recovery and reset semantics.
+   No storage mechanism or partition allocation has been selected.
+5. Integrate an assistant consumer of the owned capture/playback interfaces.
+   Wake-word detection and assistant protocols are not current product features.
+6. Close release prerequisites: supported compatibility, retained build inputs,
+   licensing obligations, failure limits and recovery guidance.
 
-### 2. Software boundary map — complete, and substantially exceeded
+There is no candidate-04 feature commitment or dated 1.0.0 schedule.
+Deterministic composition from pinned held artifacts is narrower than a
+complete rebuild of all dependencies from a clean public clone.
 
-Documented boot, storage, OTA, services, ports, IPC, audio, Bluetooth, Wi-Fi,
-MCU, and UI boundaries from static evidence. Two results go beyond a static
-map.
+## Unresolved behavior
 
-The control plane was reconstituted off-device. The service bus is WAMP over
-MsgPack routed by `bonefish`, and the device's own ARM binaries now run under
-emulation on an x86 host, answering calls from a third-party client. See
-`docs/emulation/control-plane-emulation.md`.
+Native USB enumeration and SSH authentication remain open. Older observations
+also include occasional missing MCU Mic-Mute events, unexplained media volume
+zero and unestablished AVRCP absolute-volume synchronization. Their evidence
+belongs in the [MCU](emulation/mcu-boundary.md),
+[speaker](emulation/owned-speaker-control.md) and
+[Bluetooth](emulation/bluetooth-stack.md) references.
 
-Harman's final firmware was recovered and analysed. `Barracuda_libre-12.2134.0`
-removes Cortana and Spotify and adds a Wi-Fi blocker, converting the product
-into a local Bluetooth speaker. See
-`docs/bundle-contents/invoke-ota2/ota2-analysis.md`.
+The [NAND record](nand-write-decision.md) retains the unattributed
+factory-setting block difference and failed boot trials. Donor active/inactive
+slot selection remains unresolved in [boot/update state](emulation/boot-update-state.md).
+These questions do not justify silently changing an accepted artifact's pins.
 
-That donor finding was a comparison point. The current target is the owned
-NAND-started reInvoke stack, with RAM boot retained for recovery.
+## Release boundary
 
-### 3. Safe observation on one physical sample — complete
-
-The closed sample completed USB/U-Boot access, RAM boot, NAND readback, Wi-Fi,
-Bluetooth, playback and capture ALSA, MCU, DSP, controls, LEDs, and attended
-audio checks. The original
-[no-disassembly procedure](no-disassembly-observation-procedure.md) is retained
-as the historical plan; [U-Boot access](uboot-access.md) is the current USB
-procedure.
-
-The pre-trial sample carried `Barracuda_libre-12.2050.3`, not the 2021 final image;
-candidate 02 has since replaced that installation.
-Yellow-mode USB and owned RAM boot are resolved and no longer a project gate.
-
-This warning was satisfied before the first approved writes: bounded image
-checks and post-write recovery were demonstrated. Any future flash still needs
-its own explicit owner-approved scope.
-
-### 4. Software interface validation — accepted boundary
-
-The required MCU, DSP, audio, button, LED, and microphone contracts were
-recovered without opening the enclosure. Owned MCU and DSP services now
-implement the target boundary. Physical meanings for every button/animation,
-occasional missing MCU Mic-Mute events, native microphone acceptance, and
-persistent onboarding state remain
-explicit gaps rather than blockers hidden behind donor binaries.
-
-Electrical characterization and replacement-compute design are optional future
-hardware projects. They do not gate a maintained userland on the working
-BG2CDP platform.
-
-### 5. Reuse decision
-
-- **Keep BG2CDP:** selected for the current project. Yellow-mode RAM boot, USB
-  recovery, networking, Bluetooth, audio, MCU control, and DSP loading work.
-- **Replace compute:** optional future hardware project if BG2CDP becomes
-  unusable.
-- **Bypass electronics:** optional future hardware project if the existing
-  audio/control path fails.
-
-### 6. Minimal revival demonstrator — native milestone complete
-
-The owned PID 1, Bluetooth playback, volume, speaker safety, microphone privacy,
-LED transport, networking, provisioning boundary, and safe shutdown are
-implemented. Candidate 02 starts from NAND and has demonstrated audible
-Bluetooth playback, rotary volume, physical provisioning, and local-network
-MCU/DSP control. Native administration, microphone data-path/privacy acceptance,
-and persistent settings remain open.
-
-### 7. Hardening and preservation release
-
-Publish interface evidence, scripts, measurements, compatibility limits,
-recovery procedures, and a clear list of unknowns. Keep proprietary binaries
-as referenced evidence rather than presenting them as a replacement software
-distribution.
-
-## Autonomous boundary
-
-Repository analysis, static reverse engineering, metadata extraction,
-documentation, and public-source discovery can proceed autonomously. Physical
-measurements, device modification, firmware flashing, credential use, and
-redistribution decisions require an explicit human-controlled test setup.
+A maintained release needs candidate-specific acceptance and explicit recovery
+limits, not nominal-path success alone. Logical/OOB captures are not raw
+restores, and recovery after observed experiments is not a fail-safe guarantee.
+Vendor payloads retain their original terms; public research does not grant
+firmware redistribution rights. See [storage policy](acquisition/storage-policy.md)
+and [security policy](../.github/SECURITY.md).

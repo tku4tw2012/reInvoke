@@ -1,178 +1,132 @@
 ---
-title: Storage policy
-description: Public source, private firmware retention, and historical storage measurements
+title: Storage and retention policy
+description: Public evidence boundaries, private artifact retention and backup integrity
 ms.date: 2026-09-12
 ---
 
-## Current publication boundary
+## Publication boundary
 
-Git holds authored source, documentation, acquisition metadata, and the
-preserved small vendor evidence layer under its original terms. Firmware
-packages, generated images, captures, credentials, and deployment manifests
-remain in the private operator archive. No releases exist in this repository,
-verified through GitHub's release list and API on 2026-09-12 UTC.
-The public vendor-input source is
-[coggy9/HKHacking releases](https://github.com/coggy9/HKHacking/releases), not a
-reInvoke release. The custom image is not published.
+Git holds authored source and documentation, acquisition metadata, and selected
+original vendor text, manuals and driver metadata. Full firmware packages,
+extracted filesystems, generated images and device captures remain in an
+operator-managed private archive. That archive is not a repository download.
 
-Assistant working records under `.copilot-tracking/` remain local and ignored
-by Git. Removing their tracked copies from the current public tree does not
-delete the local files or rewrite earlier Git history. Durable findings and
-failed-experiment provenance remain in the public guides and private evidence
-archive. The `.github/` security policy and dependency-update configuration
-serve the public repository and remain tracked.
+An upstream download is not redistribution permission. Original vendor terms
+and source licences remain applicable; the project MIT licence does not
+relicense them. The custom image is not published. Deterministic composition
+from pinned retained inputs is narrower than a complete fresh-clone build.
 
-## The problem
+Keep credentials, operator configuration, device identities and cloud
+coordinates out of public records. Removing a file from the current tree
+does not remove it from published Git history.
 
-The acquisition-era working set was measured at approximately 4.9 GB; that is
-not the size of the later native-build archive. Research value is concentrated in a very
-small fraction of those bytes. Committing the bulk to Git would make it permanent in
-history, bloat every clone forever, and buy nothing.
+## Storage classes
 
-## Historical acquisition measurements
+| Class               | Retain                                                                              | Authority                                                  |
+| ------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Public evidence     | Authored code, findings, source records, selected original text and bundle listings | Git history and [metadata](../../metadata/)                |
+| Acquired originals  | Byte-exact donor archives, source packages and Git captures                         | Acquisition sidecar, revision and original notices         |
+| Private working set | Extractions, toolchains, build outputs and device captures                          | Per-build or evidence manifests, not just acquisition JSON |
+| Backup copies       | Selected originals and non-regenerable working data                                 | Private object inventory plus verified restore results     |
 
-These are retained acquisition-stage measurements, not a fresh storage census
-or a recommendation to repeat the experimental Git commit.
+The [source catalogue](invoke_berlin_artifact_acquisition_manifest.md) identifies
+what was acquired. The [firmware reference](../firmware-reference.md#retained-inputs)
+identifies the useful public extraction layer and bundle totals. A listed ZIP
+member need not be committed to Git.
 
-| Test | Result | Implication |
-|---|---|---|
-| `zstd -19` on 30 MB of `Flashing.zip` | 30.0 MB → 30.0 MB | Already deflate-compressed; recompression is pointless |
-| `gzip -1` on first 20 MB of `83_IMAGE` | 97% of input | Image is internally compressed / high entropy |
-| Binary delta between the two `83_IMAGE` variants | 83,800,608 of 107,934,810 bytes differ (77.64%) | Delta encoding is not viable |
-| Commit `83_IMAGE` to Git, then `git gc --aggressive` | 108 MB → 99 M pack | Git barely helps, and the cost is permanent |
-| `Mrvl_WinUSB_Driver_040114/` in both bundles | Byte-identical, 27 MB each | Dedup possible, but rejected: it would break byte-for-byte originals |
+### Provenance flow
 
-**Conclusion:** the payload is incompressible by design. The fix is architectural,
-not compression.
+This is a storage boundary, not an automated pipeline. Analysis derives from
+retained originals and captures; only selected evidence enters Git. A backup
+copies the private material without making it a public release.
 
-## Content distribution
+```mermaid
+flowchart LR
+  U["Upstream sources"] --> O["Private retained originals"]
+  O --> W["Private extraction and build data"]
+  D["Private device captures"] --> W
+  O --> G["Public metadata and selected text"]
+  W --> F["Public authored findings"]
+  O --> B["Operator backup"]
+  W --> B
+```
 
-| Bundle | Small files (<128 KB) | Large blobs |
-|---|---|---|
-| `Harman.Kardon.INVOKE.Flashing.zip` | 24 files, 321 KB | 29 files, 612.6 MB |
-| `Harman.Kardon.INVOKE.Driver.OTA2.zip` | 24 files, 322 KB | 29 files, 539.3 MB |
+### Why payloads stay outside Git
 
-Roughly 0.05% of the bytes carry nearly all of the human-readable engineering content.
+The acquisition-era working set was approximately 4.9 GB; this is not a census
+of the later native archive. Compression tests gave little benefit on sampled
+firmware: `zstd -19` left a 30 MB ZIP sample at 30 MB, and `gzip -1` reduced a
+20 MB `83_IMAGE` sample only to 97% of its input size.
 
-The decisive example: `gen-cmd.sh` is 596 bytes and yields a generic vendor NAND
-map, serial-console configuration, and a recovery boot path. Its sizes sum to
-512 MiB, but that does not establish this unit's physical geometry. Live
-identification and complete logical reads instead established 256 MiB NAND.
-The original script remains unchanged; this annotation corrects its earlier
-interpretation.
+The two old `83_IMAGE` variants differ in 77.64% of container bytes despite
+only 11 changed regular files. Filesystem rebuilds can therefore obscure small
+logical changes in large binary deltas. Preserve original archives separately;
+do not repack them to remove shared drivers or improve Git storage. Git LFS is
+not used for these private inputs.
 
-## The three tiers
+## Backup and restore
 
-### Tier 1: public source and documentation
+Azure Blob Storage is one operator backup choice, not a reInvoke platform
+prerequisite. The retained configuration used private Cool-tier storage with
+Entra authentication and HTTPS. Other storage can meet the same byte-retention
+and verification requirements; public clones supply neither backup access nor
+private inventory.
 
-Research corpus, acquisition manifest, retention ranking, this policy, provenance
-sidecars with SHA-256 values, authored runtime and acquisition tooling, the extracted text layer, and full
-`unzip -l` listings of both bundles.
+Backup selection must cover the intended analysis or build, not merely the
+three vendor downloads. Preserve required originals, source revisions,
+toolchain identities, generated-image manifests and non-regenerable evidence.
+Keep a copy of the inventory alongside the objects it describes.
 
-The complete bundle structure is therefore documented and greppable in Git without
-the bytes being present.
+Restore into a separate destination, preserving archive-relative paths, then
+verify the selected set before replacing an existing copy:
 
-### Tier 2: retained inputs
+1. Compare acquired archives against their public sidecar's size and SHA-256.
+2. Compare extracted members against recorded member digests, not the enclosing
+   ZIP digest. Several incompatible inputs share the name `83_IMAGE`.
+3. Verify generated images and captures against their own private manifests.
+4. Check inventory completeness and report missing objects or mismatches.
+   Do not repair a mismatch by repacking or overwriting the preserved original.
 
-`Harman.Kardon.INVOKE.Flashing.zip`, `Harman.Kardon.INVOKE.Driver.OTA2.zip`, and the
-standalone `83_IMAGE`.
+[P0-004c](../../metadata/P0-004c.json), for example, identifies the standalone
+StockRoot donor, not the flashing-bundle member, OTA2 member, or a generated
+native bundle served as `83_IMAGE`. Matching one hash establishes only that
+object's integrity, not a complete restore or device compatibility.
 
-These acquired firmware packages remain private and must not be committed or
-published as release assets. Retained upstream source archives also belong
-outside the Git working tree, with their own licences and hashes.
+Keep access credentials and signed URLs outside Git. Storage tier, retrieval
+latency and retention charges are operator concerns; old cost estimates are
+not current service guarantees. A backup is useful only if the required bytes
+can be retrieved and verified.
 
-The original preservation rationale remains valid: a Git mirror or fork does
-not copy release assets. It does not establish that no other public archive
-exists, or grant rights to republish proprietary material.
+Firmware-file recovery is separate from NAND recovery. Logical/OOB captures
+are not raw restore images, and observed recovery after experiments does not
+prove recovery from arbitrary boot-chain corruption. Use the
+[NAND decision record](../nand-write-decision.md) for that boundary.
 
-Git LFS is not used for these private inputs. Historical quota estimates are
-not current service pricing and are not a publication rationale.
+## Retention priorities
 
-### Tier 3: private working set and cold storage
+Priority reflects replacement difficulty and engineering value, not a claim
+that this operator has the only surviving copy.
 
-The operator-managed archive includes Git mirrors, later native build products,
-and evidence bundles. The retained cold-storage configuration uses Azure Blob
-Storage; the table describes that configuration, not resources supplied by a
-public clone.
+| Priority    | Material                                                          | Reason                                                                           |
+| ----------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Highest     | Non-regenerable device evidence and manifests for accepted builds | Later reconstruction cannot reproduce an observation                             |
+| High        | HKHacking release assets P0-004a/b/c                              | Main-repository forks and source-history archives do not retain release binaries |
+| High        | Relevant Discussions/wiki captures and linked attachments         | Separate capture is required outside the main Git mirror                         |
+| High        | Exact donor sources and toolchains needed for known builds        | An upstream version label alone may not recover identical bytes                  |
+| Conditional | Citation and gated Chromecast/Nest leads                          | Valuable potential sources, but complete package acquisition is unresolved       |
+| Medium      | Acorn and other thinly mirrored legacy source histories           | Board-specific history may be difficult to replace                               |
+| Lower       | Widely mirrored source history and disposable extractions         | Regenerable when originals, revisions and tools are retained                     |
 
-| Setting | Value |
-|---|---|
-| Resource group | `<resource-group>` |
-| Storage account | `<storage-account>` |
-| Container | `<container>` |
-| Region | `<azure-region>` |
-| Redundancy | Standard LRS |
-| Access tier | Cool |
-| Public blob access | Disabled |
-| Transport | HTTPS only, TLS 1.2 minimum |
-| Authentication | Microsoft Entra ID (no shared keys) |
+The 2026-08-26 custody assessment found source-history redundancy for several
+Git repositories, including Software Heritage snapshots, but not equivalent
+coverage of the Invoke release assets. That dated observation is not a fresh
+availability survey. Avoid treating fork counts as a guarantee of retention.
 
-Acquired inputs are indexed by corresponding sidecars in
-[`metadata/`](../../metadata). Later native artifacts are bound by private build
-and evidence manifests. The public sidecars are not a complete Tier 3 inventory.
+Retain byte-distinct variants with separate provenance even when filenames
+match. Keep source notices and licences with packages. Independent custodians
+can reduce reliance on a single copy where preservation terms permit, but
+this does not authorize publishing proprietary firmware.
 
-### Why Cool, and not Archive
-
-Historical acquisition-era estimate for the then-4.9 GB working set, retained
-to explain the original choice rather than quote present prices:
-
-| Tier | Minimum retention | Access | Annual cost |
-|---|---|---|---|
-| Hot | none | instant | $1.00 |
-| **Cool** | **30 days** | **instant** | **$0.59** |
-| Cold | 90 days | instant | $0.21 |
-| Archive | 180 days | offline, up to 15 h to rehydrate | $0.06 |
-
-In that estimate, the spread was under $1/year. Archive would save roughly $0.53/year while
-imposing a 180-day retention commitment and a rehydration wait of up to 15 hours
-(under 1 hour at high priority, capped at 10 GiB/hour per storage account) every time
-the firmware needs to be examined.
-
-For a project whose purpose is repeatedly analysing these images, that is a poor
-trade. Cool tier is chosen deliberately: instant access, negligible cost, and no
-offline retrieval requirement. Minimum retention and early-deletion charges
-still apply; the table is not a current billing guarantee.
-
-The earlier plan suggested copying rather than retiering dormant data.
-Copying preserves the source but does not waive minimum-retention charges
-if that source is deleted early. Any later storage migration needs its own
-current service and cost review.
-
-## Invariants
-
-1. **Originals are never repacked, recompressed, or modified.** Byte-for-byte
-   preservation is the policy; recorded SHA-256 values are the integrity anchor.
-2. **Acquisition is not execution approval.** Acquisition tooling downloads,
-   hashes, extracts, indexes, and documents. Separate offline builders and
-   explicitly approved hardware trials now exist; neither authorizes another
-   NAND operation. Image 99 remains excluded.
-3. **No credentials or signed URLs in Git.** Presigned download URLs expire and may
-   embed signature tokens; sidecars retain the stable public `source_url` and redact
-   signed query strings.
-4. **Tier 1 stays small.** If a proposed addition is large and opaque, it belongs in
-   Tier 2 or 3 with a hash recorded here instead.
-
-## Historical publication decision and current correction
-
-Open-source drops retain their respective licences and any redistribution
-conditions; a package name alone is not a licence determination.
-
-The acquisition-stage policy proposed publicly mirroring the proprietary
-Invoke bundles with attribution to
-[coggy9/HKHacking](https://github.com/coggy9/HKHacking), on preservation grounds.
-That proposal and dated upload records explain the earlier documentation;
-they do not describe an available mirror today.
-
-The current policy is private retention, not firmware publication. Public
-availability at the upstream source is not permission to redistribute, and
-the project MIT licence does not relicense vendor material. Preserve original
-notices and hashes without rewriting extracted originals.
-
-## A note on external custodians
-
-Uploading the non-proprietary material to the Internet Archive or ensuring coverage by
-Software Heritage advances the underlying goal directly: it makes *other parties* hold
-the material, which is more durable than any single private copy.
-
-See [source-retention-ranking.md](source-retention-ranking.md) for which artifacts
-already have external custodians and which currently depend on this archive alone.
+The excluded vendor filename is exactly `99_IMAGE`. Retaining it for format
+or radio-lineage comparison does not make it an installation target; the
+approved native bundle's use of `83_IMAGE` does not authorize other variants.

@@ -1,198 +1,148 @@
 ---
 title: Privacy-gated microphone capture
-description: Implemented RAM capture protocol, historical acceptance, and deferred synchronous privacy design
+description: Audio format, stream protocol, polled privacy gate and measured limits
 ms.date: 2026-09-12
+ms.topic: concept
 ---
 
-## Scope
+`reinvoke-mic-capture` supplies trusted local consumers without giving them
+raw ALSA access. Audio and configuration remain volatile; the service writes
+neither to NAND. Wake-word recognition and assistant behavior are consumer
+work, not capture features.
 
-`reinvoke-mic-capture` exposes the Invoke microphone to local trusted services
-without allowing those services to open the ALSA hardware node. Wake-word
-recognition and remote assistant behavior are intentionally outside this
-component.
-
-The capture path is volatile. It writes no audio or configuration to NAND.
-
-The accepted sample/capture measurements are from host-loaded RAM boots.
-Native candidate 02 demonstrated Mic-Mute indicator changes only; its
-microphone data path has not repeated those measurements.
-
-The checked-in implementation uses a polled state-file gate. The stronger
-synchronous authority protocol retained below is a design, not implemented
-behavior and not a candidate 02 or candidate 03 acceptance claim.
+The implemented gate polls MCU-owned state. Native capture/privacy acceptance
+is open; the measurements below are from RAM boots. See the
+[current native ledger](native-nand-platform.md#current-result), not indicator
+changes or Bluetooth connection, for candidate acceptance.
 
 ## Audio source
 
-The hardware PCM is card 1, device 0. The donor calls it `dsp_mic` and routes
-its channels as:
+The hardware endpoint is `hw:1,0`, called `dsp_mic` by the donor.
+The donor routes left to voice recognition and right to call audio.
+The seven physical microphones are not exposed as seven raw ALSA channels.
+Linux receives stereo "Audio in from DSP mic"; DSP Mic-Mute produced all-zero
+samples in historical RAM measurements.
 
-* left: voice recognition; and
-* right: call audio.
-
-The physical seven-microphone array is not exposed as seven ALSA channels.
-Linux receives a two-channel stream that the donor explicitly describes as
-"Audio in from DSP mic", and DSP Mic-Mute changes that stream to all-zero
-samples.
-
-The platform does not claim that beamforming, acoustic echo cancellation, AGC,
-or noise reduction is active. Product material and donor configuration show
-that those capabilities were intended, but no retained A/B capture proves
-which algorithms the normal DSP route enables.
+DSP part identity and physical microphone wiring remain unresolved.
+No retained A/B capture proves beamforming, AEC, AGC or noise-reduction
+activation, despite their presence in product material/configuration.
 
 ## Delivered format
 
-The owner opens the native endpoint as:
+The owner supervises `arecord` with these parameters:
 
-```text
-device: hw:1,0
-rate: 48000 Hz
-hardware channels: 2
-hardware format: S32_LE
-period: 256 frames / 2048 bytes
-buffer: 4096 frames / 16 periods / 32768 bytes
-```
+| Parameter       | Native input                             | Delivered stream                        |
+| --------------- | ---------------------------------------- | --------------------------------------- |
+| Rate            | 48,000 Hz                                | 48,000 Hz                               |
+| Channels        | 2                                        | 1, donor left channel                   |
+| Format          | `S32_LE`                                 | `S32_LE`                                |
+| Period          | 256 frames / 2,048 bytes                 | 256 frames / 1,024 payload bytes        |
+| Hardware buffer | 4,096 frames / 16 periods / 32,768 bytes | Not a consumer buffer                   |
+| Record interval | About 5.33 ms                            | About 5.33 ms while delivery is allowed |
 
-It selects the left donor voice-recognition channel and delivers:
-
-```text
-rate: 48000 Hz
-channels: 1
-format: S32_LE
-frames per record: 256
-payload bytes per record: 1024
-record interval: approximately 5.33 ms
-```
-
-The owner performs no sample-rate or sample-width conversion. Consumers differ
-in their wake-word input requirements, so conversion belongs in the consumer.
-Channel selection stays in the platform because the donor defines the channel
-semantics.
+No rate or sample-width conversion occurs. Consumer-specific conversion stays
+outside the platform; channel selection belongs here because its semantics
+come from the donor. Source: [source.go](../tools/mic-capture/source.go) and
+[protocol.go](../tools/mic-capture/protocol.go).
 
 ## Stream protocol
 
-The root-only Unix socket is:
+`/run/reinvoke/mic-capture/audio.sock` is mode `0600` and admits UID 0 only.
+Each connection starts with one 32-byte little-endian header:
 
-```text
-/run/reinvoke/mic-capture/audio.sock
-```
+| Offset | Size | Meaning                |
+| -----: | ---: | ---------------------- |
+| 0      | 8    | ASCII `RINVOMIC`       |
+| 8      | 2    | Protocol version, 1    |
+| 10     | 2    | Header length, 32      |
+| 12     | 4    | Sample rate, 48000     |
+| 16     | 2    | Channels, 1            |
+| 18     | 2    | Format, 1 = `S32_LE`   |
+| 20     | 4    | Frames per record, 256 |
+| 24     | 8    | Capture generation     |
 
-Each connection begins with one 32-byte little-endian header:
+Each subsequent record is exactly 1,048 bytes:
 
-| Offset | Size | Meaning |
-|---:|---:|---|
-| 0 | 8 | ASCII `RINVOMIC` |
-| 8 | 2 | protocol version, currently 1 |
-| 10 | 2 | header length, 32 |
-| 12 | 4 | sample rate, 48000 |
-| 16 | 2 | channels, 1 |
-| 18 | 2 | format, 1 = `S32_LE` |
-| 20 | 4 | frames per record, 256 |
-| 24 | 8 | capture generation |
+| Offset | Size | Meaning                                     |
+| -----: | ---: | ------------------------------------------- |
+| 0      | 8    | Capture generation                          |
+| 8      | 8    | Monotonically increasing sequence           |
+| 16     | 8    | Service wall-clock timestamp in nanoseconds |
+| 24     | 1024 | 256 mono `S32_LE` samples                   |
 
-Every record is exactly 1,048 bytes:
+Unix streams do not preserve write boundaries. Use exact-length reads;
+EOF within a header or record invalidates that partial data.
+Timestamps use the service wall clock, not a monotonic sample clock.
 
-| Offset | Size | Meaning |
-|---:|---:|---|
-| 0 | 8 | capture generation |
-| 8 | 8 | monotonically increasing sequence |
-| 16 | 8 | service wall-clock timestamp in nanoseconds |
-| 24 | 1024 | 256 mono `S32_LE` samples |
+A capture restart creates a new generation and closes existing clients.
+Ordinary mute drops periods but does not close clients or advance generation.
+Consumers must not interpret a stalled stream as EOF or manufacture continuity
+across a reconnect. Use the [tool guide](../tools/mic-capture/README.md) for
+service/client invocation.
 
-Unix streams do not preserve write boundaries. Consumers must use exact-length
-reads. EOF in the middle of a header or record invalidates that partial data.
-A capture restart, including one triggered by a changed DSP process/socket,
-creates a new generation and closes old clients. Ordinary mute drops captured
-periods but does not itself close clients or advance the generation in the
-checked-in implementation.
+The default per-client queue holds four periods. A full queue or a socket
+write exceeding its 250 ms deadline disconnects that slow consumer.
 
 ## Implemented privacy boundary
 
-The MCU owns privacy policy and writes `/run/reinvoke/microphone-state`.
-The capture service starts muted and polls that file every 100 ms. Missing,
-invalid, oversized, or `muted` state causes periods to be discarded;
-`unmuted` permits delivery after the next poll. It checks the DSP executable,
-PID/start time, and microphone-socket identity every 250 ms and restarts capture
-if that identity changes.
+The [MCU privacy controller](current-product-contract.md#microphone-privacy-boundary)
+owns `/run/reinvoke/microphone-state`. Capture starts muted and polls it every
+100 ms. Missing, invalid, oversized or `muted` state discards periods;
+`unmuted` allows delivery after the next poll.
 
-This is not a synchronous mute fence. Already queued records and the polling
-interval prevent a guarantee of zero delivery immediately upon a mute request.
-The service does not currently negotiate MCU authority epochs or prove an
-ALSA reconfiguration drain. Historical zero-delivery tests describe their
-measured windows, not an instantaneous, adversarial privacy guarantee.
-See the implementation in [main.go](../tools/mic-capture/main.go),
-[state.go](../tools/mic-capture/state.go), and
-[hub.go](../tools/mic-capture/hub.go).
+Every 250 ms, capture checks DSP executable, PID/start time and microphone
+socket identity. A change restarts the stream generation and closes clients.
+ALSA helper failure also triggers capture restart.
+
+> [!IMPORTANT]
+> This is not a synchronous mute fence. Polling and already queued records
+> prevent a guarantee of zero delivery immediately after a mute request.
+> Consumers must use the owned socket, not reopen raw ALSA; `hw_params` can
+> overwrite a previous DSP route.
+
+There is no MCU authority-epoch negotiation or proven ALSA reconfiguration
+drain. Implementation: [main.go](../tools/mic-capture/main.go),
+[state.go](../tools/mic-capture/state.go) and [hub.go](../tools/mic-capture/hub.go).
+
+## Historical acceptance
+
+RAM speech/tap measurements found 99.975% nonzero unmuted samples and exactly
+0/244,736 nonzero muted samples. Capture checks covered 14 toggles, zero muted
+delivery in measured windows, resumed unmuted delivery and recovery after DSP
+restart. Those windows do not establish an instantaneous or adversarial
+privacy guarantee.
+
+The [RAM platform](native-ram-platform.md) records the hardware context.
+Native Mic-Mute indicator changes are narrower evidence than a data-path test.
 
 ## Deferred synchronous privacy design
 
-The following stronger design was previously written as though implemented.
-It is retained to preserve that intent and the correction. `BLOCKED`, `DRAIN`,
-`DRAINED`, authority epochs, and `ALLOW` are not part of the checked-in capture
-protocol. Implementing and validating them would be separate work.
+A stronger fence remains proposed, not part of the wire protocol above.
+`BLOCKED`, `DRAIN`, `DRAINED`, authority epochs and `ALLOW` are not implemented
+messages and must not be assumed by consumers.
 
-The MCU privacy controller remains the only privacy policy authority.
-The capture owner cannot send DSP Mic-Mute commands directly.
+The design would keep the MCU as sole privacy authority and require:
 
-After each ALSA configuration:
+1. Blocked delivery after every ALSA configuration.
+2. An MCU-requested synchronous capture fence, followed by confirmed DSP mute.
+3. A drain of at least 64 consecutive all-zero native periods over at least
+   200 ms, then restoration only of a known, still-requested unmuted policy.
+4. A matching MCU authority epoch and explicit allowance before delivery.
+5. Client closure and renewed synchronization on PCM, DSP or MCU generation
+   changes, authority loss or invalid/muted state.
 
-1. delivery remains blocked while the owner drains and discards input;
-2. the owner connects to the MCU privacy authority;
-3. the MCU synchronously fences all delivery and waits for `BLOCKED`;
-4. the MCU forces DSP mute and waits for `EVENT_MIC_MUTE`;
-5. the MCU requests `DRAIN`, and the owner consumes 64 consecutive all-zero
-   native periods over at least 200 ms before returning `DRAINED`;
-6. the MCU restores unmute only if the entry policy was known, requested
-   unmuted, and had no pending mute; and
-7. the MCU returns its random process-lifetime authority epoch and final state,
-   then sends `ALLOW` only for confirmed unmute.
+Ordinary mute would fence the exact capture generation before hardware mute;
+an unresponsive owner would need verified termination. Confirmed hardware
+mute must remain visible on the privacy indicator during synchronization.
+A design decision and native tests are required before adopting this contract.
 
-This synchronization creates a brief, honest privacy transition after capture
-configuration. When the entry policy was unmuted, the red privacy indication
-can appear while mute is confirmed and the buffered path is drained, then clear
-after confirmed restore. The implementation does not hide a hardware mute from
-the indication.
-
-For an ordinary physical or API mute, the MCU fences the capture owner before
-persisting `muted` or sending the DSP command. If the owner cannot acknowledge,
-the MCU verifies and terminates that exact process generation before continuing
-the hardware mute.
-
-The state file is a secondary fail-closed signal:
-
-```text
-/run/reinvoke/microphone-state
-```
-
-Missing, invalid, oversized, or `muted` state blocks delivery. `unmuted` alone
-does not authorize capture; the current PCM, DSP, and MCU authority generations
-must also match the completed synchronization.
-
-Bytes already copied into a consumer's process or kernel receive queue cannot
-be revoked by any IPC design. The owner keeps queues shallow, closes all
-connections at the synchronous fence, and guarantees that it queues no new
-record after returning `BLOCKED`.
-
-### Failure and restart behavior required by the deferred design
-
-The capture owner starts blocked. It closes every client and restarts its
-capture generation when:
-
-* the ALSA helper exits;
-* the DSP process, process-start time, or mic-control socket inode changes;
-* the MCU privacy process or process-start time changes;
-* the MCU authority epoch changes;
-* the authority connection closes or sends invalid protocol; or
-* privacy state becomes missing, invalid, or muted.
-
-The owner configures ALSA again after a DSP restart and repeats the entire
-privacy synchronization. No old connection survives into the new generation.
+Even a synchronous fence cannot revoke bytes already copied into consumer
+memory or kernel receive queues.
 
 ## Threat model
 
-The one ALSA capture substream gives the owner runtime exclusivity while it is
-open. The data socket admits UID 0 only.
-
-Root is trusted. A hostile root process can kill the owner and open the raw
-device, so this is an operational ownership boundary rather than protection
-from a compromised root account. Unprivileged services must not receive raw
-sound-device access or capabilities that bypass the owner.
+The single ALSA capture substream gives the owner runtime exclusivity while
+open. This is an operational boundary, not an electrical microphone disconnect.
+Root is trusted and can kill the owner or reopen the raw device.
+Unprivileged consumers must not receive sound-device access or capabilities
+that bypass the owner.
