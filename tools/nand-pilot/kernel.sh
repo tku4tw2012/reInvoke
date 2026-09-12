@@ -38,6 +38,17 @@ pilot_load_modules() {
     }
   done
   echo /etc/hotplug/wifi-fw.sh >/proc/sys/kernel/hotplug || return 1
+  # No fleet MAC in public code. Omission uses calibrated vendor identity.
+  set --
+  if ${BB} test -r /etc/native-admin/wifi-mac; then
+    wifi_mac="$(${BB} cat /etc/native-admin/wifi-mac)"
+    if ! printf '%s\n' "${wifi_mac}" |
+      ${BB} grep -Eq '^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$'; then
+      pilot_failure wifi "invalid private MAC configuration"
+      return 1
+    fi
+    set -- "mac_addr=${wifi_mac}"
+  fi
   ${BB} insmod "${sd8887_module_dir}/mlan.ko" || {
     pilot_failure kernel "mlan load failed; inspect vermagic and kernel symbols"
     return 1
@@ -48,7 +59,7 @@ pilot_load_modules() {
     fw_name=mrvl/sd8887_wlan_a2_p78.bin \
     cal_data_cfg=mrvl/WlanCalData_ext-LS9AD-20160725.conf \
     txpwrlimit_cfg=mrvl/txpwrlimit_cfg_8887.bin \
-    mac_addr=02:52:49:4e:56:01 \
+    "$@" \
     drv_mode=3 max_sta_bss=1 max_uap_bss=1 \
     sta_name=mlan uap_name=p2p fw_serial=1 cfg80211_wext=0xf \
     auto_ds=2 ps_mode=2 antenna_div=1 module_rev=22 || {

@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { patchRuntime } = require('./patch-runtime');
+const { readConfig, installConfig } = require('./private-config');
 const lib = require('./build-lib');
 const { run, json, hashFile, pins, inventory, verify } = lib;
 const here = __dirname;
@@ -35,6 +36,7 @@ function cpioPack(root, out) {
     'pack', root, out]);
 }
 function prepare() {
+  const privateConfig = readConfig(process.env.PILOT_PRIVATE_CONFIG);
   for (const key of Object.keys(pins)) verify(input(key), pins[key]);
   const original = path.join(output, 'source-rc12'), stock = path.join(output, 'source-stock');
   fs.mkdirSync(original);
@@ -68,6 +70,7 @@ function prepare() {
   link('busybox', path.join(root, 'bin/sh'));
   link('busybox', path.join(root, 'bin/ash'));
   write(path.join(root, 'etc/profile'), 'export PATH=/sbin:/bin:/usr/sbin:/usr/bin\nexport HOME=/root\numask 022\n');
+  installConfig(privateConfig, root);
   fs.rmSync(path.join(root, 'lib/modules'), { recursive: true });
   const modules = [];
   const suffixes = ['wlan_sd8887/mlan.ko', 'wlan_sd8887/sd8xxx.ko', 'bt_sd8887/bt8xxx.ko'];
@@ -114,7 +117,7 @@ function prepare() {
     }
     link('busybox', path.join(tree, 'bin/sh'));
     link('busybox', path.join(tree, 'bin/ash'));
-    for (const file of ['common.sh', 'kernel.sh'])
+    for (const file of ['common.sh', 'kernel.sh', 'ssh-start.sh'])
       install(path.join(here, file), path.join(tree, 'usr/libexec/nand-pilot', file), '0644');
     install(path.join(path.dirname(output), 'reinvoke-status'), path.join(tree, 'usr/bin/reinvoke-status'));
     link('/usr/bin/reinvoke-status', path.join(tree, 'usr/sbin/reinvoke-status'));
@@ -139,13 +142,16 @@ function prepare() {
   ])
     run('mknod', ['-m', mode, path.join(boot, 'dev', name), 'c', String(major), String(minor)]);
   normalize(root); normalize(boot);
-  const sourceCode = inventory(here).filter(v => v.type === 'f' && !v.path.startsWith('status/.status-test-'));
+  // Documentation and transient test fixtures are not executable build inputs.
+  const sourceCode = inventory(here).filter(v => v.type === 'f' &&
+    !v.path.split('/').some(part => part.startsWith('.')) &&
+    /\.(?:sh|js|go|c)$/.test(v.path));
   const components = inventory(root).filter(v => (v.type === 'f' || v.type === 'l') &&
     v.path !== 'etc/reinvoke-release' && !v.path.startsWith('etc/nand-pilot/'));
   const componentManifest = JSON.stringify(components, null, 2) + '\n';
   const manifestHash = lib.sha(componentManifest);
   const release = [
-    'reInvoke NAND pilot 02 (offline candidate; normal boot acceptance unproven)',
+    'reInvoke NAND 03 (OFFLINE CANDIDATE; normal boot acceptance unproven)',
     `build-id: ${lib.BUILD_ID}`, `source-rc12-sha256: ${pins.rc12.sha256}`,
     `source-stock-rootfs-sha256: ${pins.stock.sha256}`, `original-init-sha256: ${lib.sha(originalInit)}`,
     `runtime-components-sha256: ${manifestHash}`, `bootstrap-source-manifest-sha256: ${lib.sha(JSON.stringify(sourceCode))}`,
