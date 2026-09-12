@@ -15,6 +15,13 @@ The public vendor-input source is
 [coggy9/HKHacking releases](https://github.com/coggy9/HKHacking/releases), not a
 reInvoke release. The custom image is not published.
 
+Assistant working records under `.copilot-tracking/` remain local and ignored
+by Git. Removing their tracked copies from the current public tree does not
+delete the local files or rewrite earlier Git history. Durable findings and
+failed-experiment provenance remain in the public guides and private evidence
+archive. The `.github/` security policy and dependency-update configuration
+serve the public repository and remain tracked.
+
 ## The problem
 
 The acquisition-era working set was measured at approximately 4.9 GB; that is
