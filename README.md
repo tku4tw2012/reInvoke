@@ -47,16 +47,23 @@ The current native runtime uses:
   volume, and the public compatibility Mic-Mute API;
 * `reinvoke-dsp-interface` for DSP loading, SPI/GPIO/reset, seven public DSP
   WAMP procedures, and a root-only mode-`0600` microphone-control socket;
-* process-lifetime microphone privacy with RAM state, restart reconciliation,
-  fail-safe remute, and a protected red indication;
+* the RAM-validated microphone privacy design with restart reconciliation,
+  fail-safe remute, and a protected red indication; native data-path acceptance
+  is still open;
 * BlueZ 5.55 and patched BlueALSA 4.0.0 for local A2DP Sink playback; and
 * supervised network and authenticated provisioning daemons.
 
 Candidate 02 has started from NAND after a wall-power cycle and demonstrated
 Bluetooth pairing, audible playback, rotary volume, physical provisioning, and
-local-network MCU/DSP control without host-supplied firmware. Native USB/ADB,
-persistent settings, and native microphone data-path acceptance remain open.
+local-network MCU/DSP control without host-supplied firmware. Candidate 03 is
+now installed and has returned its changed `reInvoke-NAND` Bluetooth name
+after an owner-controlled power-only boot. That is a native startup indicator,
+not a repeat of all candidate 02 acceptance. Native USB still does not enumerate;
+03's key-authenticated SSH fallback awaits network provisioning and a native
+login. Persistent settings and native microphone data-path acceptance remain open.
 Start with the [native NAND platform](docs/native-nand-platform.md).
+The [documentation index](docs/README.md) separates current guides from dated
+experiments, vendor evidence, and private operator tooling.
 
 ## Layout
 
@@ -69,7 +76,7 @@ reInvoke/
 │   ├── emulation/         Donor evidence and current hardware-service boundaries
 │   └── journal.md         Dated record of work, findings, and corrections
 ├── metadata/              Provenance sidecars: source URL, UTC time, SHA-256, size
-└── tools/                 Acquisition tooling
+└── tools/                 Acquisition, offline analysis, runtime builders, and recovery tooling
 ```
 
 ## Notable results
@@ -91,12 +98,15 @@ historical evidence and the
 
 | Tier | Contents | Location |
 |---|---|---|
-| 1 | Docs, metadata, hashes, extracted text layer | **This repository** (~480 KB) |
-| 2 | Firmware bundles (569 MB) | [GitHub Releases](https://github.com/tku4tw2012/reInvoke/releases) + operator-managed cold storage |
-| 3 | Full working set including Git mirrors (4.9 GB) | Private operator-managed archive |
+| 1 | Authored source, docs, acquisition metadata, extracted text layer | This repository |
+| 2 | Original firmware inputs and retained upstream sources | Private operator-managed archive; original public firmware source is [coggy9/HKHacking releases](https://github.com/coggy9/HKHacking/releases) |
+| 3 | Working trees, captures, build products, and deployment manifests | Private operator-managed archive and cold storage |
 
-Every artifact held outside Git is indexed here by SHA-256 in [`metadata/`](metadata),
-so this repository remains the authoritative catalogue of the whole archive.
+This repository has **no GitHub releases**, verified through the release list
+and API on 2026-09-12 UTC. The custom reInvoke image is not published.
+[`metadata/`](metadata) indexes acquired evidence; it is not a complete index
+of later private builds and captures. Those use their own private manifests
+and evidence summaries.
 
 ## Why the split
 
@@ -119,7 +129,8 @@ alongside — which is precisely why the split exists.
 
 Originals are preserved **byte-for-byte** and are never repacked or recompressed.
 The SHA-256 values recorded in [`metadata/`](metadata) at acquisition time are the
-integrity anchor for every artifact.
+integrity anchors for the corresponding acquired artifacts. Native build
+manifests separately bind private inputs, source pins, and generated images.
 
 Note that `83_IMAGE` exists in two distinct variants of identical length
 (107,934,810 bytes) but different SHA-256: the standalone `StockRoot` release asset
@@ -153,11 +164,11 @@ Valve, Kinoma, and community researchers. Provenance for each artifact is record
 
 | Path | Licence |
 |---|---|
-| `tools/`, `docs/` research and analysis written for this project | MIT |
+| Authored `tools/` source and `docs/` research and analysis, including authored bundle analyses | MIT |
 | `metadata/` provenance sidecars authored here | MIT |
 | `patches/invoke-kernel/` | GPL-2.0 — derivative of the Linux kernel |
 | `patches/bluealsa/` | MIT — derivative of BlueALSA, which is MIT |
-| `docs/bundle-contents/` extracted vendor text, scripts, drivers, PDFs | Proprietary, Harman International |
+| Original vendor text, scripts, drivers, and PDFs in `docs/bundle-contents/` | Retain original vendor terms; not relicensed by this project |
 
 Adding an MIT licence cannot relicense material this project does not own.
 The vendor-derived and GPL-derived paths above are included as research
@@ -165,10 +176,12 @@ evidence under their own terms.
 
 ### Build-time dependencies
 
-The runtime image is built against upstream projects that are **not**
-redistributed by this repository. No binaries are committed here; only build
-instructions, patches, and recorded checksums. Anyone reproducing the build
-fetches these sources themselves.
+The runtime image uses upstream projects and private donor inputs. Generated
+firmware images are not committed here. Rebuilding candidate 02 requires the
+private accepted RC12 artifacts and declared source pins as well as upstream
+sources and toolchains. A public fresh clone is not a one-command, from-source
+reproduction of the whole image. See the
+[build boundary](docs/native-nand-platform.md#build-and-reproducibility-boundary).
 
 | Dependency | Version | Licence |
 |---|---|---|
@@ -179,6 +192,10 @@ fetches these sources themselves.
 
 Recorded URLs, checksums, and build flags for each are in
 [metadata/P1-045.json](metadata/P1-045.json).
+These entries describe candidate 02's media-stack lineage. The offline
+candidate 03 SSH dependency and its separate source pin are recorded in the
+[successor appendix](docs/native-nand-platform.md#offline-ssh-implementation-milestone);
+they are not candidate 02 functionality or a native login acceptance result.
 
 `patches/bluealsa/` applies to BlueALSA, which is MIT, so the patch is MIT and
 retains upstream copyright. The copyleft dependencies are used unmodified at
@@ -186,19 +203,20 @@ build time and reached over D-Bus at runtime; because this repository conveys
 no binary built from them, their distribution obligations are not triggered
 here. They would apply to anyone who chooses to distribute a built image.
 
-### Firmware mirror attribution
+### Firmware source and publication status
 
-The Invoke firmware published under
-[Releases](https://github.com/tku4tw2012/reInvoke/releases) was obtained from the
-**[coggy9/HKHacking](https://github.com/coggy9/HKHacking)** project, which originally
-made these bundles available as GitHub release assets. Full credit for locating and
-publishing that material belongs to that project and its contributors.
+The preserved vendor Invoke firmware was obtained from
+[coggy9/HKHacking](https://github.com/coggy9/HKHacking/releases).
+Credit for locating and publishing those inputs belongs to that project and
+its contributors. This repository does not currently mirror them in releases.
 
-It is mirrored here for preservation. Release assets are not archived by Software
-Heritage, are not captured by the Wayback Machine, and are not copied by repository
-forks — so a single account deleting a release would remove the only public copy.
-This mirror exists to prevent that.
+Git mirrors and ordinary repository forks do not preserve release assets.
+Private byte-for-byte retention protects the acquired evidence without
+claiming that another public custodian or current public mirror exists.
+Dated records of earlier upload activity remain historical records, not proof
+of present release availability.
 
-The firmware itself remains the property of Harman International. It is retained and
-republished as research and preservation material, not as a vendor distribution
-channel, and carries no warranty. Rights holders may request removal.
+Vendor firmware retains its original ownership and licence provenance.
+Firmware packages and private deployment material are not to be published by
+this project. Public availability elsewhere does not grant redistribution
+rights, and the project's MIT licence does not cover vendor firmware.

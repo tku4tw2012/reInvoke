@@ -16,6 +16,10 @@ ms.topic: reference
 > [NAND startup status](nand-write-decision.md) for the full history.
 > Do not execute a reset, reinstall or restore from this historical sequence.
 
+The `tools/nand-inspect/` sources and writer notes cited below are deferred
+private operator tooling, not tracked public recipes. Their historical test
+results are retained, but a public clone does not contain that implementation.
+
 > [!CAUTION]
 > The read-only preflight passed on 2026-09-09, but the temporary partition
 > test lost ADB during cleanup. A double-free is present in the retained
@@ -174,8 +178,8 @@ Neither signal alone certifies full boot or product readiness.
 
 ## Prepared image
 
-The layout-preserving
-[builder](../tools/nand-inspect/cmd/squashfs-min-probe) reads the pinned
+The private layout-preserving builder,
+`tools/nand-inspect/cmd/squashfs-min-probe`, reads the pinned
 captured filesystem and recompresses only the shared fragment containing
 `init.rc`. Its zlib stream uses valid empty DEFLATE blocks to retain the
 original stored length. It does not append ignored trailing padding or move
@@ -191,7 +195,7 @@ It checks that:
   metadata; and
 * the image and its erase-rounded extent fit inside rootfs.
 
-The [offline validation](../tools/nand-inspect/squashmin-validation/README.md)
+The private offline validation, `tools/nand-inspect/squashmin-validation/README.md`,
 also uses the actual vendor kernel's decompressor, compiled for the host.
 Original and candidate streams decode to the intended fragment; negative
 controls reject corrupt/trailing input. This does not execute the filesystem
@@ -235,7 +239,7 @@ this smaller candidate.
 
 ## Before an actual write
 
-The [separate bounded writer](../tools/nand-inspect/probe-writer.md) is now
+The separate private bounded writer, `tools/nand-inspect/probe-writer.md`, was
 implemented and fault-tested on host-only fake flash. Its corrected-kernel live
 preflight and mapping lifecycle have now passed. A separately reviewed
 write-enabled build completed the approved write. Its checks are:
@@ -339,7 +343,8 @@ The retained source and compiled kernel contain a double-free in
 saves the bad-block-map pointer before generic deletion, removes the duplicate
 private-object free, and releases the map after queued I/O is stopped.
 
-The [offline ownership regression](../tools/nand-inspect/internal/probewrite/kernel_cleanup_test.go)
+The private offline ownership regression,
+`tools/nand-inspect/internal/probewrite/kernel_cleanup_test.go`,
 compiles the actual callback before and after patching. The original fails;
 the patched callback passes immediate and deferred ownership cases. This
 does not replace a kernel build or a later hardware test.

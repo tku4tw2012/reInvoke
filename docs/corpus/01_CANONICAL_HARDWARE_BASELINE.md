@@ -1,13 +1,19 @@
 ---
 doc_id: hki-hardware-baseline
 title: Harman Kardon Invoke — Canonical Hardware Baseline
+description: Hardware facts and preserved research unknowns with later service-evidence annotations
 version: "0.2"
 date: "2026-08-25"
 status: working-baseline
 evidence_policy: no-unlabeled-platform-analogy
 ---
 
-# Harman Kardon Invoke — Canonical Hardware Baseline
+## Reading boundary
+
+Physical part and connector identities below remain evidence-qualified.
+The original software-interface unknowns and research priorities are retained
+as historical snapshots; later owned MCU/DSP/capture work and candidate 02
+native acceptance are indexed in the [current documentation](../README.md).
 
 ## 1. Identity and published product specifications
 
@@ -359,6 +365,15 @@ Canonical interpretation:
 
 ## 11. What is explicitly unknown
 
+The following block preserves the earlier research inventory. Since then,
+[MCU/LED transport](../emulation/mcu-boundary.md), the
+[DSP protocol](../emulation/dsp-boundary.md), the
+[two-channel capture interface](../microphone-capture.md), and
+[observed NAND bad-block handling](../nand-write-decision.md#unit-facts-to-preserve)
+have been documented. These software observations do not identify every
+physical part, seven individual microphone channels, or a universal restore
+strategy.
+
 ```yaml
 compute:
   configured_cpu_clock: unknown
@@ -400,7 +415,11 @@ debug:
   test_pad_map: unknown
 ```
 
-## 12. Strategic conclusion supported by present evidence
+## 12. Historical strategic conclusion
+
+This preserved hardware-research priority is not the current project gate.
+The closed-unit project now retains the BG2CDP and has demonstrated native
+candidate 02; connector mapping remains an optional hardware project.
 
 The most important established architectural fact for repurposing is that the Invoke contains multiple separable PCBs and a removable daughterboard connected to the main electronics through two board-to-board connectors. [FCC-IP pp.4-5]
 
@@ -412,7 +431,7 @@ Therefore the highest-value unresolved problem is:
 
 This is a research priority, not a claim that the main audio board can already be independently controlled.
 
-# Bibliography
+## Bibliography
 
 ## HARMAN-SPEC
 HARMAN International Industries, *Harman Kardon Invoke Specification Sheet*, 2017.  

@@ -14,6 +14,16 @@ runs static ARM `reinvoke-mcu-interface` and `reinvoke-dsp-interface` services;
 it does not run Node.js. See the
 [current product and architecture contract](../../docs/current-product-contract.md).
 
+Candidate 02 demonstrated local-network MCU/DSP WAMP control and passed the
+bounded eight-group RawSocket check. A separate external check also verified
+WebSocket WAMP on 9998 with `wamp.2.msgpack`, MCU/volume reads, and
+unknown-procedure rejection; `wamp-call.mjs` remains a RawSocket client.
+These checks did not demonstrate a native shell or heartbeat delivery.
+See the [native evidence summary](../../docs/native-nand-platform.md#current-result).
+WAMP is unauthenticated, not an administration shell;
+live calls and state changes still need a separately approved device scope.
+Keep peers, network addresses, and captured configuration private.
+
 `wamp-fixed-service.mjs` registers one procedure and returns a fixed JSON
 response. Use it for narrow RAM-only compatibility contracts instead of
 starting a broad donor supervisor:

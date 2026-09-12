@@ -13,6 +13,11 @@ and partial Bluetooth bring-up.
 This review treats the external repository as prior art, not as authoritative
 evidence.
 
+This is a review of the pinned June 2026 source as examined on September 2,
+not a fresh report of the upstream project's current status. Later reInvoke
+RAM acceptance and candidate 02 native startup are recorded separately in the
+[native NAND guide](../../native-nand-platform.md).
+
 ## Provenance
 
 | Field | Value |
@@ -65,8 +70,11 @@ some persistent writes recoverable. That conclusion is not accepted:
 * A userspace or U-Boot blocklist cannot constrain arbitrary code inside a
   served initramfs.
 
-reInvoke therefore retains its no-NAND-write policy until readback, slot
-selection, signed-container behavior, and restoration are independently proven.
+At that review checkpoint, reInvoke retained a no-NAND-write policy pending
+further investigation. Later owner-approved trials had explicit bounded
+scopes; they did not prove universal recovery, all boot-slot behavior, or
+programmer-grade restoration. This historical conclusion is not a new write
+authorization.
 
 ## Reuse candidates
 

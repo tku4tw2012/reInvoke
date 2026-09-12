@@ -1,16 +1,31 @@
-# Storage Policy
+---
+title: Storage policy
+description: Public source, private firmware retention, and historical storage measurements
+ms.date: 2026-09-12
+---
 
-How this project decides what lives in Git, what lives in cold storage, and why.
+## Current publication boundary
+
+Git holds authored source, documentation, acquisition metadata, and the
+preserved small vendor evidence layer under its original terms. Firmware
+packages, generated images, captures, credentials, and deployment manifests
+remain in the private operator archive. No releases exist in this repository,
+verified through GitHub's release list and API on 2026-09-12 UTC.
+The public vendor-input source is
+[coggy9/HKHacking releases](https://github.com/coggy9/HKHacking/releases), not a
+reInvoke release. The custom image is not published.
 
 ## The problem
 
-The acquired working set is ~4.9 GB. The research value is concentrated in a very
+The acquisition-era working set was measured at approximately 4.9 GB; that is
+not the size of the later native-build archive. Research value is concentrated in a very
 small fraction of those bytes. Committing the bulk to Git would make it permanent in
 history, bloat every clone forever, and buy nothing.
 
-## Measured facts
+## Historical acquisition measurements
 
-These were tested directly, not assumed.
+These are retained acquisition-stage measurements, not a fresh storage census
+or a recommendation to repeat the experimental Git commit.
 
 | Test | Result | Implication |
 |---|---|---|
@@ -32,41 +47,46 @@ not compression.
 
 Roughly 0.05% of the bytes carry nearly all of the human-readable engineering content.
 
-The decisive example: `gen-cmd.sh` is 596 bytes and yields the complete NAND partition
-map, the serial console configuration, and a recovery boot path. Its partition sizes sum
-to exactly 512 MB, establishing the flash size by derivation.
+The decisive example: `gen-cmd.sh` is 596 bytes and yields a generic vendor NAND
+map, serial-console configuration, and a recovery boot path. Its sizes sum to
+512 MiB, but that does not establish this unit's physical geometry. Live
+identification and complete logical reads instead established 256 MiB NAND.
+The original script remains unchanged; this annotation corrects its earlier
+interpretation.
 
 ## The three tiers
 
-### Tier 1 — Git (this repository, ~480 KB)
+### Tier 1: public source and documentation
 
 Research corpus, acquisition manifest, retention ranking, this policy, provenance
-sidecars with SHA-256 values, acquisition tooling, the extracted text layer, and full
+sidecars with SHA-256 values, authored runtime and acquisition tooling, the extracted text layer, and full
 `unzip -l` listings of both bundles.
 
 The complete bundle structure is therefore documented and greppable in Git without
 the bytes being present.
 
-### Tier 2 — Firmware bundles (569 MB)
+### Tier 2: retained inputs
 
 `Harman.Kardon.INVOKE.Flashing.zip`, `Harman.Kardon.INVOKE.Driver.OTA2.zip`, and the
 standalone `83_IMAGE`.
 
-All three exceed GitHub's hard 100 MB limit for tracked files and must never be
-committed. They are published instead as **GitHub Releases**, which allows up to 2 GB
-per file, consumes no LFS quota, and can be removed later without rewriting history.
+These acquired firmware packages remain private and must not be committed or
+published as release assets. Retained upstream source archives also belong
+outside the Git working tree, with their own licences and hashes.
 
-This also mirrors the failure mode being insured against: release assets are precisely
-the layer that no external archive preserves, so republishing them here creates a second
-independent custodian. Attribution to the originating project is recorded in the README.
+The original preservation rationale remains valid: a Git mirror or fork does
+not copy release assets. It does not establish that no other public archive
+exists, or grant rights to republish proprietary material.
 
-**Git LFS is the wrong tool here.** The free tier provides 1 GB of storage *and*
-1 GB/month of bandwidth; a 569 MB payload would exhaust the bandwidth allowance almost
-immediately. Release assets consume no LFS quota.
+Git LFS is not used for these private inputs. Historical quota estimates are
+not current service pricing and are not a publication rationale.
 
-### Tier 3 — Cold storage (full 4.9 GB working set)
+### Tier 3: private working set and cold storage
 
-Azure Blob Storage, including the Git mirrors.
+The operator-managed archive includes Git mirrors, later native build products,
+and evidence bundles. The retained cold-storage configuration uses Azure Blob
+Storage; the table describes that configuration, not resources supplied by a
+public clone.
 
 | Setting | Value |
 |---|---|
@@ -80,12 +100,14 @@ Azure Blob Storage, including the Git mirrors.
 | Transport | HTTPS only, TLS 1.2 minimum |
 | Authentication | Microsoft Entra ID (no shared keys) |
 
-Blobs are indexed by the SHA-256 values already recorded in [`../../metadata/`](../../metadata),
-so Tier 1 remains the authoritative catalogue of everything held in Tier 3.
+Acquired inputs are indexed by corresponding sidecars in
+[`metadata/`](../../metadata). Later native artifacts are bound by private build
+and evidence manifests. The public sidecars are not a complete Tier 3 inventory.
 
 ### Why Cool, and not Archive
 
-Measured example cost for the 4.9 GB working set:
+Historical acquisition-era estimate for the then-4.9 GB working set, retained
+to explain the original choice rather than quote present prices:
 
 | Tier | Minimum retention | Access | Annual cost |
 |---|---|---|---|
@@ -94,43 +116,50 @@ Measured example cost for the 4.9 GB working set:
 | Cold | 90 days | instant | $0.21 |
 | Archive | 180 days | offline, up to 15 h to rehydrate | $0.06 |
 
-The entire spread is under $1/year. Archive would save roughly $0.53/year while
+In that estimate, the spread was under $1/year. Archive would save roughly $0.53/year while
 imposing a 180-day retention commitment and a rehydration wait of up to 15 hours
 (under 1 hour at high priority, capped at 10 GiB/hour per storage account) every time
 the firmware needs to be examined.
 
 For a project whose purpose is repeatedly analysing these images, that is a poor
 trade. Cool tier is chosen deliberately: instant access, negligible cost, and no
-retention trap.
+offline retrieval requirement. Minimum retention and early-deletion charges
+still apply; the table is not a current billing guarantee.
 
-If the project later goes dormant, migrate using `Copy Blob` rather than
-`Set Blob Tier`, which leaves the source blob in place and avoids the early-deletion
-penalty.
+The earlier plan suggested copying rather than retiering dormant data.
+Copying preserves the source but does not waive minimum-retention charges
+if that source is deleted early. Any later storage migration needs its own
+current service and cost review.
 
 ## Invariants
 
 1. **Originals are never repacked, recompressed, or modified.** Byte-for-byte
    preservation is the policy; recorded SHA-256 values are the integrity anchor.
-2. **No artifact is executed or flashed.** Tooling may download, mirror, hash,
-   extract, index, and document only.
+2. **Acquisition is not execution approval.** Acquisition tooling downloads,
+   hashes, extracts, indexes, and documents. Separate offline builders and
+   explicitly approved hardware trials now exist; neither authorizes another
+   NAND operation. Image 99 remains excluded.
 3. **No credentials or signed URLs in Git.** Presigned download URLs expire and may
    embed signature tokens; sidecars retain the stable public `source_url` and redact
    signed query strings.
 4. **Tier 1 stays small.** If a proposed addition is large and opaque, it belongs in
    Tier 2 or 3 with a hash recorded here instead.
 
-## Decision: publishing proprietary material
+## Historical publication decision and current correction
 
-The GPL/open-source drops (for example the Harman Citation package and the Google/Nest
-source trees) are freely redistributable under their respective licences.
+Open-source drops retain their respective licences and any redistribution
+conditions; a package name alone is not a licence determination.
 
-The Harman Invoke firmware bundles are **proprietary**. The decision taken for this
-project is to mirror them publicly with clear attribution to
-[coggy9/HKHacking](https://github.com/coggy9/HKHacking), on preservation grounds: the
-material is already public, and release assets have no external custodian.
+The acquisition-stage policy proposed publicly mirroring the proprietary
+Invoke bundles with attribution to
+[coggy9/HKHacking](https://github.com/coggy9/HKHacking), on preservation grounds.
+That proposal and dated upload records explain the earlier documentation;
+they do not describe an available mirror today.
 
-The residual risk is a takedown request, which would remove the public mirror but not
-the archived copies. Rights holders may request removal.
+The current policy is private retention, not firmware publication. Public
+availability at the upstream source is not permission to redistribute, and
+the project MIT licence does not relicense vendor material. Preserve original
+notices and hashes without rewriting extracted originals.
 
 ## A note on external custodians
 
