@@ -1,7 +1,7 @@
 ---
 title: Project plan and handoff
 description: Current evidence, project status, and next steps for reInvoke
-ms.date: 2026-09-05
+ms.date: 2026-09-12
 ms.topic: overview
 ---
 
@@ -11,7 +11,7 @@ service boundaries are defined by the
 Older plans and milestone records below are preserved as evidence and are
 explicitly labeled when they no longer describe the target.
 
-**Last updated:** 2026-09-05
+**Last updated:** 2026-09-12
 
 ---
 
@@ -27,9 +27,9 @@ explicitly labeled when they no longer describe the target.
 | Analysis — unpack and understand the firmware | **Done** |
 | Control-plane emulation — device userland runs off-device | **Done** — see [control-plane-emulation.md](docs/emulation/control-plane-emulation.md) |
 | Evidence closure — FCC exhibits, OTA2, sibling cross-index | **Done** |
-| Hardware validation, closed device available | **In progress**: the owned RAM lifecycle, Wi-Fi, MCU, DSP, capture and playback ALSA paths, audible Bluetooth output, rotary volume, pairing, microphone privacy, and LED clear path are verified at least once; the current image still needs the final cold-boot and attended playback campaign |
+| Hardware validation, closed device available | **Native milestone reached**: candidate 02 starts from NAND and has demonstrated Bluetooth pairing, audible playback, rotary volume, physical provisioning, and local-network MCU/DSP calls |
 | Owned service replacement | **Accepted architecture**: owned PID 1 supervises the MCU, DSP, network, BlueZ/BlueALSA, Bonefish compatibility, logging, and bounded helper services |
-| Persistent installation | **Not approved or required**: the accepted target remains a reversible RAM boot |
+| Persistent installation | **Demonstrated**: a complete vendor-format bundle starts the owned runtime from NAND; settings remain volatile and native USB/ADB remains unresolved |
 
 ### The finding that reframes the project
 
@@ -152,7 +152,7 @@ location from its own path. Override with `--archive-root` or `$REINVOKE_ARCHIVE
 | Tier | Contents | Location |
 |---|---|---|
 | 1 | Docs, metadata, hashes, extracted text layer | This repository (~1.5 MB) |
-| 2 | Firmware bundles (569 MB) | [GitHub Releases](../../releases/tag/invoke-firmware-mirror) |
+| 2 | Firmware bundles (569 MB) | [GitHub Releases](https://github.com/tku4tw2012/reInvoke/releases/tag/invoke-firmware-mirror) |
 | 3 | Full working set including Git mirrors (4.9 GB) | Private operator-managed cold archive |
 
 No archive credentials, signed URLs, account names, or container names belong
@@ -284,14 +284,17 @@ Historical preparation record: ADB 1.0.41, libusb 1.0.25,
 bus-specific usbmon capture, timestamped attempt bundles, and a native x86-64
 build of the pinned open-source flasher at commit `63444e82`.
 
-**Current remaining gates:**
+**Current remaining work:**
 
-1. Cold-boot the accepted image and complete boots 2 through 5.
-2. Validate complete startup order and the pairing-agent generation guard from
-   that image.
-3. Complete one attended playback-continuity run on that image.
-4. Harden WAMP setup-response correlation against interleaved messages.
-5. Complete physical-button orchestration for an isolated provisioning window.
+1. Repair native USB ADB and add the approved key-authenticated network
+   administration fallback without blocking the working product.
+2. Give the next image consistent NAND-specific identity and a repeatable
+   private-configuration build interface.
+3. Repeat the microphone data-path/privacy measurements on a native NAND boot.
+4. Design persistence for Wi-Fi profiles and Bluetooth bonds together with
+   power-loss and update-preservation behavior.
+5. Publish the native milestone, recovery limits, reproducible source, and
+   preserved engineering history.
 
 The occasional Mic-Mute press for which the companion MCU produces no event
 remains a hardware/firmware observation. Both the donor and owned service show
@@ -348,10 +351,9 @@ that checkpoint, not the current target; the current gates above and the
    remaining audio-path gap at that checkpoint and has since been resolved.
 9. **Owned replacement:** completed for the accepted service graph. Each required
    contract is behind an owned reInvoke boundary while RAM rollback remains.
-10. **Persistence decision:** evaluate a NAND installation only after the owned
-    boot and service graph passes repeated cold-boot, audio, networking, and
-    recovery tests. A persistent install is optional, not the definition of
-    project success.
+10. **Persistence decision:** **historical gate completed.** Candidate 02 now
+    starts the owned service graph from NAND. Persistent user configuration is
+    a separate unresolved design.
 
 The supported physical control surface is the closed unit's Micro-USB port and
 buttons. Opening the enclosure, electrical probing, board modification, and
@@ -435,9 +437,10 @@ human-approved recovery and rollback plan.
 
 1. **Originals are never modified.** No repacking, no recompression. Recorded SHA-256
    values are the integrity anchor.
-2. **No persistent device storage is modified or flashed.** Emulation uses a
-   copied rootfs. Hardware validation uses the reviewed yellow-mode RAM-boot
-   path, does not mount NAND, and retains the installed firmware as rollback.
+2. **Persistent device changes require explicit owner approval.** The current
+   native image was installed through an approved whole-good-block vendor
+   operation. Builds, tests, documentation updates, and acknowledgement strings
+   do not authorize another write, retry, reset, or reboot.
 3. **Git holds what was written, not what was downloaded.** Analysis, notes, metadata,
    and small text artifacts belong here; bytes belong in Tier 2 or 3.
    Litmus test: *would I ever read this in a diff?*
