@@ -10,7 +10,8 @@ marker changes. It does not yet establish active-slot selection.
 
 > [!NOTE]
 > This evidence describes Harman's persistent update path. The current reInvoke
-> target is RAM-only, does not run the updater, and does not write NAND. See the
+> runtime now starts from NAND but does not run this updater; mutable settings
+> remain in RAM. Approved installation is separate from runtime policy. See the
 > [current contract](../current-product-contract.md).
 
 ## Evidence classification
@@ -112,10 +113,12 @@ a U-Boot environment variable.
 
 The recovery fstab names `bootimgs` and `rootfs` as MTD targets. Installer
 strings mention IFS and IPL selection, but preserved state does not map those
-operations to a numbered active or inactive slot. Rollback counters, the
-physical MTD number of `fw_stat`, and secure-boot acceptance also remain
-unknown.
+operations to a numbered active or inactive slot. Rollback counters and complete secure-boot acceptance rules remain unknown.
+Later [captured allocation tables](../nand-write-decision.md#unit-facts-to-preserve)
+place `fw_stat` at `[0x0fe20000,0x0ff20000)` on this unit; Linux MTD numbering
+depends on the boot's partition view and is not a universal identity.
 
-These gaps are why NAND writing remains outside the current procedure. A safe
-persistent change needs a verified readback, known active-slot behavior, and a
-recovery path tested from RAM first.
+These gaps explained the earlier no-write investigation boundary. Subsequent
+owner-approved trials had their own explicit scopes and recovery evidence;
+they did not resolve all vendor update semantics. This donor-analysis page
+does not authorize another write.

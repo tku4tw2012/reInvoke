@@ -59,7 +59,7 @@ secret-management design.
 `tools/provisioning/` contains a dependency-free Go service with these
 properties:
 
-* An explicit bind address, intended to be `192.168.43.1:8443`
+* An explicit private AP bind address, shown publicly as `<ap-address>:8443`
 * An in-memory ECDSA P-256 certificate with TLS 1.3 minimum
 * A random 256-bit bearer token
 * A root-only descriptor containing the URL, token, certificate fingerprint,
@@ -185,7 +185,7 @@ The test then:
 * Created a random-key WPA2 AP on `p2p0`
 * Bound dnsmasq DHCP only to `p2p0` with DNS disabled
 * Kept IPv4 and IPv6 forwarding disabled
-* Assigned the test workstation an address in `192.168.43.0/24` with no gateway or DNS
+* Assigned the test workstation an address in the isolated AP subnet, with no gateway or DNS
 * Verified the TLS certificate fingerprint over the AP
 * Received HTTP 202 from the complete parser-to-adapter path
 * Removed the host connection profile, AP key, derived station configuration,

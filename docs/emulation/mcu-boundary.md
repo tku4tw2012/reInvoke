@@ -16,6 +16,12 @@ physical input decoding, rotary volume, LED transport, amplifier/DAC power and
 mute policy, and the public compatibility microphone API. It preserves the DSP
 reset bit whenever it updates the shared expander register.
 
+The detailed physical traces and restart/control tests below are historical
+host-loaded RAM observations. Candidate 02 separately reported MCU `000116`
+and demonstrated rotary/indicator/provisioning controls; native kernel,
+process, mount, and heartbeat observations must not be inferred from these
+RAM captures. See the [native NAND guide](../native-nand-platform.md).
+
 ## Evidence classification
 
 Verified facts:
@@ -526,7 +532,12 @@ the analogue path has stabilised.
 No part numbers are claimed for any of the three. Address plus access pattern
 narrows the device class; it does not identify a part.
 
-## What is not established
+## Limits of the initial donor trace
+
+These original limits are preserved alongside later recovered behavior.
+Owned services now use the documented GPIO3 input, shared-expander mute/reset
+bits, and LED/control frames. Exact device identities, complete register maps,
+and all cold-state behavior still must not be inferred from that partial map.
 
 The identity of the devices at `0x20`, `0x36`, and `0x4c`. Their access
 patterns and bring-up positions narrow the device classes, but no part number
@@ -570,7 +581,7 @@ With TCP 19999 forwarded to a RAM-booted unit's loopback port 9999:
 node tools/control/wamp-monitor.mjs --duration 60
 ```
 
-This is the smallest safe next component: it can refine event payloads while
+This historical next component could refine event payloads while
 changing only volatile Bonefish session state. It is not a hardware driver.
 
 The remaining software-only probes, in safety order, are:

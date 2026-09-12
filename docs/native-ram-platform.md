@@ -14,7 +14,9 @@ stack.
 This document combines current architecture with dated bring-up evidence. The
 [current product and architecture contract](current-product-contract.md) is
 normative; hashes and limitations in dated milestones apply to those iterations
-only.
+only. Here, “native RAM” means ARM Linux executing on the Invoke after a host
+loads it, not host-independent NAND startup. Candidate 02's separate native
+milestone is summarized in the [NAND guide](native-nand-platform.md).
 
 ## Current accepted outcome
 
@@ -36,8 +38,9 @@ The current RAM image has:
 
 RAM boot, playback, rotary volume, capture, mute/unmute signal correlation,
 all-zero muted capture, pairing-window control, networking, and the LED clear
-packet are proven. The latest accepted image still needs the final cold-boot
-campaign and one attended playback-continuity run.
+packet were demonstrated on RAM builds. The then-open final cold-boot/playback
+checks belong to that RAM iteration; current native acceptance and remaining
+gaps are in the [NAND guide](native-nand-platform.md#current-result).
 
 ## Historical initial verified outcome
 
@@ -70,7 +73,7 @@ chronological evidence, not the current service graph:
 18. `dsp-client` received `EVENT_DSP_BOOTUP`, requested the normal DAC and
     amplifier unmute sequence, and published DSP version value `25688`.
 
-## Persistence model
+## RAM-platform persistence model
 
 | Component | Analogy | Persistence | Current policy |
 |-----------|---------|-------------|----------------|
@@ -86,7 +89,7 @@ U-Boot maps it at `0xF0000000`, reports an invalid stored environment, and
 returned zeroes at the sampled offsets. Those observations do not prove that
 the full chip is unused.
 
-## Installed vendor-version audit
+## Historical pre-write vendor-version audit
 
 The complete logical NAND data image is:
 
@@ -150,9 +153,9 @@ fields, not a reusable private key.
 This does not block the current development path. The RAM-loaded U-Boot accepts
 the reviewed standard `uImage` kernel and our modified initramfs. Signing
 becomes a hard blocker only if the final design requires the stock boot chain
-to accept a replacement persistent kernel. A persistent custom userspace may
-remain possible with a signed donor kernel, but its rootfs verification and
-slot-selection behavior are not yet established.
+to accept a replacement persistent kernel. Candidate 02 later demonstrated persistent custom userspace while retaining
+the vendor native kernel. This does not prove arbitrary custom native kernels
+are accepted or resolve every verification and slot-selection rule.
 
 ### Historical first replacement-kernel build
 
@@ -197,7 +200,8 @@ time as the success baseline.
 The successful kernel is `3.8.13-reinvoke-gcc49`. It was built from the
 preserved Harman source without the ARM `uaccess` compatibility backport.
 Modern GCC versions can compile the tree after compatibility changes, but their
-images did not boot on this hardware. The current working policy is therefore:
+images did not meet the observed USB-return criterion on this hardware; no
+trace located the failed boot stage. The RAM-kernel working policy is therefore:
 
 * Use verified NDK GCC 4.9 for device kernels and modules.
 * Keep GCC 11 compatibility work as a host-build research branch, not the

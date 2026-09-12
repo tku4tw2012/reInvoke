@@ -1,12 +1,19 @@
 ---
 doc_id: hki-sibling-crossindex
 title: Harman Kardon Invoke — Sibling Source Cross-Index
+description: Historical sibling-source searches and explicit limits on applying them to Invoke
 version: "0.1"
 date: "2026-08-28"
 status: working-crossindex
 ---
 
-# Sibling Source Cross-Index
+## Historical search boundary
+
+The refs and “current kernel” comparisons below describe the retained search
+checkpoints, not current upstream branch tips or a native candidate build
+manifest. The later [Invoke kernel builder](../../tools/kernel/README.md)
+uses the acquired Invoke source for RAM/recovery. Candidate 02 retains the
+vendor native kernel, and its running kernel internals remain unread.
 
 ## Purpose and method
 

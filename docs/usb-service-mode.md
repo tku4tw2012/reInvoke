@@ -12,8 +12,11 @@ ms.topic: troubleshooting
 > [Native RAM platform](native-ram-platform.md) for the current outcome. The
 > failed attempts below are retained as evidence.
 
-The sections below remain accurate for the ordinary power-on path, where the
-device requests `08_IMAGE` and no console appears. The earlier conclusion that
+The sections below describe the observed historical ordinary-power path,
+where the device requested `08_IMAGE` and no console appeared. Candidate 02
+later demonstrated host-independent functionality without native USB
+enumeration; see the [native NAND guide](native-nand-platform.md).
+The earlier conclusion that
 subclass `0xFE` blocks progress was incomplete: the decisive variable is the
 image-request sequence the device issues, not the subclass alone.
 

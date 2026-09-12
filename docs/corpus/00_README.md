@@ -1,6 +1,7 @@
 ---
 corpus_id: hki-hardware
 title: Harman Kardon Invoke Hardware Corpus
+description: Hardware evidence methodology, dated baseline, and navigation to later owned-runtime findings
 version: "0.3"
 date: "2026-08-28"
 status: working-research-corpus
@@ -14,7 +15,14 @@ canonical_order:
   - 05_SIBLING_SOURCE_CROSSINDEX.md
 ---
 
-# Harman Kardon Invoke Hardware Corpus
+## Current reading boundary
+
+The corpus preserves hardware evidence and historical research priorities.
+Later service recovery and candidate 02 acceptance are summarized in the
+[documentation index](../README.md) and [native NAND guide](../native-nand-platform.md).
+Unknown silicon identities must not be confused with software interfaces that
+have since been recovered. Dated plans do not authorize physical probing.
+See [corpus hashes](99_CORPUS_HASHES.md) for preserved and current text digests.
 
 ## Purpose
 
@@ -53,7 +61,7 @@ For a factual answer:
 3. consult `02_CLAIM_EVIDENCE_LEDGER.md` when provenance or confidence matters.
 
 For planning or reverse engineering:
-1. ingest all four documents;
+1. ingest all six documents listed above;
 2. do not promote a hypothesis from `03_RESEARCH_FRAMEWORK_AND_CRITIQUE.md` into a hardware fact without updating the ledger.
 
 ## Evidence classes
@@ -193,14 +201,17 @@ flowchart TD
 ## Artifact acquisition
 
 The [acquisition manifest](../acquisition/invoke_berlin_artifact_acquisition_manifest.md) is paired
-with a reproducible, non-executing runner in [sources/acquisition/](../../sources/acquisition/).
-`python3 sources/acquisition/acquire.py` downloads only explicitly specified URLs and
+with the non-executing runner [tools/acquire.py](../../tools/acquire.py).
+`python3 tools/acquire.py` downloads only explicitly specified URLs and
 creates full Git mirrors. Originals are immutable, extracted files are placed
-under `derived/extracted/`, and each operation writes a JSON provenance sidecar under
-`derived/metadata/`. Existing destinations are skipped rather than overwritten. Large
+under the private archive's `derived/extracted/`, and acquisition provenance sidecars
+are written under repository `metadata/`. Existing destinations are skipped rather than overwritten. Large
 acquired trees are excluded by `.gitignore`; manifests and metadata remain
 versionable. Discovery-only records are logged as `DISCOVERY_ONLY` and are not
 given fabricated URLs.
+
+Later manually analyzed trees also use the archive's `extracted/` directory;
+do not confuse those with the acquisition runner's extraction destination.
 
 ### HARMAN-SPEC
 HARMAN International Industries, *Harman Kardon Invoke Specification Sheet*, 2017.  

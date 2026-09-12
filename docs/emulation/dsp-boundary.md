@@ -10,6 +10,11 @@ evidence used to recover it. The
 [current product and architecture contract](../current-product-contract.md) is
 normative.
 
+The byte-exact transport captures, GPIO observations, and restart tests below
+come from historical RAM boots. Candidate 02 independently returned fresh
+native DSP version events `25688`; it has not repeated native microphone
+capture/privacy measurements or supplied a shell-level kernel/process audit.
+
 This is the DSP counterpart to [MCU boundary](mcu-boundary.md). No hardware was
 opened, no probe was attached, and no provisioning file was touched to produce
 it.

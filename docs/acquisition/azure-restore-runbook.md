@@ -1,9 +1,17 @@
-# Azure Archive Restore Runbook
+---
+title: Private Azure archive restore runbook
+description: Operator-only restore boundary and verification of retained acquisition and native-build artifacts
+---
+
+## Scope
 
 This runbook restores the cold archive without placing bulk artifacts in Git.
 Use Microsoft Entra authentication through Azure CLI or an equivalent managed
 identity. Do not copy storage keys, SAS URLs, or credentials into this
 repository.
+This requires the owner's existing private archive and permissions; a public
+clone supplies neither. It is not a firmware download or native-image
+installation recipe.
 
 ## Restore
 
@@ -28,8 +36,10 @@ been independently checked.
 
 ## Verify
 
-Use the repository metadata sidecars as the integrity authority. For each
-restored artifact, compare the recorded size and SHA-256:
+Use the matching repository acquisition sidecar for each acquired original.
+For later native builds and captures, use the associated private build or
+evidence manifest; public metadata does not inventory the whole archive.
+Compare the recorded size and SHA-256:
 
 ```sh
 sha256sum ~/<workspace>/reinvoke-archive/originals/harman/invoke/83_IMAGE
