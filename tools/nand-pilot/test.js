@@ -44,6 +44,24 @@ try {
     assert(patched.includes(marker), `patched init is missing 4.1 change: ${marker}`);
   assert(!patched.includes('log "HCI initialization failed; retrying"\n'),
     'unsampled HCI failure record survived the 4.1 patch');
+  // The same behaviour is maintained in two places: this patch against the
+  // pinned RC12 init, and tools/usb-boot/native-ram-init for any future
+  // rebuild. Marker checks alone would not catch the two drifting apart.
+  {
+    const ramInit = fs.readFileSync(
+      path.join(__dirname, '../usb-boot/native-ram-init'), 'utf8');
+    const body = (text, name) => {
+      const start = text.indexOf(`${name}() {\n`);
+      assert(start >= 0, `missing shell function ${name}`);
+      const end = text.indexOf('\n}\n', start);
+      assert(end > start, `unterminated shell function ${name}`);
+      return text.slice(start, end).split('\n').map(line => line.trim())
+        .filter(line => line && !line.startsWith('#')).join('\n');
+    };
+    for (const name of ['start_runtime_logger', 'run_bluetoothd_generation'])
+      assert.equal(body(patched.toString(), name), body(ramInit, name),
+        `${name} diverged between patch-runtime.js and usb-boot/native-ram-init`);
+  }
   assert.throws(() => patchRuntime(Buffer.concat([init, Buffer.from('\n')])), /hash mismatch/);
   const patchedFile = path.join(fixture, 'init');
   fs.writeFileSync(patchedFile, patched);
