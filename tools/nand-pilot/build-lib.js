@@ -14,7 +14,7 @@ const pins = {
   capture: { path: 'evidence/nand-restored-ram-inspection-20260909/restored-main-256MiB.bin', bytes: 268435456,
     sha256: '2fac4159fe23aa25581c29f6c90033af3a1126a02593db0bd47e2c10d2c09f19' },
 };
-const CANDIDATE = '04.1';
+const CANDIDATE = '05';
 const BUILD_ID = `reInvoke-NAND-${CANDIDATE}-20260913`;
 const BLUETOOTH_NAME = `reInvoke-NAND-${CANDIDATE}`;
 const BUNDLE_NAME = `83_IMAGE.reinvoke-${CANDIDATE}`;
@@ -92,7 +92,17 @@ function elfClosure(root) {
     const interpreter = /\[Requesting program interpreter: ([^\]]+)\]/.exec(info)?.[1];
     if (interpreter) rooted(root, interpreter);
     const modern = item.path.startsWith('opt/reinvoke/');
-    const dirs = modern ? ['/opt/reinvoke/lib/hostapd', '/opt/reinvoke/lib', '/lib', '/usr/lib'] : ['/lib', '/usr/lib'];
+    // The donor radio stack is self-contained under its own prefix. These are
+    // the same directories its launcher puts on LD_LIBRARY_PATH, so the build
+    // verifies the closure the runtime will actually resolve.
+    const donorRadio = item.path.startsWith('opt/bluedroid/');
+    let dirs = ['/lib', '/usr/lib'];
+    if (modern) {
+      dirs = ['/opt/reinvoke/lib/hostapd', '/opt/reinvoke/lib', '/lib', '/usr/lib'];
+    } else if (donorRadio) {
+      dirs = ['/opt/bluedroid/system/lib', '/opt/bluedroid/system/lib/hw',
+        '/opt/bluedroid/usr/lib', '/opt/bluedroid/lib'];
+    }
     const needed = [...info.matchAll(/\(NEEDED\).*Shared library: \[([^\]]+)\]/g)].map(m => m[1]);
     const dependencies = needed.map(name => {
       for (const dir of dirs) {
