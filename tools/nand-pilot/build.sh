@@ -6,7 +6,7 @@ umask 022
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "${here}/../.." && pwd)"
 archive="$(realpath "${1:-${repo}/../reinvoke-archive}")"
-output="${2:-${archive}/build/artifacts/reinvoke-native-041-20260913/main}"
+output="${2:-${archive}/build/artifacts/reinvoke-native-05-20260913/main}"
 [[ -n "${PILOT_PRIVATE_CONFIG:-}" ]] || { echo "PILOT_PRIVATE_CONFIG is required" >&2; exit 1; }
 [[ -n "${PILOT_PERSISTENCE_CONFIG:-}" ]] || { echo "PILOT_PERSISTENCE_CONFIG is required" >&2; exit 1; }
 mkdir -p "${output}"

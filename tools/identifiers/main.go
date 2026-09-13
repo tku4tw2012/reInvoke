@@ -12,6 +12,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -118,7 +119,10 @@ func (c *connection) negotiate(realm string) error {
 		return fmt.Errorf("handshake rejected: %x", handshake)
 	}
 	if err := c.writeFrame([]interface{}{wampHello, realm, map[string]interface{}{
-		"roles": map[string]interface{}{"callee": map[string]interface{}{}},
+		"roles": map[string]interface{}{
+			"callee": map[string]interface{}{},
+			"caller": map[string]interface{}{},
+		},
 	}}); err != nil {
 		return err
 	}
@@ -132,28 +136,29 @@ func (c *connection) negotiate(realm string) error {
 	return nil
 }
 
-func (c *connection) register(procedure string) error {
+func (c *connection) register(procedure string) (uint64, error) {
 	c.next++
 	request := c.next
 	if err := c.writeFrame([]interface{}{
 		wampRegister, request, map[string]interface{}{}, procedure,
 	}); err != nil {
-		return err
+		return 0, err
 	}
 	for {
 		message, err := c.readFrame()
 		if err != nil {
-			return err
+			return 0, err
 		}
-		if messageType(message) == wampRegistered {
+		if messageType(message) == wampRegistered && len(message) > 2 {
 			if id, ok := unsigned(message[1]); ok && id == request {
-				return nil
+				registration, _ := unsigned(message[2])
+				return registration, nil
 			}
 		}
 		// A router may deliver other traffic before the reply; refusing here
 		// would hide a genuine rejection, so only an explicit ERROR fails.
 		if messageType(message) == 8 {
-			return fmt.Errorf("registration rejected: %v", message)
+			return 0, fmt.Errorf("registration rejected: %v", message)
 		}
 	}
 }
@@ -164,10 +169,14 @@ func main() {
 	port := flag.Int("router-port", 9999, "WAMP router port")
 	realm := flag.String("realm", "default", "WAMP realm")
 	identity := flag.String("identity-hex", "", "twelve lowercase hex digits shared by mac-hex and unique-hex")
+	deviceName := flag.String("device-name", "reInvoke", "name reported to the donor service")
+	call := flag.String("call", "", "diagnostic: invoke this procedure and exit")
+	callArgs := flag.String("call-args", "", "diagnostic: JSON array of positional arguments")
 	flag.Parse()
 
 	value := strings.ToLower(strings.ReplaceAll(*identity, ":", ""))
-	if !hexIdentity.MatchString(value) {
+	// Only the serving mode needs an identity; the diagnostic caller does not.
+	if *call == "" && !hexIdentity.MatchString(value) {
 		log.Print("IDENTIFIERS_IDENTITY_INVALID")
 		os.Exit(1)
 	}
@@ -185,26 +194,100 @@ func main() {
 		log.Printf("IDENTIFIERS_REALM_REJECTED: %v", err)
 		os.Exit(1)
 	}
-	const procedure = "com.harman.identifiersGet"
-	if err := client.register(procedure); err != nil {
-		log.Printf("IDENTIFIERS_REGISTER_FAILED: %v", err)
+
+	// Diagnostic mode: invoke one procedure and report the reply. The donor
+	// stack is event driven, so activation has to be observed, not assumed.
+	if *call != "" {
+		var arguments []interface{}
+		if *callArgs != "" {
+			if err := json.Unmarshal([]byte(*callArgs), &arguments); err != nil {
+				log.Printf("IDENTIFIERS_CALL_ARGS_INVALID: %v", err)
+				os.Exit(1)
+			}
+		}
+		client.next++
+		request := client.next
+		if err := client.writeFrame([]interface{}{
+			48, request, map[string]interface{}{}, *call, arguments,
+		}); err != nil {
+			log.Printf("IDENTIFIERS_CALL_FAILED: %v", err)
+			os.Exit(1)
+		}
+		deadline := time.Now().Add(15 * time.Second)
+		for time.Now().Before(deadline) {
+			_ = socket.SetReadDeadline(deadline)
+			message, err := client.readFrame()
+			if err != nil {
+				log.Printf("IDENTIFIERS_CALL_NO_REPLY: %v", err)
+				os.Exit(1)
+			}
+			// RESULT carries the request id at index 1; ERROR repeats the
+			// original message type there and carries the id at index 2.
+			index := 1
+			if messageType(message) == 8 {
+				index = 2
+			}
+			if len(message) <= index {
+				continue
+			}
+			if id, ok := unsigned(message[index]); ok && id == request {
+				log.Printf("IDENTIFIERS_CALL_REPLY %v", message)
+				return
+			}
+		}
+		log.Print("IDENTIFIERS_CALL_TIMEOUT")
 		os.Exit(1)
 	}
-	log.Printf("IDENTIFIERS_READY %s", procedure)
+	const procedure = "com.harman.identifiersGet"
+	identityResult := map[string]interface{}{"mac-hex": value, "unique-hex": value}
 
-	result := map[string]interface{}{"mac-hex": value, "unique-hex": value}
+	// The donor service calls several procedures that the vendor
+	// system-manager used to provide. Their argument shapes are not
+	// documented, so every invocation is logged and answered permissively;
+	// the log is the evidence for what the donor actually expects.
+	responses := map[string]map[string]interface{}{
+		procedure:                      identityResult,
+		"com.harman.deviceNameGet":     {"name": *deviceName, "device-name": *deviceName},
+		"com.harman.source.register":   {},
+		"com.harman.source.get-active": {"source": "bluetooth"},
+		"com.harman.volumeGet":         {"volume": 20},
+	}
+	names := make(map[uint64]string, len(responses))
+	for name := range responses {
+		registration, err := client.register(name)
+		if err != nil {
+			// The runtime already provides some of these. Only the gaps are
+			// this service's business, so an existing owner is not an error.
+			if strings.Contains(err.Error(), "procedure_already_exists") {
+				log.Printf("IDENTIFIERS_ALREADY_PROVIDED %s", name)
+				continue
+			}
+			log.Printf("IDENTIFIERS_REGISTER_FAILED %s: %v", name, err)
+			os.Exit(1)
+		}
+		names[registration] = name
+	}
+	log.Printf("IDENTIFIERS_READY %d procedures", len(responses))
+
 	for {
 		message, err := client.readFrame()
 		if err != nil {
 			log.Print("IDENTIFIERS_ROUTER_CLOSED")
 			os.Exit(1)
 		}
-		if messageType(message) != wampInvocation || len(message) < 2 {
+		if messageType(message) != wampInvocation || len(message) < 3 {
 			continue
 		}
 		request, ok := unsigned(message[1])
 		if !ok {
 			continue
+		}
+		registration, _ := unsigned(message[2])
+		name := names[registration]
+		log.Printf("IDENTIFIERS_CALL %s payload=%v", name, message[3:])
+		result := responses[name]
+		if result == nil {
+			result = map[string]interface{}{}
 		}
 		if err := client.writeFrame([]interface{}{
 			wampYield, request, map[string]interface{}{}, []interface{}{}, result,
@@ -212,6 +295,6 @@ func main() {
 			log.Print("IDENTIFIERS_YIELD_FAILED")
 			os.Exit(1)
 		}
-		log.Print("IDENTIFIERS_ANSWERED")
+		log.Printf("IDENTIFIERS_ANSWERED %s", name)
 	}
 }

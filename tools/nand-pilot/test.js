@@ -40,10 +40,15 @@ try {
     'generation_attempts % 12',
     '"${generation_hci_init}" --reset >/dev/null 2>&1 && break',
     'HCI initialization recovered after',
+    'supervise identifiers',
+    'supervise bluedroid',
+    '/opt/bluedroid/start.sh',
   ])
     assert(patched.includes(marker), `patched init is missing 4.1 change: ${marker}`);
   assert(!patched.includes('log "HCI initialization failed; retrying"\n'),
     'unsampled HCI failure record survived the 4.1 patch');
+  assert(!patched.includes('supervise bluetoothd'),
+    'the BlueZ stack survived the candidate 05 replacement');
   // The same behaviour is maintained in two places: this patch against the
   // pinned RC12 init, and tools/usb-boot/native-ram-init for any future
   // rebuild. Marker checks alone would not catch the two drifting apart.
@@ -74,10 +79,10 @@ try {
   assert.equal(invoke('. "$1"; pilot_select_kernel 3.8.13-unreviewed', [kernel]).status, 1);
   const bootstrap = fs.readFileSync(path.join(__dirname, 'bootstrap.sh'), 'utf8');
   const bsl = fs.readFileSync(path.join(__dirname, 'bsl-init.sh'), 'utf8');
-  assert.equal(lib.CANDIDATE, '04.1');
-  assert.equal(lib.BUILD_ID, 'reInvoke-NAND-04.1-20260913');
-  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-NAND-04.1');
-  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-04.1');
+  assert.equal(lib.CANDIDATE, '05');
+  assert.equal(lib.BUILD_ID, 'reInvoke-NAND-05-20260913');
+  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-NAND-05');
+  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-05');
   assert(bootstrap.includes(`PILOT_ADBD_PRODUCT=${lib.BLUETOOTH_NAME}`));
   assert(bsl.includes(`PILOT_ADBD_PRODUCT=${lib.BLUETOOTH_NAME}`));
   const oldMain = path.join(fixture, 'old-main');
