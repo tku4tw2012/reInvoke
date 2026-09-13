@@ -31,6 +31,19 @@ try {
   const kernel = path.join(__dirname, 'kernel.sh');
   const init = fs.readFileSync(path.join(source, 'init'));
   const patched = patchRuntime(init);
+  // Candidate 4.1 behavioural changes must survive into the patched RC12 init;
+  // editing tools/usb-boot/native-ram-init alone does not reach this image.
+  for (const marker of [
+    'mv /dev/log /dev/androidlog',
+    'runtime_logger_failures=$((runtime_logger_failures + 1))',
+    '"${runtime_logger_failures}" -ge 5',
+    'generation_attempts % 12',
+    '"${generation_hci_init}" --reset >/dev/null 2>&1 && break',
+    'HCI initialization recovered after',
+  ])
+    assert(patched.includes(marker), `patched init is missing 4.1 change: ${marker}`);
+  assert(!patched.includes('log "HCI initialization failed; retrying"\n'),
+    'unsampled HCI failure record survived the 4.1 patch');
   assert.throws(() => patchRuntime(Buffer.concat([init, Buffer.from('\n')])), /hash mismatch/);
   const patchedFile = path.join(fixture, 'init');
   fs.writeFileSync(patchedFile, patched);
@@ -43,10 +56,10 @@ try {
   assert.equal(invoke('. "$1"; pilot_select_kernel 3.8.13-unreviewed', [kernel]).status, 1);
   const bootstrap = fs.readFileSync(path.join(__dirname, 'bootstrap.sh'), 'utf8');
   const bsl = fs.readFileSync(path.join(__dirname, 'bsl-init.sh'), 'utf8');
-  assert.equal(lib.CANDIDATE, '04');
-  assert.equal(lib.BUILD_ID, 'reInvoke-NAND-04-20260912');
-  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-NAND-04');
-  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-04');
+  assert.equal(lib.CANDIDATE, '04.1');
+  assert.equal(lib.BUILD_ID, 'reInvoke-NAND-04.1-20260913');
+  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-NAND-04.1');
+  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-04.1');
   assert(bootstrap.includes(`PILOT_ADBD_PRODUCT=${lib.BLUETOOTH_NAME}`));
   assert(bsl.includes(`PILOT_ADBD_PRODUCT=${lib.BLUETOOTH_NAME}`));
   const oldMain = path.join(fixture, 'old-main');

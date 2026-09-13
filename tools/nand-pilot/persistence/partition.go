@@ -210,6 +210,52 @@ func verifyMounted() error {
 	return nil
 }
 
+// The vendor app image ships its YAFFS2 root group-writable (0775). A store
+// parent carrying 0022 is refused by trustedParents, so preparation could never
+// succeed on stock media. Remove only those write bits once the mount is
+// confirmed to be the verified app partition; nothing is granted.
+// tightenedMode reports the permissions a vendor mount point must be changed
+// to, or ok=false when it is already private. Special bits are refused rather
+// than silently dropped, so an unexpected image fails closed.
+func tightenedMode(mode os.FileMode, forbidden os.FileMode) (os.FileMode, bool, error) {
+	if mode&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
+		return 0, false, errors.New("PERSIST_MOUNTPOINT_UNSAFE")
+	}
+	perm := mode.Perm()
+	if perm&forbidden == 0 {
+		return 0, false, nil
+	}
+	return perm &^ forbidden, true, nil
+}
+
+func tightenMountPoint(path string, uid uint32, chmod func(string, os.FileMode) error) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return errors.New("PERSIST_MOUNTPOINT_UNSAFE")
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 ||
+		(stat.Uid != uid && stat.Uid != 0) {
+		return errors.New("PERSIST_MOUNTPOINT_UNSAFE")
+	}
+	// Mirror trustedParents so tightening clears exactly what it forbids.
+	forbidden := os.FileMode(0022)
+	if uid != 0 {
+		forbidden = 0002
+	}
+	wanted, change, err := tightenedMode(info.Mode(), forbidden)
+	if err != nil {
+		return err
+	}
+	if !change {
+		return nil
+	}
+	if err := chmod(path, wanted); err != nil {
+		return errors.New("PERSIST_MOUNTPOINT_NOT_TIGHTENED")
+	}
+	return nil
+}
+
 func prepareMount() error {
 	p, err := discover()
 	if err != nil {
@@ -247,8 +293,13 @@ func prepareMount() error {
 	if err := verifyMounted(); err != nil {
 		return err
 	}
+	if err := tightenMountPoint(mountPoint, 0, os.Chmod); err != nil {
+		return err
+	}
+	// Propagate the specific cause. Collapsing every reason into one opaque
+	// code made a real preparation failure undiagnosable on hardware.
 	if err := ensurePrivateDirectory(storePath, 0); err != nil {
-		return errors.New("PERSIST_STORE_UNSAFE")
+		return err
 	}
 	return nil
 }

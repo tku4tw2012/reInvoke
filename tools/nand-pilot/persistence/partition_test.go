@@ -141,3 +141,113 @@ func TestMountedIdentityAndFlags(t *testing.T) {
 		t.Fatal("absent mount must not appear mounted")
 	}
 }
+
+// The vendor app image mounts with a writable root, which trustedParents
+// refuses. Reproduce that precondition, prove it is refused, then confirm
+// tightening is what makes store creation reachable.
+func TestVendorWritableMountPointIsTightenedBeforeStoreCreation(t *testing.T) {
+	uid := uint32(os.Getuid())
+	forbidden := os.FileMode(0022)
+	if uid != 0 {
+		forbidden = 0002
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0700|forbidden); err != nil {
+		t.Fatal(err)
+	}
+	// Negative control: without this the test would pass even if tightening
+	// did nothing at all.
+	if err := trustedParents(dir, uid); err == nil {
+		t.Fatal("writable vendor mount point was accepted; this test is inert")
+	}
+	calls := 0
+	err := tightenMountPoint(dir, uid, func(p string, m os.FileMode) error {
+		calls++
+		if p != dir || m != 0700 {
+			t.Fatalf("unexpected chmod target %q mode %#o", p, m)
+		}
+		return os.Chmod(p, m)
+	})
+	if err != nil || calls != 1 {
+		t.Fatalf("tightening failed: %v calls=%d", err, calls)
+	}
+	if err := trustedParents(dir, uid); err != nil {
+		t.Fatalf("tightened mount point still refused: %v", err)
+	}
+}
+
+func TestMountPointTighteningIsBoundedAndFailsClosed(t *testing.T) {
+	uid := uint32(os.Getuid())
+	forbidden := os.FileMode(0022)
+	if uid != 0 {
+		forbidden = 0002
+	}
+	clean := t.TempDir()
+	if err := os.Chmod(clean, 0700); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	if err := tightenMountPoint(clean, uid, func(string, os.FileMode) error {
+		calls++
+		return nil
+	}); err != nil || calls != 0 {
+		t.Fatalf("already-private mount point was rewritten: %v calls=%d", err, calls)
+	}
+
+	dirty := t.TempDir()
+	if err := os.Chmod(dirty, 0700|forbidden); err != nil {
+		t.Fatal(err)
+	}
+	if err := tightenMountPoint(dirty, uid, func(string, os.FileMode) error {
+		return errors.New("synthetic read-only metadata")
+	}); err == nil || err.Error() != "PERSIST_MOUNTPOINT_NOT_TIGHTENED" {
+		t.Fatalf("chmod failure was hidden: %v", err)
+	}
+
+	file := t.TempDir() + "/regular"
+	if err := os.WriteFile(file, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := tightenMountPoint(file, uid, func(string, os.FileMode) error {
+		t.Fatal("chmod attempted on a non-directory")
+		return nil
+	}); err == nil || err.Error() != "PERSIST_MOUNTPOINT_UNSAFE" {
+		t.Fatalf("non-directory accepted: %v", err)
+	}
+}
+
+// The production path runs as uid 0 against the observed vendor mode 0775, a
+// case an unprivileged filesystem fixture cannot reach. Assert the decision
+// directly so a regression that stops clearing group write is caught.
+func TestTightenedModeCoversTheObservedVendorCase(t *testing.T) {
+	tests := []struct {
+		name      string
+		mode      os.FileMode
+		forbidden os.FileMode
+		want      os.FileMode
+		change    bool
+		fail      bool
+	}{
+		{"observed vendor root 0775 as root", 0775, 0022, 0755, true, false},
+		{"already private 0755 as root", 0755, 0022, 0, false, false},
+		{"world writable 0777 as root", 0777, 0022, 0755, true, false},
+		{"private 0700 as root", 0700, 0022, 0, false, false},
+		{"unprivileged fixture 0702", 0702, 0002, 0700, true, false},
+		{"group write tolerated for fixtures", 0775, 0002, 0, false, false},
+		{"setgid refused", 0775 | os.ModeSetgid, 0022, 0, false, true},
+		{"sticky refused", 0775 | os.ModeSticky, 0022, 0, false, true},
+	}
+	for _, test := range tests {
+		got, change, err := tightenedMode(test.mode, test.forbidden)
+		if test.fail {
+			if err == nil || err.Error() != "PERSIST_MOUNTPOINT_UNSAFE" {
+				t.Fatalf("%s: special bits were not refused: %v", test.name, err)
+			}
+			continue
+		}
+		if err != nil || change != test.change || (change && got != test.want) {
+			t.Fatalf("%s: got %#o change=%v err=%v; want %#o change=%v",
+				test.name, got, change, err, test.want, test.change)
+		}
+	}
+}
