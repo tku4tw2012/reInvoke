@@ -60,6 +60,86 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
     '  stop_service syslogd\n');
   replace('log "native RAM environment is running"', `pilot_phase runtime-dispatched
 log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence, not this message"`);
+  // Candidate 4.1. Android ueventd creates /dev/log as a directory of kernel
+  // logger nodes, so BusyBox syslogd cannot create its socket at that path.
+  // Observed on hardware: syslogd died with "bind: Address already in use",
+  // /run/reinvoke/logs stayed empty for every boot of every candidate, and the
+  // supervisor reported a failure every five seconds, flooding the kernel log.
+  replace([
+    'start_runtime_logger() {',
+    '  (',
+    '    while ! ${BB} test -e /run/reinvoke/shutdown; do',
+    '',
+  ].join('\n'), [
+    'start_runtime_logger() {',
+    '  if ${BB} test -d /dev/log && ! ${BB} test -S /dev/log; then',
+    '    ${BB} rm -rf /dev/androidlog',
+    '    if ${BB} mv /dev/log /dev/androidlog; then',
+    '      log "kernel logger nodes moved to /dev/androidlog for the syslog socket"',
+    '    else',
+    '      log "kernel logger nodes could not be moved; runtime logging unavailable"',
+    '    fi',
+    '  fi',
+    '  (',
+    '    runtime_logger_failures=0',
+    '    while ! ${BB} test -e /run/reinvoke/shutdown; do',
+    '',
+  ].join('\n'));
+  replace([
+    '      log "runtime logger exited ${runtime_logger_status}"',
+    '      if ! ${BB} test -e /run/reinvoke/shutdown; then',
+    '        ${BB} sleep 5',
+    '      fi',
+    '',
+  ].join('\n'), [
+    '      # An orderly shutdown must never be counted as a logger failure.',
+    '      if ${BB} test -e /run/reinvoke/shutdown; then',
+    '        break',
+    '      fi',
+    '      log "runtime logger exited ${runtime_logger_status}"',
+    '      # Count every unexpected exit, including a zero status: a logger',
+    '      # that keeps exiting while the system runs is failing either way.',
+    '      runtime_logger_failures=$((runtime_logger_failures + 1))',
+    '      if ${BB} test "${runtime_logger_failures}" -ge 5; then',
+    '        log "runtime logger failed ${runtime_logger_failures} times; retries stopped"',
+    '        break',
+    '      fi',
+    '      ${BB} sleep 5',
+    '',
+  ].join('\n'));
+  // The HCI helper prints its own diagnostics on every failed attempt, so an
+  // unrecoverable controller would rotate the bounded runtime log away.
+  // The retry cadence is deliberately unchanged: no evidence identifies
+  // hci-init as the cause of the one observed non-recovery.
+  replace([
+    '  until ${BB} test -e /run/reinvoke/shutdown ||',
+    '    "${generation_hci_init}" --reset; do',
+    '    log "HCI initialization failed; retrying"',
+    '    ${BB} sleep 5',
+    '  done',
+    '  ${BB} test -e /run/reinvoke/shutdown && return 0',
+    '  exec "$@"',
+    '',
+  ].join('\n'), [
+    '  generation_attempts=0',
+    '  while ! ${BB} test -e /run/reinvoke/shutdown; do',
+    '    generation_attempts=$((generation_attempts + 1))',
+    '    if ${BB} test "${generation_attempts}" -eq 1 ||',
+    '      ${BB} test $((generation_attempts % 12)) -eq 0; then',
+    '      "${generation_hci_init}" --reset && break',
+    '      log "HCI initialization failed; retrying (attempt ${generation_attempts})"',
+    '    else',
+    '      "${generation_hci_init}" --reset >/dev/null 2>&1 && break',
+    '    fi',
+    '    ${BB} sleep 5',
+    '  done',
+    '  ${BB} test -e /run/reinvoke/shutdown && return 0',
+    '  if ${BB} test "${generation_attempts}" -gt 1; then',
+    '    log "HCI initialization recovered after ${generation_attempts} attempts"',
+    '  fi',
+    '  exec "$@"',
+    '',
+  ].join('\n'));
   return text;
 }
 module.exports = { patchRuntime, INIT_SHA256 };

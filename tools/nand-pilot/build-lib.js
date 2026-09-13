@@ -14,8 +14,8 @@ const pins = {
   capture: { path: 'evidence/nand-restored-ram-inspection-20260909/restored-main-256MiB.bin', bytes: 268435456,
     sha256: '2fac4159fe23aa25581c29f6c90033af3a1126a02593db0bd47e2c10d2c09f19' },
 };
-const CANDIDATE = '04';
-const BUILD_ID = `reInvoke-NAND-${CANDIDATE}-20260912`;
+const CANDIDATE = '04.1';
+const BUILD_ID = `reInvoke-NAND-${CANDIDATE}-20260913`;
 const BLUETOOTH_NAME = `reInvoke-NAND-${CANDIDATE}`;
 const BUNDLE_NAME = `83_IMAGE.reinvoke-${CANDIDATE}`;
 const BB_SHA256 = '5fc83ab6cd37841b8d73e07bf3cd8af47ae5af56c93fe085b2db91e0d1f4207b';

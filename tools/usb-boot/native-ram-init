@@ -69,7 +69,21 @@ supervise() {
 }
 
 start_runtime_logger() {
+  # Android's ueventd creates /dev/log as a directory holding the kernel logger
+  # nodes. BusyBox syslogd must create its own socket at that exact path, so it
+  # dies with "bind: Address already in use" and the supervisor below retries
+  # forever, flooding the kernel log and destroying the evidence we need.
+  # Relocate the Android nodes once; nothing in this runtime reads them.
+  if ${BB} test -d /dev/log && ! ${BB} test -S /dev/log; then
+    ${BB} rm -rf /dev/androidlog
+    if ${BB} mv /dev/log /dev/androidlog; then
+      log "kernel logger nodes moved to /dev/androidlog for the syslog socket"
+    else
+      log "kernel logger nodes could not be moved; runtime logging unavailable"
+    fi
+  fi
   (
+    runtime_logger_failures=0
     while ! ${BB} test -e /run/reinvoke/shutdown; do
       ${BB} syslogd -n -S \
         -O /run/reinvoke/logs/runtime.log -s 256 -b 1 &
@@ -81,10 +95,19 @@ start_runtime_logger() {
       wait "${runtime_logger_pid}"
       runtime_logger_status="$?"
       ${BB} rm -f /run/reinvoke/syslogd.pid
-      log "runtime logger exited ${runtime_logger_status}"
-      if ! ${BB} test -e /run/reinvoke/shutdown; then
-        ${BB} sleep 5
+      # An orderly shutdown must never be counted as a logger failure.
+      if ${BB} test -e /run/reinvoke/shutdown; then
+        break
       fi
+      log "runtime logger exited ${runtime_logger_status}"
+      # Count every unexpected exit, including a zero status: a logger that
+      # keeps exiting while the system runs is failing either way.
+      runtime_logger_failures=$((runtime_logger_failures + 1))
+      if ${BB} test "${runtime_logger_failures}" -ge 5; then
+        log "runtime logger failed ${runtime_logger_failures} times; retries stopped"
+        break
+      fi
+      ${BB} sleep 5
     done
   ) &
   echo "$!" >/run/reinvoke/syslogd-supervisor.pid
@@ -166,12 +189,26 @@ run_with_bluetoothd_generation() {
 run_bluetoothd_generation() {
   generation_hci_init="$1"
   shift
-  until ${BB} test -e /run/reinvoke/shutdown ||
-    "${generation_hci_init}" --reset; do
-    log "HCI initialization failed; retrying"
+  generation_attempts=0
+  while ! ${BB} test -e /run/reinvoke/shutdown; do
+    generation_attempts=$((generation_attempts + 1))
+    # Report the first failure, then only periodically, and discard the
+    # helper's own diagnostics in between. A per-attempt record every five
+    # seconds consumes the bounded runtime log and destroys the evidence
+    # needed to explain why the daemon never came back.
+    if ${BB} test "${generation_attempts}" -eq 1 ||
+      ${BB} test $((generation_attempts % 12)) -eq 0; then
+      "${generation_hci_init}" --reset && break
+      log "HCI initialization failed; retrying (attempt ${generation_attempts})"
+    else
+      "${generation_hci_init}" --reset >/dev/null 2>&1 && break
+    fi
     ${BB} sleep 5
   done
   ${BB} test -e /run/reinvoke/shutdown && return 0
+  if ${BB} test "${generation_attempts}" -gt 1; then
+    log "HCI initialization recovered after ${generation_attempts} attempts"
+  fi
   exec "$@"
 }
 
