@@ -55,14 +55,25 @@ with open(listing, 'w') as handle:
 print(f'closure objects: {len(files)}')
 PY
 
-config='etc/bluetooth_orig/bt_stack.conf'
-[[ -f "${donor}/${config}" ]] || { echo "donor is missing ${config}" >&2; exit 1; }
+# The donor reads these by absolute path at startup. Packaging shipped only
+# bt_stack.conf, so bt_did.conf and auto_pair_devlist.conf were silently lost:
+# the same defect class as the relocated HAL and the missing stack config, and
+# the third time it has cost a candidate. Every file the donor names must be in
+# the payload, and a missing one has to fail the build rather than the radio.
+configs=(
+  'etc/bluetooth_orig/bt_stack.conf'
+  'etc/bluetooth_orig/bt_did.conf'
+  'etc/bluetooth_orig/auto_pair_devlist.conf'
+)
+for config in "${configs[@]}"; do
+  [[ -f "${donor}/${config}" ]] || { echo "donor is missing ${config}" >&2; exit 1; }
+done
 
 # Deterministic archive: sorted members, fixed owner and timestamp.
 tar --create --gzip --dereference \
   --owner=0 --group=0 --numeric-owner --mtime='@0' --sort=name \
   --directory "${donor}" --file "${out}/bluedroid.tar.gz" \
-  --files-from "${out}/closure.txt" "${config}"
+  --files-from "${out}/closure.txt" "${configs[@]}"
 
 python3 - "${donor}" "${out}" <<'PY'
 import hashlib, json, os, sys
@@ -70,7 +81,11 @@ donor, out = sys.argv[1], sys.argv[2]
 def digest(path):
     return hashlib.sha256(open(path, 'rb').read()).hexdigest()
 members = [line.strip() for line in open(os.path.join(out, 'closure.txt')) if line.strip()]
-members.append('etc/bluetooth_orig/bt_stack.conf')
+members.extend([
+    'etc/bluetooth_orig/bt_stack.conf',
+    'etc/bluetooth_orig/bt_did.conf',
+    'etc/bluetooth_orig/auto_pair_devlist.conf',
+])
 archive = os.path.join(out, 'bluedroid.tar.gz')
 manifest = {
     'purpose': 'donor Bluedroid userspace closure; kernel module and controller firmware already ship in the runtime',

@@ -145,24 +145,27 @@ function installBluedroid(config, root, launcher) {
   if (!fs.existsSync(path.join(halTarget, 'hw/bluetooth.default.so')))
     throw new Error('system/lib/hw/bluetooth.default.so is missing after install');
 
-  // Same class of defect as the HAL, found the same way. The donor reads
-  // /etc/bluetooth/bt_stack.conf by absolute path at startup. The payload
-  // carries it as etc/bluetooth_orig/bt_stack.conf, renamed to avoid colliding
-  // with BlueZ's main.conf and rfcomm.conf, and nothing ever put it back. With
-  // the file absent config_new returns NULL and the first section lookup
-  // dereferences it, which is the SIGSEGV observed in stack_manager on 05.4.
-  // A real file, not a link: the stack reads it through its own loader and a
+  // Same class of defect as the HAL, found the same way. The donor reads these
+  // by absolute path at startup. The payload carries them as etc/bluetooth_orig,
+  // renamed to avoid colliding with BlueZ's main.conf and rfcomm.conf, and
+  // nothing ever put them back. Without bt_stack.conf, config_new returns NULL
+  // and the first section lookup crashes, which was the SIGSEGV on 05.4.
+  // bt_did.conf carries the SDP device identification record and
+  // auto_pair_devlist.conf the auto-pairing policy; both were simply absent.
+  // Real files, not links: the stack reads them through its own loader and a
   // dangling link is indistinguishable from the missing file it replaces.
-  const stackConfSource = path.join(stackRoot, 'etc/bluetooth_orig/bt_stack.conf');
-  if (!fs.existsSync(stackConfSource))
-    throw new Error('donor payload has no etc/bluetooth_orig/bt_stack.conf');
   const stackConfDir = path.join(absoluteRoot, 'etc/bluetooth');
   fs.mkdirSync(stackConfDir, { recursive: true, mode: 0o755 });
-  const stackConfTarget = path.join(stackConfDir, 'bt_stack.conf');
-  if (fs.existsSync(stackConfTarget))
-    throw new Error('etc/bluetooth/bt_stack.conf already exists; refusing to overwrite');
-  fs.copyFileSync(stackConfSource, stackConfTarget);
-  fs.chmodSync(stackConfTarget, 0o644);
+  for (const config of ['bt_stack.conf', 'bt_did.conf', 'auto_pair_devlist.conf']) {
+    const source = path.join(stackRoot, 'etc/bluetooth_orig', config);
+    if (!fs.existsSync(source))
+      throw new Error(`donor payload has no etc/bluetooth_orig/${config}`);
+    const target = path.join(stackConfDir, config);
+    if (fs.existsSync(target))
+      throw new Error(`etc/bluetooth/${config} already exists; refusing to overwrite`);
+    fs.copyFileSync(source, target);
+    fs.chmodSync(target, 0o644);
+  }
 
   const launcherTarget = path.join(stackRoot, 'start.sh');
   fs.copyFileSync(launcher, launcherTarget);
