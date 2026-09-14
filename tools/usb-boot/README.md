@@ -255,6 +255,22 @@ and restores `07_IMAGE`. Failure preserves state/evidence, never retries or
 clears an uncertain operation. Intent/evidence must be on durable storage,
 not tmpfs/ramfs; do not delete the no-reissue marker to retry.
 
+### Single-entry NAND flash wrapper
+
+Use `flash-nand.sh` for the reviewed NAND write path:
+
+```bash
+INVOKE_USB_BOOT_BIN="<pinned-usb_boot_arm>" \
+  tools/usb-boot/flash-nand.sh "<staging-dir>" "<83_IMAGE-sha256>" \
+  "<private-evidence-dir>"
+```
+
+The script runs all fail-closed preflight checks before the service-mode
+window. Start it first and reset the speaker only after it prints `READY`.
+If a run shows only request type `0x08`, service mode was never entered; a
+healthy seize takes three to four seconds from first sighting, as 23 of 27
+archived flashes did.
+
 For passive normal-boot observation, USB may stay connected with the helper
 stopped. A disconnected start separately tests host independence; cable-only
 influence on boot remains unknown. The wrapper leaves physical power control
