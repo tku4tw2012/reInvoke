@@ -269,12 +269,22 @@ func main() {
 	// system-manager used to provide. Their argument shapes are not
 	// documented, so every invocation is logged and answered permissively;
 	// the log is the evidence for what the donor actually expects.
+	//
+	// com.harman.volumeGet is deliberately ABSENT: reinvoke-mcu-interface
+	// owns it, and whichever service registers first wins. Candidate 05 hid
+	// this because its identity provider crash-looped and never registered
+	// anything. Once the identity was fixed, this service won the race and
+	// mcu-interface could never complete registration, so it reconnected
+	// every five seconds forever and every physical control was dead while
+	// the LEDs still animated. Observed on hardware; MCU registration
+	// succeeded immediately once this service released the name. Nothing
+	// here may claim a procedure mcu-interface owns (tools/mcu-interface/
+	// wamp.go's `procedures`).
 	responses := map[string]map[string]interface{}{
 		procedure:                      identityResult,
 		"com.harman.deviceNameGet":     {"name": *deviceName, "device-name": *deviceName},
 		"com.harman.source.register":   {},
 		"com.harman.source.get-active": {"source": "bluetooth"},
-		"com.harman.volumeGet":         {"volume": 20},
 	}
 	names := make(map[uint64]string, len(responses))
 	for name := range responses {
