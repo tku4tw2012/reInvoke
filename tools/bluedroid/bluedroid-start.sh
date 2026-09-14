@@ -17,7 +17,14 @@
 BB=/bin/busybox
 ROOT=/opt/bluedroid
 CONFIG_SOURCE="${ROOT}/etc/bluetooth_orig"
-CONFIG_LIVE=/data/bluetooth
+# The donor binary hardcodes both of these paths; they are not ours to choose.
+# /etc/bluetooth/bt_stack.conf is read at startup and /data/misc/bluedroid is
+# where the stack keeps bt_config.conf. Candidate 05.4 invented /data/bluetooth
+# instead, so the stack found no config, config_new returned NULL and the first
+# lookup dereferenced it: SIGSEGV in stack_manager, every five seconds forever.
+CONFIG_LIVE=/data/misc/bluedroid
+STACK_CONF=/etc/bluetooth/bt_stack.conf
+HCI_UP=/bin/reinvoke-hci-up
 LOADER="${ROOT}/lib/ld-linux-armhf.so.3"
 SERVICE="${ROOT}/usr/bin/bluetooth"
 # The Android HAL libraries now install to the absolute /system/lib that
@@ -39,6 +46,18 @@ ${BB} test -x "${LOADER}" || fail "packaged loader is missing"
 # The controller must already be up; this script never touches the module.
 ${BB} test -d /sys/class/bluetooth/hci0 ||
   fail "hci0 is not present; the radio is not initialized"
+
+# The kernel registers hci0 and loads its firmware, but an HCI adapter is only
+# opened when userspace asks, and that is normally bluetoothd's job. BlueZ is
+# not in this runtime, and the donor stack never issues HCIDEVUP itself, so
+# without this the adapter stays DOWN at hci_version 0 and Bluedroid segfaults
+# on the state it never populated.
+${BB} test -x "${HCI_UP}" || fail "the HCI activation helper is missing"
+"${HCI_UP}" -index 0 || fail "hci0 could not be brought up"
+
+# Read at startup from a path compiled into the donor binary.
+${BB} test -f "${STACK_CONF}" ||
+  fail "${STACK_CONF} is missing; the stack would load a NULL config"
 
 # The donor keeps writable copies separate from the read-only originals.
 if ! ${BB} test -d "${CONFIG_LIVE}"; then
