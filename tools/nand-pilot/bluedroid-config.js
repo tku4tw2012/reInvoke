@@ -111,10 +111,15 @@ function installBluedroid(config, root, launcher) {
   fs.chmodSync(identifiersTarget, 0o755);
 
   // The init reads these rather than embedding private values in a patch.
-  const settings = path.join(absoluteRoot, 'etc/nand-pilot');
+  // They live under the Bluedroid stack root, NOT etc/nand-pilot: the
+  // bootstrap bind mounts its own immutable /etc/nand-pilot over the
+  // runtime's copy before chroot, so anything written there is invisible at
+  // runtime. Candidate 05 shipped them to etc/nand-pilot and the identity
+  // provider consequently read an empty value and crash-looped on hardware.
+  const settings = path.join(stackRoot, 'etc');
   fs.mkdirSync(settings, { recursive: true, mode: 0o755 });
-  fs.writeFileSync(path.join(settings, 'bluedroid-identity'), `${config.identityHex}\n`, { mode: 0o444 });
-  fs.writeFileSync(path.join(settings, 'bluedroid-name'), `${config.deviceName}\n`, { mode: 0o444 });
+  fs.writeFileSync(path.join(settings, 'identity-hex'), `${config.identityHex}\n`, { mode: 0o444 });
+  fs.writeFileSync(path.join(settings, 'device-name'), `${config.deviceName}\n`, { mode: 0o444 });
 
   return {
     stack: 'bluedroid',

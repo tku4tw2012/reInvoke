@@ -169,10 +169,34 @@ func main() {
 	port := flag.Int("router-port", 9999, "WAMP router port")
 	realm := flag.String("realm", "default", "WAMP realm")
 	identity := flag.String("identity-hex", "", "twelve lowercase hex digits shared by mac-hex and unique-hex")
+	identityFile := flag.String("identity-file", "", "path to a file holding the identity hex; wins over -identity-hex when set")
 	deviceName := flag.String("device-name", "reInvoke", "name reported to the donor service")
+	deviceNameFile := flag.String("device-name-file", "", "path to a file holding the device name; wins over -device-name when set")
 	call := flag.String("call", "", "diagnostic: invoke this procedure and exit")
 	callArgs := flag.String("call-args", "", "diagnostic: JSON array of positional arguments")
 	flag.Parse()
+
+	// A file input is read here rather than shell-expanded into a flag by the
+	// init. Candidate 05 used "--identity-hex $(cat ...)" against a path the
+	// bootstrap shadows with its own bind mount, so the flag silently became
+	// an empty string and this service rejected it and crash-looped forever.
+	// Reading the file directly turns that into a specific, named failure.
+	if *identityFile != "" {
+		content, err := os.ReadFile(*identityFile)
+		if err != nil {
+			log.Printf("IDENTIFIERS_IDENTITY_FILE_UNREADABLE %s: %v", *identityFile, err)
+			os.Exit(1)
+		}
+		*identity = strings.TrimSpace(string(content))
+	}
+	if *deviceNameFile != "" {
+		content, err := os.ReadFile(*deviceNameFile)
+		if err != nil {
+			log.Printf("IDENTIFIERS_NAME_FILE_UNREADABLE %s: %v", *deviceNameFile, err)
+			os.Exit(1)
+		}
+		*deviceName = strings.TrimSpace(string(content))
+	}
 
 	value := strings.ToLower(strings.ReplaceAll(*identity, ":", ""))
 	// Only the serving mode needs an identity; the diagnostic caller does not.
