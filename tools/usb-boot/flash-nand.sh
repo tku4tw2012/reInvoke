@@ -88,7 +88,7 @@ fi
 say "READY - put the speaker into service mode now"
 say "  a healthy seize takes 3-4 seconds from the first sighting"
 
-"${driver}" --port "${port}" --command "${command}" >>"${log}" 2>&1 &
+"${driver}" --port "${port}" --command "${command}" --timeout 86400 >>"${log}" 2>&1 &
 driver_pid=$!
 
 cleanup() {

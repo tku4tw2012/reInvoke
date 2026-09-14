@@ -15,6 +15,11 @@ Behaviours that are here because losing them cost a window:
 * no build-string match. The banner arrives interleaved with boot chatter
   ("U-Boot 2013.04 ...i*m*g*r*q*y environment in SPI flash is invalid"), so an
   exact compare aborts on noise.
+* clear the line before sending. U-Boot's boot script prints progress
+  characters, and one landed mid-command on the 05.5 flash: the device
+  answered "Unknown command '+l2nand'" and no write started.
+* confirm the write, then verify the command was accepted. A mangled command
+  leaves U-Boot back at its prompt looking exactly like a finished flash.
 * announce success on the same stream that observes it, so the caller never
   has to guess which log to read.
 """
@@ -92,6 +97,13 @@ def run(port: int, command: str, timeout: float, quiet: bool) -> int:
                     return 0
 
                 if not sent and PROMPT in text:
+                    # Clear the line buffer first. U-Boot's boot script emits
+                    # progress characters, and one arrived mid-send on the 05.5
+                    # flash: the device reported "Unknown command '+l2nand'"
+                    # and the write never started. A bare newline discards
+                    # whatever partial input is already queued.
+                    sock.sendall(b"\r\n")
+                    time.sleep(0.4)
                     sock.sendall(command.encode() + b"\r\n")
                     sent = True
                     say(f"sent {command}")
