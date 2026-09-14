@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
-# Catch the Invoke's iROM window and hand off to the pinned USB boot helper.
+# Keep one USB boot helper camped on the Invoke so service mode is never missed.
 #
 # Why this exists
 #
-# The helper claims whatever it finds. Left polling across a power cycle it
-# grabs the device at subclass 0xFE, which is past iROM, and then loops on
-# 08_IMAGE forever. Every successful flash in the archive (candidates 01, 02,
-# 03 and 05.2) started from subclass 0xFF instead.
+# The helper exits after a 120 s wait for the device, so an operator had to
+# power-cycle on the host's schedule rather than their own. This supervises it
+# instead: one helper, restarted whenever it exits, for as long as it takes.
 #
-# So this watches the kernel's own USB descriptors, never opening the device,
-# and starts exactly one helper the moment 0xFF appears. The measured window
-# is wide enough: the helper waits a full second before talking and the whole
-# iROM bootstrap takes about 20 ms.
+# An earlier revision gated the helper on USB interface subclass 0xFF and
+# refused to start at 0xFE. That was wrong, and docs/uboot-access.md already
+# said so before it was written: "Successful traces included both FE and FF:
+# the early claim that FE inherently blocked recovery was incorrect. Panel
+# colour and subclass do not identify a particular executing stage." Gating on
+# 0xFF made the catcher unable to fire at all on a unit that enumerated only at
+# 0xFE, and cost several power cycles before the log showed it never triggered.
 #
-# It also solves the two failures that wasted the most time:
-#   - the helper exits after a 120 s device wait, so operators had to be told
-#     to hurry; this restarts the watch indefinitely and never asks
-#   - two helpers both claiming interface 0 make the device drop immediately
-#     after each transfer; flock makes a second instance impossible
+# The discriminator is the request sequence, not the subclass. The same doc:
+# "Early ordinary-power and some yellow-mode trials requested only 08_IMAGE,
+# then disconnected. Successful recovery requested the full 09_IMAGE chain."
+# So this reports which request types arrived, and an 08-only session is named
+# as a failed service-mode entry rather than left looking like a missed catch.
+#
+# Two helpers both claiming interface 0 make the device drop every transfer, so
+# flock makes a second instance impossible and the loop is strictly sequential.
 #
 # Usage: catch-irom.sh STAGING_DIR [ATTEMPT_DIR]
 set -euo pipefail
@@ -41,6 +46,7 @@ exec 9>"${attempt}/catch-irom.lock"
 flock -n 9 || { echo "another catcher already holds the lock" >&2; exit 1; }
 
 mkdir -p "${attempt}"
+touch "${log}"
 : >"${state}"
 note() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" >>"${state}"; }
 
@@ -52,47 +58,41 @@ for required in 06_IMAGE 07_IMAGE 08_IMAGE 09_IMAGE 79_IMAGE 81_IMAGE 82_IMAGE \
     { echo "staging is missing ${required}" >&2; exit 1; }
 done
 
-subclass_now() {
-  local file
-  for file in /sys/bus/usb/devices/"${usb_path}":*/bInterfaceSubClass; do
-    [[ -r "${file}" ]] || continue
-    tr -d '\n' <"${file}" | tr '[:upper:]' '[:lower:]'
-    return 0
-  done
-  return 1
+note "camping one helper on ${usb_path}; power-cycle into service mode whenever ready"
+echo "READY. A helper is camped. There is no timeout; take as long as you need."
+echo
+echo "Reset at your own pace, as often as you like. The iROM (0xFF) window is"
+echo "intermittent on this unit: the successful candidate 05.1 flash logged 12"
+echo "ordinary 0x08 sessions and 20 helper exits over 31 minutes before it"
+echo "caught one. An 0x08 session is a normal miss, not a fault to chase."
+
+request_types_since() {
+  local offset="$1"
+  tail -c "+$((offset + 1))" "${log}" 2>/dev/null |
+    grep -oE 'request type 0x[0-9a-f]+' | sort -u | tr '\n' ' ' || true
 }
 
-is_marvell() {
-  local device="/sys/bus/usb/devices/${usb_path}"
-  [[ -r "${device}/idVendor" && -r "${device}/idProduct" ]] || return 1
-  [[ "$(<"${device}/idVendor")" == "1286" ]] || return 1
-  [[ "$(<"${device}/idProduct")" == "8174" ]]
-}
-
-note "watching ${usb_path} for iROM (subclass ff); power-cycle into service mode whenever ready"
-echo "READY. Waiting for iROM. There is no timeout; take as long as you need."
-
-last=""
 while true; do
-  if is_marvell && current="$(subclass_now)"; then
-    if [[ "${current}" != "${last}" ]]; then
-      note "subclass ${current}"
-      last="${current}"
-    fi
-    if [[ "${current}" == "ff" ]]; then
-      note "iROM detected; starting one helper"
-      echo "iROM detected; serving the boot chain."
-      "${helper}" 1286 8174 "${staging}/" "${port}" >>"${log}" 2>&1 &
-      helper_pid=$!
-      printf '%s\n' "${helper_pid}" >"${attempt}/usb-boot.pid"
-      note "helper ${helper_pid}"
-      wait "${helper_pid}" || true
-      note "helper exited $?"
-      exit 0
-    fi
-  elif [[ -n "${last}" ]]; then
-    note "device gone"
-    last=""
+  offset="$(wc -c <"${log}" 2>/dev/null || echo 0)"
+  "${helper}" 1286 8174 "${staging}/" "${port}" >>"${log}" 2>&1 &
+  helper_pid=$!
+  printf '%s\n' "${helper_pid}" >"${attempt}/usb-boot.pid"
+  status=0
+  wait "${helper_pid}" || status=$?
+
+  # Name the outcome from the request sequence. The subclass does not identify
+  # the executing stage, but an 08-only session is a failed service-mode entry
+  # and must not be reported as a missed catch.
+  types="$(request_types_since "${offset}")"
+  if [[ "${types}" == *0x09* ]]; then
+    note "helper ${helper_pid} exited ${status}; served the 09 chain [${types}]"
+    echo "Served the 09_IMAGE chain. Check the console driver for the flash."
+  elif [[ -n "${types}" ]]; then
+    note "helper ${helper_pid} exited ${status}; service mode NOT entered [${types}]"
+    echo "Device answered but asked only for [${types}] - not in service mode."
+    echo "Re-run the entry sequence above; keep Reset held the whole time."
+  else
+    note "helper ${helper_pid} exited ${status}; device did not appear"
   fi
-  sleep 0.05
+  sleep 0.5
 done
