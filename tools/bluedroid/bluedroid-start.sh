@@ -23,6 +23,8 @@ CONFIG_SOURCE="${ROOT}/etc/bluetooth_orig"
 # instead, so the stack found no config, config_new returned NULL and the first
 # lookup dereferenced it: SIGSEGV in stack_manager, every five seconds forever.
 CONFIG_LIVE=/data/misc/bluedroid
+PERSIST_ROOT=/persist
+PERSIST_CONFIG=/persist/reinvoke/bluedroid
 STACK_CONF=/etc/bluetooth/bt_stack.conf
 HCI_DOWN=/bin/reinvoke-hci-down
 LOADER="${ROOT}/lib/ld-linux-armhf.so.3"
@@ -63,9 +65,33 @@ ${BB} test -f "${STACK_CONF}" ||
 # The donor keeps writable copies separate from the read-only originals.
 if ! ${BB} test -d "${CONFIG_LIVE}"; then
   ${BB} mkdir -p "${CONFIG_LIVE}" || fail "writable configuration is unavailable"
-  ${BB} cp "${CONFIG_SOURCE}"/* "${CONFIG_LIVE}/" ||
-    fail "writable configuration could not be populated"
 fi
+
+# Bluetooth bonds live in bt_config.conf under CONFIG_LIVE, and that path is
+# on the root tmpfs, so every pairing was lost at the next power cycle: the
+# file went from 1482 bytes with three bond entries to 778 bytes with none,
+# and the peer was then refused with br-connection-unknown. /persist is a
+# writable YAFFS2 partition that does survive, so the donor's directory is
+# bound onto it. A bind rather than a link: the donor opens these paths
+# directly and a dangling link is indistinguishable from a missing file.
+if ${BB} test -d "${PERSIST_ROOT}"; then
+  ${BB} mkdir -p "${PERSIST_CONFIG}" || fail "persistent configuration is unavailable"
+  if ! ${BB} mount | ${BB} grep -q " ${CONFIG_LIVE} "; then
+    ${BB} mount --bind "${PERSIST_CONFIG}" "${CONFIG_LIVE}" ||
+      fail "persistent configuration could not be bound"
+  fi
+else
+  echo "bluedroid: ${PERSIST_ROOT} is absent; pairings will not survive a reboot"
+fi
+
+# Seed the read-only originals only where the persistent copy has none, so an
+# existing bt_config.conf and its bonds are never overwritten.
+for original in "${CONFIG_SOURCE}"/*; do
+  ${BB} test -f "${original}" || continue
+  target="${CONFIG_LIVE}/$(${BB} basename "${original}")"
+  ${BB} test -f "${target}" || ${BB} cp "${original}" "${target}" ||
+    fail "writable configuration could not be populated"
+done
 
 echo "bluedroid: starting donor service against ${CONFIG_LIVE}"
 exec ${BB} env LD_LIBRARY_PATH="${LIBS}" "${LOADER}" --library-path "${LIBS}" "${SERVICE}"
