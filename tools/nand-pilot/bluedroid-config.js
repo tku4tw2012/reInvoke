@@ -56,7 +56,7 @@ function readPinned(entry, label) {
 function readBluedroidConfig(file) {
   if (!file) return null;
   const config = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const known = new Set(['payload', 'identifiers', 'identityHex', 'deviceName']);
+  const known = new Set(['payload', 'identifiers', 'hciUp', 'identityHex', 'deviceName']);
   for (const key of Object.keys(config))
     if (!known.has(key)) throw new Error(`unknown Bluedroid configuration field: ${key}`);
   const identityHex = String(config.identityHex || '').toLowerCase();
@@ -68,6 +68,7 @@ function readBluedroidConfig(file) {
   return {
     payload: readPinned(config.payload, 'payload'),
     identifiers: readPinned(config.identifiers, 'identifiers'),
+    hciUp: readPinned(config.hciUp, 'hciUp'),
     identityHex,
     deviceName,
   };
@@ -144,6 +145,25 @@ function installBluedroid(config, root, launcher) {
   if (!fs.existsSync(path.join(halTarget, 'hw/bluetooth.default.so')))
     throw new Error('system/lib/hw/bluetooth.default.so is missing after install');
 
+  // Same class of defect as the HAL, found the same way. The donor reads
+  // /etc/bluetooth/bt_stack.conf by absolute path at startup. The payload
+  // carries it as etc/bluetooth_orig/bt_stack.conf, renamed to avoid colliding
+  // with BlueZ's main.conf and rfcomm.conf, and nothing ever put it back. With
+  // the file absent config_new returns NULL and the first section lookup
+  // dereferences it, which is the SIGSEGV observed in stack_manager on 05.4.
+  // A real file, not a link: the stack reads it through its own loader and a
+  // dangling link is indistinguishable from the missing file it replaces.
+  const stackConfSource = path.join(stackRoot, 'etc/bluetooth_orig/bt_stack.conf');
+  if (!fs.existsSync(stackConfSource))
+    throw new Error('donor payload has no etc/bluetooth_orig/bt_stack.conf');
+  const stackConfDir = path.join(absoluteRoot, 'etc/bluetooth');
+  fs.mkdirSync(stackConfDir, { recursive: true, mode: 0o755 });
+  const stackConfTarget = path.join(stackConfDir, 'bt_stack.conf');
+  if (fs.existsSync(stackConfTarget))
+    throw new Error('etc/bluetooth/bt_stack.conf already exists; refusing to overwrite');
+  fs.copyFileSync(stackConfSource, stackConfTarget);
+  fs.chmodSync(stackConfTarget, 0o644);
+
   const launcherTarget = path.join(stackRoot, 'start.sh');
   fs.copyFileSync(launcher, launcherTarget);
   fs.chmodSync(launcherTarget, 0o755);
@@ -151,6 +171,12 @@ function installBluedroid(config, root, launcher) {
   const identifiersTarget = path.join(absoluteRoot, 'bin/reinvoke-identifiers');
   fs.copyFileSync(config.identifiers.path, identifiersTarget);
   fs.chmodSync(identifiersTarget, 0o755);
+
+  // Nothing else in this runtime issues HCIDEVUP. BlueZ is gone and the donor
+  // stack assumes the adapter is already open, so the launcher runs this first.
+  const hciUpTarget = path.join(absoluteRoot, 'bin/reinvoke-hci-up');
+  fs.copyFileSync(config.hciUp.path, hciUpTarget);
+  fs.chmodSync(hciUpTarget, 0o755);
 
   // The init reads these rather than embedding private values in a patch.
   // They live under the Bluedroid stack root, NOT etc/nand-pilot: the
