@@ -217,6 +217,12 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
     '      done',
     '      supervise bluedroid \\',
     '        ${BB} sh /opt/bluedroid/start.sh',
+    '      # The MCU reports a Bluetooth long press by signalling a pairing agent',
+    '      # at a PID file. That contract outlived BlueZ, so this bridge holds it',
+    '      # and forwards the press to the donor stack, and creates the state file',
+    '      # the MCU reads before it will drive the indicator LED.',
+    '      supervise pairing-agent \\',
+    '        /opt/reinvoke/bin/bluez-pairing-agent',
     '',
   ].join('\n'));
   return text;

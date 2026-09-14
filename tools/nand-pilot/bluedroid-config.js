@@ -56,7 +56,8 @@ function readPinned(entry, label) {
 function readBluedroidConfig(file) {
   if (!file) return null;
   const config = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const known = new Set(['payload', 'identifiers', 'hciUp', 'identityHex', 'deviceName']);
+  const known = new Set(['payload', 'identifiers', 'hciDown', 'pairingAgent',
+    'identityHex', 'deviceName']);
   for (const key of Object.keys(config))
     if (!known.has(key)) throw new Error(`unknown Bluedroid configuration field: ${key}`);
   const identityHex = String(config.identityHex || '').toLowerCase();
@@ -68,7 +69,8 @@ function readBluedroidConfig(file) {
   return {
     payload: readPinned(config.payload, 'payload'),
     identifiers: readPinned(config.identifiers, 'identifiers'),
-    hciUp: readPinned(config.hciUp, 'hciUp'),
+    hciDown: readPinned(config.hciDown, 'hciDown'),
+    pairingAgent: readPinned(config.pairingAgent, 'pairingAgent'),
     identityHex,
     deviceName,
   };
@@ -119,6 +121,40 @@ function installBluedroid(config, root, launcher) {
   const stackRoot = path.join(absoluteRoot, 'opt/bluedroid');
   fs.mkdirSync(stackRoot, { recursive: true, mode: 0o755 });
   cp.execFileSync('tar', ['-xzf', config.payload.path, '-C', stackRoot]);
+
+  // The advertised name is a literal inside the donor binary, not something it
+  // reads back from the runtime. It queries com.harman.deviceNameGet, receives
+  // this unit's configured name, and then builds "HK Invoke_" plus the address
+  // suffix anyway, so the speaker announced the donor's brand rather than this
+  // project's. Rewriting the two literals in place is the only lever.
+  //
+  // Both are NUL terminated with padding, and every replacement is shorter, so
+  // nothing shifts and no offset in the binary changes. Verified on hardware:
+  // the stack logged SetLocalDeviceName(reInvoke_AABBCC) and a scanning host
+  // then saw exactly that name.
+  const donorService = path.join(stackRoot, 'usr/bin/bluetooth');
+  const renames = [
+    [Buffer.from('HK Invoke_\0', 'latin1'), Buffer.from('reInvoke_\0\0', 'latin1')],
+    [Buffer.from('HK Invoke\0', 'latin1'), Buffer.from('reInvoke\0\0', 'latin1')],
+  ];
+  let service = fs.readFileSync(donorService);
+  const originalLength = service.length;
+  for (const [from, to] of renames) {
+    if (from.length !== to.length)
+      throw new Error('rename would change the binary layout');
+    if (service.indexOf(from) < 0)
+      throw new Error(`donor service has no ${JSON.stringify(from.toString())} to rename`);
+    // Buffer has no global replace; walk every occurrence.
+    let at = service.indexOf(from);
+    while (at >= 0) {
+      to.copy(service, at);
+      at = service.indexOf(from, at + 1);
+    }
+  }
+  if (service.length !== originalLength)
+    throw new Error('renaming changed the donor service size');
+  fs.writeFileSync(donorService, service);
+  fs.chmodSync(donorService, 0o755);
 
   const halSource = path.join(stackRoot, 'system/lib');
   const halTarget = path.join(absoluteRoot, 'system/lib');
@@ -175,11 +211,23 @@ function installBluedroid(config, root, launcher) {
   fs.copyFileSync(config.identifiers.path, identifiersTarget);
   fs.chmodSync(identifiersTarget, 0o755);
 
-  // Nothing else in this runtime issues HCIDEVUP. BlueZ is gone and the donor
-  // stack assumes the adapter is already open, so the launcher runs this first.
-  const hciUpTarget = path.join(absoluteRoot, 'bin/reinvoke-hci-up');
-  fs.copyFileSync(config.hciUp.path, hciUpTarget);
-  fs.chmodSync(hciUpTarget, 0o755);
+  // The donor claims the controller through the kernel's HCI user channel,
+  // which requires the adapter to be closed. The launcher runs this first so
+  // the vendor transport can attach; 05.5 opened the adapter instead and no
+  // HCI packet ever reached the radio.
+  const hciDownTarget = path.join(absoluteRoot, 'bin/reinvoke-hci-down');
+  fs.copyFileSync(config.hciDown.path, hciDownTarget);
+  fs.chmodSync(hciDownTarget, 0o755);
+
+  // The MCU reports a Bluetooth long press by signalling a pairing agent at a
+  // PID file, a contract written for the BlueZ agent this runtime no longer
+  // ships. Without something holding that contract the button lit the top
+  // panel and went nowhere, and the indicator LED stayed dark because nothing
+  // created the state file the MCU reads.
+  const pairingAgentTarget = path.join(absoluteRoot, 'opt/reinvoke/bin/bluez-pairing-agent');
+  fs.mkdirSync(path.dirname(pairingAgentTarget), { recursive: true, mode: 0o755 });
+  fs.copyFileSync(config.pairingAgent.path, pairingAgentTarget);
+  fs.chmodSync(pairingAgentTarget, 0o755);
 
   // The init reads these rather than embedding private values in a patch.
   // They live under the Bluedroid stack root, NOT etc/nand-pilot: the

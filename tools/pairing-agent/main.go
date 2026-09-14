@@ -72,6 +72,8 @@ func main() {
 		"procedure called for a long press")
 	shortPress := flag.String("short-press", "",
 		"procedure called for a short press; empty ignores short presses")
+	statePath := flag.String("state-file", "/run/reinvoke/bluetooth-state",
+		"file the MCU reads to drive the Bluetooth indicator LED")
 	flag.Parse()
 
 	if _, err := os.Stat(*caller); err != nil {
@@ -83,6 +85,15 @@ func main() {
 		os.Exit(1)
 	}
 	defer os.Remove(*pidPath)
+
+	// The MCU refuses to drive the indicator until this file exists, and logs
+	// "using safe off" instead. Candidate 05.5 never created it, so a long
+	// press lit the top panel while the Bluetooth indicator stayed dark.
+	if *statePath != "" {
+		if err := os.WriteFile(*statePath, []byte("off"), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "pairing agent: indicator state: %v\n", err)
+		}
+	}
 
 	// SIGUSR1 is the MCU's long press, SIGUSR2 its short press.
 	presses := make(chan os.Signal, 4)
@@ -110,6 +121,9 @@ func main() {
 				// button dead for the rest of the session.
 				fmt.Fprintf(os.Stderr, "pairing agent: %v\n", err)
 				continue
+			}
+			if *statePath != "" {
+				os.WriteFile(*statePath, []byte("pairing"), 0o644)
 			}
 			fmt.Printf("pairing agent: called %s\n", procedure)
 		}
