@@ -70,3 +70,35 @@ func proceduresIn(t *testing.T, path string) map[string]bool {
 	}
 	return found
 }
+
+// TestAnswersDonorOOBEQuery guards the recovered mechanism that enables the
+// radio. The donor calls com.harman.stateGet at startup and gates its entire
+// enable path on the reply: wamp_on_pair returns immediately unless byte 0x95
+// is set, and that byte is written only after the reply is matched against
+// "system" then "normal".
+//
+// Confirmed live: answering produced "system state is normal" followed by
+// "OOBE is finished, initializing...". Nothing else in this runtime provides
+// the procedure, so dropping it leaves hci0 at 00:00:00:00:00:00.
+func TestAnswersDonorOOBEQuery(t *testing.T) {
+	source, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+
+	if stateProcedure != "com.harman.stateGet" {
+		t.Fatalf("the donor queries com.harman.stateGet, not %q", stateProcedure)
+	}
+	if !strings.Contains(text, `stateProcedure: {"system": map[string]interface{}{"state": "normal"}}`) &&
+		!strings.Contains(text, `stateProcedure:                 {"system": map[string]interface{}{"state": "normal"}}`) {
+		t.Fatal(`stateGet must answer {"system":{"state":"normal"}}; the donor ` +
+			`matches the nested value against "system" then "normal"`)
+	}
+
+	// The reply must travel as kwargs. The observed working yield was
+	// [YIELD, id, {}, [], {...}] with empty positional args.
+	if !strings.Contains(text, "[]interface{}{}, result,") {
+		t.Fatal("the yield must place the result in kwargs with empty args")
+	}
+}

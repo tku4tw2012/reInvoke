@@ -20,7 +20,12 @@ CONFIG_SOURCE="${ROOT}/etc/bluetooth_orig"
 CONFIG_LIVE=/data/bluetooth
 LOADER="${ROOT}/lib/ld-linux-armhf.so.3"
 SERVICE="${ROOT}/usr/bin/bluetooth"
-LIBS="${ROOT}/system/lib:${ROOT}/system/lib/hw:${ROOT}/usr/lib:${ROOT}/lib"
+# The Android HAL libraries now install to the absolute /system/lib that
+# libhardware.so hardcodes for hw_get_module; only the donor's private glibc
+# and its own libraries stay under ROOT. Both are on the path because the
+# service links against libcutils/libutils/libhardware directly as well as
+# loading the HAL module by path.
+LIBS="/system/lib:/system/lib/hw:${ROOT}/usr/lib:${ROOT}/lib"
 
 fail() {
   echo "bluedroid: $*"

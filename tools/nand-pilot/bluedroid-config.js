@@ -98,9 +98,51 @@ function installBluedroid(config, root, launcher) {
   if (removed.length === 0)
     throw new Error('no BlueZ components were found to replace');
 
+  // The donor tarball is root-relative (lib/, system/lib/, usr/bin/, etc/):
+  // it was built to extract at /. Candidate 05 extracted the whole thing into
+  // opt/bluedroid, which breaks the Android HAL loader.
+  //
+  // libhardware.so resolves HAL modules through hardcoded absolute paths
+  // (/system/lib/hw and /vendor/lib/hw). It cannot see a relocated copy, so
+  // hw_get_module fails, the adapter is never enabled and the radio stays
+  // dark. Observed live on 05.3: "ERROR: failed to load BT HAL module!".
+  //
+  // Extracting everything at / is not the answer either: the donor ships its
+  // own glibc (libc.so.6, liblog.so, libglibc_bridge.so and six more) that
+  // collides with the runtime's. Those must stay private and be reached only
+  // through the launcher's --library-path.
+  //
+  // So the install is a deliberate split, measured against the runtime:
+  //   system/lib/*  -> /system/lib   (15 files, no collisions, REQUIRED there)
+  //   everything else -> private stack root
   const stackRoot = path.join(absoluteRoot, 'opt/bluedroid');
   fs.mkdirSync(stackRoot, { recursive: true, mode: 0o755 });
   cp.execFileSync('tar', ['-xzf', config.payload.path, '-C', stackRoot]);
+
+  const halSource = path.join(stackRoot, 'system/lib');
+  const halTarget = path.join(absoluteRoot, 'system/lib');
+  if (!fs.existsSync(halSource))
+    throw new Error('donor payload has no system/lib; the HAL loader would fail');
+  fs.mkdirSync(halTarget, { recursive: true, mode: 0o755 });
+  const halInstalled = [];
+  for (const entry of fs.readdirSync(halSource, { withFileTypes: true })) {
+    const from = path.join(halSource, entry.name);
+    const to = path.join(halTarget, entry.name);
+    if (fs.existsSync(to))
+      throw new Error(`donor HAL would overwrite runtime file: system/lib/${entry.name}`);
+    if (entry.isDirectory()) {
+      fs.cpSync(from, to, { recursive: true });
+    } else {
+      fs.copyFileSync(from, to);
+      fs.chmodSync(to, 0o755);
+    }
+    halInstalled.push(`system/lib/${entry.name}`);
+  }
+  // Remove the relocated copy so there is exactly one HAL tree and no doubt
+  // about which one the loader used.
+  fs.rmSync(halSource, { recursive: true, force: true });
+  if (!fs.existsSync(path.join(halTarget, 'hw/bluetooth.default.so')))
+    throw new Error('system/lib/hw/bluetooth.default.so is missing after install');
 
   const launcherTarget = path.join(stackRoot, 'start.sh');
   fs.copyFileSync(launcher, launcherTarget);

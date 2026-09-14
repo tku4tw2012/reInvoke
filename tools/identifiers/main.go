@@ -28,6 +28,7 @@ import (
 const (
 	wampHello      = 1
 	wampWelcome    = 2
+	wampPublish    = 16
 	wampRegister   = 64
 	wampRegistered = 65
 	wampInvocation = 68
@@ -35,6 +36,10 @@ const (
 )
 
 var hexIdentity = regexp.MustCompile(`^[0-9a-f]{12}$`)
+
+// stateProcedure is the donor's out-of-box-experience query. It calls this
+// at startup; the reply opens its radio-enable gate.
+const stateProcedure = "com.harman.stateGet"
 
 // unsigned mirrors the decoder's integer handling: MessagePack may present the
 // same value as any of these Go types depending on its encoded width.
@@ -119,9 +124,15 @@ func (c *connection) negotiate(realm string) error {
 		return fmt.Errorf("handshake rejected: %x", handshake)
 	}
 	if err := c.writeFrame([]interface{}{wampHello, realm, map[string]interface{}{
+		// publisher is required: bonefish rejects a PUBLISH from a session
+		// that did not advertise the role and then closes the connection,
+		// which reads exactly like a malformed payload. Observed live while
+		// probing the donor's OOBE gate.
 		"roles": map[string]interface{}{
-			"callee": map[string]interface{}{},
-			"caller": map[string]interface{}{},
+			"callee":     map[string]interface{}{},
+			"caller":     map[string]interface{}{},
+			"publisher":  map[string]interface{}{},
+			"subscriber": map[string]interface{}{},
 		},
 	}}); err != nil {
 		return err
@@ -134,6 +145,15 @@ func (c *connection) negotiate(realm string) error {
 		return fmt.Errorf("expected WELCOME, received %v", response)
 	}
 	return nil
+}
+
+// publish emits a WAMP event. The frame carries positional args only, with no
+// kwargs map, matching what the router logs for the runtime's own publishers.
+func (c *connection) publish(topic string, args []interface{}) error {
+	c.next++
+	return c.writeFrame([]interface{}{
+		wampPublish, c.next, map[string]interface{}{}, topic, args,
+	})
 }
 
 func (c *connection) register(procedure string) (uint64, error) {
@@ -281,7 +301,17 @@ func main() {
 	// here may claim a procedure mcu-interface owns (tools/mcu-interface/
 	// wamp.go's `procedures`).
 	responses := map[string]map[string]interface{}{
-		procedure:                      identityResult,
+		procedure: identityResult,
+		// The donor CALLS this at startup and gates its entire radio-enable
+		// path on the answer. Recovered from the binary, then confirmed live:
+		// wamp_on_pair returns immediately unless byte 0x95 is set, that byte
+		// is written only by handle_oobe_state_change, and the reply is
+		// matched against "system" then "normal". Answering produces:
+		//   system state is normal
+		//   OOBE is finished, initializing...
+		// Nothing else in this runtime provides it, so without this the
+		// adapter is never enabled and hci0 stays 00:00:00:00:00:00.
+		stateProcedure:                 {"system": map[string]interface{}{"state": "normal"}},
 		"com.harman.deviceNameGet":     {"name": *deviceName, "device-name": *deviceName},
 		"com.harman.source.register":   {},
 		"com.harman.source.get-active": {"source": "bluetooth"},
