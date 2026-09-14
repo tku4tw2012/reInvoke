@@ -20,7 +20,10 @@ here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "${here}/../.." && pwd)"
 archive="${REINVOKE_ARCHIVE:-${repo}/../reinvoke-archive}"
 firmware="${INVOKE_FIRMWARE_DIR:?INVOKE_FIRMWARE_DIR must name the recovery-only staging}"
-usb_path="${INVOKE_USB_PATH:-3-1.2}"
+# Discovered, never assumed: the unit enumerated on 2-1.2 while every tool
+# here assumed 3-1.2, and a watcher pinned to the wrong path reported that
+# the iROM window never appeared. Vendor and product are the stable identity.
+usb_path="${INVOKE_USB_PATH:-$("${here}/../find-invoke-usb.sh" 2>/dev/null || echo "")}"
 helper="${INVOKE_USB_BOOT_BIN:-${archive}/tools/hk-invoke-arm-flasher/63444e82/usb_boot_arm}"
 
 [[ -d "${evidence}" ]] && { echo "EVIDENCE_DIR must not already exist" >&2; exit 1; }
