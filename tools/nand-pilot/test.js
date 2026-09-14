@@ -93,10 +93,10 @@ try {
   assert.equal(invoke('. "$1"; pilot_select_kernel 3.8.13-unreviewed', [kernel]).status, 1);
   const bootstrap = fs.readFileSync(path.join(__dirname, 'bootstrap.sh'), 'utf8');
   const bsl = fs.readFileSync(path.join(__dirname, 'bsl-init.sh'), 'utf8');
-  assert.equal(lib.CANDIDATE, '05.3');
-  assert.equal(lib.BUILD_ID, 'reInvoke-NAND-05.3-20260914');
-  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-NAND-05.3');
-  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-05.3');
+  assert.equal(lib.CANDIDATE, '05.4');
+  assert.equal(lib.BUILD_ID, 'reInvoke-NAND-05.4-20260914');
+  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-NAND-05.4');
+  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-05.4');
   assert(bootstrap.includes(`PILOT_ADBD_PRODUCT=${lib.BLUETOOTH_NAME}`));
   assert(bsl.includes(`PILOT_ADBD_PRODUCT=${lib.BLUETOOTH_NAME}`));
   const oldMain = path.join(fixture, 'old-main');
