@@ -23,6 +23,32 @@ function patchRuntime(source) {
       if [ "\${service_status}" -ne 0 ]; then
         pilot_failure "service-\${service_name}" "process exited \${service_status}; supervisor retrying"
       fi`);
+  // The stock loop does an unbounded "wait" on the logger after the service
+  // dies. The logger reads a FIFO, and any other writer holding that FIFO open
+  // keeps it alive forever, so the supervisor never reaches its restart. This
+  // was observed on hardware: bonefish crashed, its supervisor sat in do_wait
+  // with two stale loggers alive, and the whole runtime lost its WAMP router
+  // until it was relaunched by hand.
+  //
+  // Removing the pipe first gives the logger EOF; the bounded poll then
+  // guarantees the loop continues even if something still holds it open.
+  replace(`        wait "\${logger_pid}"
+        logger_status="$?"
+        if \${BB} test "\${logger_status}" -ne 0; then
+          log "\${service_name} logger exited \${logger_status}"
+        fi
+        \${BB} rm -f "\${service_log_pipe}"`,
+    `        \${BB} rm -f "\${service_log_pipe}"
+        logger_wait=0
+        while \${BB} kill -0 "\${logger_pid}" 2>/dev/null &&
+          \${BB} test "\${logger_wait}" -lt 5; do
+          \${BB} sleep 1
+          logger_wait=$((logger_wait + 1))
+        done
+        if \${BB} kill -0 "\${logger_pid}" 2>/dev/null; then
+          \${BB} kill "\${logger_pid}" 2>/dev/null || true
+          log "\${service_name} logger did not exit; supervisor continuing"
+        fi`);
   const mounts = text.slice(text.indexOf('${BB} mount -t proc proc /proc\n'),
     text.indexOf('(umask 0; /sbin/ueventd -s)'));
   replace(mounts, `pilot_phase runtime-initializing

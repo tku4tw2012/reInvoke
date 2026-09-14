@@ -49,6 +49,20 @@ try {
     'unsampled HCI failure record survived the 4.1 patch');
   assert(!patched.includes('supervise bluetoothd'),
     'the BlueZ stack survived the candidate 05 replacement');
+  // The stock supervisor does an unbounded "wait" on its logger after a
+  // service dies. The logger reads a FIFO, so any other process still holding
+  // that FIFO open keeps it alive and the supervisor never restarts the
+  // service. Observed on hardware: bonefish crashed, its supervisor sat in
+  // do_wait with two stale loggers alive, and the runtime lost its WAMP router
+  // until it was relaunched by hand.
+  assert(!patched.includes('wait "${logger_pid}"'),
+    'the unbounded logger wait survived; a crashed service will never restart');
+  for (const marker of [
+    'logger_wait=0',
+    '"${logger_wait}" -lt 5',
+    'logger did not exit; supervisor continuing',
+  ])
+    assert(patched.includes(marker), `bounded logger wait is missing: ${marker}`);
   // The same behaviour is maintained in two places: this patch against the
   // pinned RC12 init, and tools/usb-boot/native-ram-init for any future
   // rebuild. Marker checks alone would not catch the two drifting apart.
