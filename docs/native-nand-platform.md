@@ -7,11 +7,22 @@ ms.topic: overview
 
 ## Current result
 
-Candidate 03 is installed. It starts independently of a host and has completed
-attended Wi-Fi provisioning. SSH reaches negotiation but not login; the root
-cause is unknown. Candidate 02 remains the broader native audio/control
-baseline. RAM privacy, firewall and restart measurements are not native
-acceptance.
+Candidate 05.3 is installed and running: native NAND boot in about forty
+seconds, Wi-Fi restored from durable storage, root SSH, and the
+MCU/DSP/microphone/provisioning services confirmed live. Its donor Bluetooth
+identity provider stays resident and answers, which no earlier candidate
+achieved.
+
+Bluetooth still does not transmit. The cause is now located precisely and is
+not identity: the controller never completes HCI initialisation, so
+`hci_version`, `manufacturer` and `features` all read zero and `hci0` keeps
+`00:00:00:00:00:00`. See
+[Bluetooth enable path](bluetooth-enable-path.md).
+
+Candidate 05.4 is built and staged, carrying the OOBE query answer, the HAL
+install-path correction and a supervisor restart fix. Candidate 02 remains the
+broader native audio/control baseline. RAM privacy, firewall and restart
+measurements are not native acceptance.
 
 ### Candidate 03 startup
 
@@ -101,9 +112,21 @@ Use [recovery tooling](../tools/usb-boot/README.md), not a recipe inferred here.
 
 ## Artifact identities
 
-These are final private candidate-03 artifacts, not public release downloads.
-The selection record is `complete/MANIFEST.json` in the private
-`build/artifacts/reinvoke-native-03-20260912/` output.
+These are private candidate artifacts, not public release downloads. The
+selection record is `complete/MANIFEST.json` in each private output
+directory.
+
+Candidate 05.4, built and staged, awaiting an owner-performed flash
+(`build/artifacts/reinvoke-native-05.4-20260914/`):
+
+| Component                        | Bytes      | SHA-256                                                            |
+| -------------------------------- | ---------: | ------------------------------------------------------------------ |
+| `complete/83_IMAGE.reinvoke-05.4` | 64,090,144 | `2ddbba563ca1309a4ce82399844184ac0757f70402fac9935ca8af8e49dee131` |
+| `main/rootfs.squashfs`           | 41,578,496 | `73bffed62df26b56ed869a8d5f3354fe7a1a9c3b8c2929183ddd8731b9a963aa` |
+| `compact/bsl.squashfs`           |  2,420,736 | `66dced0e54dc469ea0ae30220aede452e71d6a7ad03373e5a7576ea13b91d9de` |
+
+Candidate 03, retained for comparison
+(`build/artifacts/reinvoke-native-03-20260912/`):
 
 | Component                       | Bytes      | SHA-256                                                            |
 | ------------------------------- | ---------: | ------------------------------------------------------------------ |
