@@ -117,3 +117,42 @@ are vendor binaries and are deliberately left untouched.
 Every Go service this project builds is already stripped with `-s -w`. The
 remaining size is Go runtime rather than debug information, so it cannot be
 reduced without changing language.
+
+## Go against C, measured rather than assumed
+
+The runtime services are written in Go, which costs about 2.3 MB of binary per
+service and 1 to 6 MB of resident memory. Whether that matters was tested
+rather than argued.
+
+CPU time consumed since boot, on an idle unit with Bluetooth connected:
+
+| process | share | language |
+| --- | --- | --- |
+| donor Bluedroid | 60% | C |
+| `bt_main_service` | 56% | C, kernel thread |
+| `reinvoke-mic-capture` | 2.9% | Go |
+| `reinvoke-mcu-interface` | 0.8% | Go |
+| `reinvoke-dsp-interface` | 0.4% | Go |
+
+Every Go service together accounts for roughly 4.5 percent. The two heaviest
+consumers are already C.
+
+Sampling live rather than cumulative changes the picture again. Over ten
+seconds on an idle system:
+
+| | value |
+| --- | --- |
+| Bluedroid CPU | 0 ticks |
+| system idle | 98% |
+| load average, fifteen minute | 0.63 |
+
+The 60 percent figure is a startup burst while the Bluetooth stack initialises,
+not steady state.
+
+A rewrite in C would recover roughly 25 MB of disk and 20 MB of memory, on a
+system with 462 MB total and 295 MB free, running 98 percent idle. It would
+cost eight service rewrites, memory safety and the existing test suites.
+
+Nothing measured here competes with audio playback. The DSP decodes in
+hardware, the services are event driven and idle between button presses, and
+they allocate almost nothing in steady state.
