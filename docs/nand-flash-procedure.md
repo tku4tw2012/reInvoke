@@ -96,10 +96,22 @@ u2nand succeed
 
 ## Service-mode entry
 
-Power off, hold Reset, restore power, press MicOff four times within five
-seconds, release when the top shows yellow.
+Leave USB connected throughout and cycle mains power only. Unplug mains, hold
+the Reset pinhole, restore mains while still holding it, then press MicOff
+exactly four times within five seconds. Yellow indicates the mode is armed.
 
-Holding Reset past yellow makes no difference; measured on this unit.
+**Keep holding Reset until the U-Boot console appears, then release.** This is
+the vendor instruction in `Instructions.pdf` (Process 2, step 7) shipped in the
+`invoke-flashing` bundle, and it agrees with [U-Boot access](uboot-access.md).
+
+An earlier revision of this file said to release at yellow and claimed that
+holding longer "makes no difference; measured on this unit". That claim was
+introduced in a tooling commit that contains no such measurement. It is
+withdrawn: nothing here ever tested it, and it contradicts the vendor source.
+
+If the device instead disconnects repeatedly for more than ten seconds, the
+vendor remedy is to unplug mains, wait ten seconds and restore mains, leaving
+USB untouched.
 
 Entry is genuinely unreliable and often needs several attempts. With the
 catcher running there is no window to miss, so simply repeat. Many failed
