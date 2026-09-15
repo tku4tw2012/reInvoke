@@ -1,0 +1,86 @@
+#!/bin/busybox sh
+# Copyright (c) Microsoft Corporation.
+# SPDX-License-Identifier: MIT
+#
+# RAM entry point for the NAND runtime.
+#
+# The runtime's own /init is not a standalone init. In a NAND boot the BSL is
+# PID 1: it mounts /proc, /sys, /dev, /run and /tmp, creates the static device
+# nodes, coldplugs, brings up the USB gadget, and only then chroots into the
+# rootfs. Booting the runtime directly from an initramfs skips all of that, so
+# the runtime starts with no /proc and no gadget and cannot report why.
+#
+# This wrapper performs the BSL's pre-handoff work, minus everything specific
+# to NAND, then hands off to the unmodified runtime init.
+#
+# It deliberately leaves the USB transport running rather than stopping it the
+# way the BSL does. The runtime detects an already-configured gadget and keeps
+# it ("usb-preserved"), which means a failure inside the runtime is observable
+# over ADB instead of silent.
+
+BB=/bin/busybox
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+HOME=/root
+export PATH HOME
+
+# The runtime reads this same path, so the gadget started here is the gadget it
+# finds. Using the BSL's /run/reinvoke-bsl would hide it.
+PILOT_STATE=/run/nand-pilot
+export PILOT_STATE
+
+stop_boot() {
+  echo "reInvoke RAM entry stopped: $*" >&2
+  ${BB} mkdir -p /run/nand-pilot 2>/dev/null
+  echo "$*" >/run/nand-pilot/ram-entry-failure 2>/dev/null
+  while true; do ${BB} sleep 5; done
+}
+
+${BB} mount -t proc proc /proc || stop_boot proc
+${BB} mount -t sysfs sysfs /sys || stop_boot sysfs
+${BB} mount -t tmpfs devtmpfs /dev || stop_boot dev
+${BB} mkdir -p /dev/pts || stop_boot pts-directory
+${BB} mount -t tmpfs -o mode=0755,size=16m tmpfs /run || stop_boot run
+${BB} mount -t tmpfs -o mode=1777,size=16m tmpfs /tmp || stop_boot tmp
+${BB} mkdir -p /run/nand-pilot /run/adb/local/tmp /run/adb/adb ||
+  stop_boot diagnostic-directories
+
+PILOT_ADBD_PTY_READY=1
+if ! ${BB} mount -t devpts devpts /dev/pts; then
+  PILOT_ADBD_PTY_READY=0
+fi
+
+${BB} test -e /dev/random || ${BB} mknod -m 0444 /dev/random c 1 8
+${BB} test -e /dev/urandom || ${BB} mknod -m 0444 /dev/urandom c 1 9
+for spec in 'null 1 3' 'console 5 1' 'ptmx 5 2' 'kmsg 1 11'; do
+  set -- ${spec}
+  test -c "/dev/$1" || ${BB} mknod -m 0600 "/dev/$1" c "$2" "$3" ||
+    stop_boot "device $1"
+done
+${BB} chmod 0666 /dev/null /dev/ptmx || stop_boot device-permissions
+
+(umask 0; /sbin/ueventd -s) || stop_boot coldplug
+${BB} ifconfig lo 127.0.0.1 up || stop_boot loopback
+
+{
+  echo "reInvoke RAM entry; pid=$$"
+  ${BB} cat /proc/version /proc/cmdline
+} >/run/nand-pilot/ram-entry.txt 2>/dev/null
+
+. /usr/libexec/nand-pilot/common.sh
+
+PILOT_ADBD_PRODUCT=reInvoke-RAM-06.1
+PILOT_ADBD_STARTED_PHASE=adb-started
+PILOT_ADBD_DEGRADED_PHASE=adb-degraded
+PILOT_ADBD_ENABLE_DEV_FILE=/sys/class/misc/android_adb_enable/dev
+PILOT_ADBD_ENABLE_NODE=/dev/android_adb_enable
+PILOT_ADBD_TTYGS0_DEV_FILE=/sys/class/tty/ttyGS0/dev
+PILOT_ADBD_TTYGS0_NODE=/dev/ttyGS0
+PILOT_ADBD_RUNTIME_ROOT=""
+export PILOT_ADBD_PRODUCT
+
+if ! pilot_usb_adbd_launch; then
+  echo "USB transport unavailable" >/run/nand-pilot/ram-entry-usb 2>/dev/null
+fi
+
+exec ${BB} sh /init.runtime
+stop_boot runtime-exec
