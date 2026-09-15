@@ -37,66 +37,61 @@ From the config those builds use:
 device-tree compatible `marvell,berlin-udc`, so the driver was written for this
 SoC family rather than adapted to it.
 
-## What is missing: one device-tree node
+## What is missing: the driver, not the device tree
 
-The sibling variant declares a UDC. Ours does not.
+An earlier revision of this document concluded that the BG2CD device tree
+lacked a UDC node and that adding one was the work. That was wrong, and reading
+the running system rather than the source tree shows why.
 
-`arch/arm/boot/dts/berlin2cdp.dtsi` has both a PHY and a UDC:
+The unit reports `BG2CD` in its U-Boot banner, which is the family name. The
+variant is CDP-A0: the vendor's own kernel payload contains
+`MARVELL BG2CDP A0 Dongle board based on BERLIN2CDP-A0`, and the DTB this
+project already builds carries that exact model string. The `berlin2cd-*.dtsi`
+files examined earlier describe a different board and were never the ones in
+use.
 
-	usbphy0: usbphy@F7B74000 {
-		compatible = "marvell,berlin-usbphy";
-		reg = <0xF7B74000 128>;
-		phy-mode = <2>;
-	};
+That device tree already declares the controller, and the vendor kernel already
+instantiates it:
 
-	udc@F7ED0000 {
-		compatible = "marvell,berlin-udc";
-		reg = <0xF7ED0100 0x1ff>;
-		interrupts = <0 11 0x4>;
-		usb-phy = <&usbphy0>;
-		status = "okay";
-	};
+```text
+/sys/bus/platform/devices/f7b74000.usbphy
+/sys/bus/platform/devices/f7ed0000.usb
+/sys/bus/platform/devices/f7ed0100.udc
+```
 
-`arch/arm/boot/dts/berlin2cd-common.dtsi`, which our board includes through
-`berlin2cd.dtsi`, declares the same controller host-only and has no PHY node at
-all:
+The device is present and unbound. There is no `mv-udc` entry under
+`/sys/bus/platform/drivers`, and no `/sys/class/udc` at all, because the vendor
+kernel was built without gadget support.
 
-	usb@F7ED0000 {
-		compatible = "mrvl,berlin-ehci";
-		reg = <0xF7ED0000 0x10000>;
-		interrupts = <0 11 4>;
-		phy-base = <0xF7B74000>;
-		reset-bit = <23>;
-		pwr-gpio = <8>;
-	};
+The kernel this project builds already has it:
 
-Same controller address, same PHY address. One dual-role block, with the device
-side at offset 0x100. Both the EHCI and PHY drivers already write
-`USB2_OTG_REG0`.
+```text
+CONFIG_USB_GADGET=y
+CONFIG_USB_MV_UDC=y
+CONFIG_USB_G_ANDROID=y
+```
 
-## The hardware question is already answered
-
-The boot ROM enumerates this SoC as USB device `1286:8174` every time the unit
-enters service mode. Device mode demonstrably works on this silicon; Linux is
-simply never told to use it.
+So USB device mode needs no device-tree work. It needs the reInvoke kernel to
+be the one that boots.
 
 ## The change
 
-1. Add a `usbphy0` node to `berlin2cd-common.dtsi`, copied from the CDP
-   variant. The CD tree references its PHY inline as `phy-base` and has no
-   phandle, so this introduces one.
-2. Add the `udc@F7ED0000` node referencing it.
-3. Rebuild with `tools/kernel/build-native-kernel.sh`.
-4. Confirm `/sys/class/udc` is populated and `g_android` binds.
-5. Start `adbd` against it.
+1. Flash the kernel this project already builds, replacing `bootimgs`.
+2. Confirm `/sys/class/udc` is populated and `mv-udc` has bound
+   `f7ed0100.udc`.
+3. Bring up the Android gadget and start `adbd` against it.
+
+The module tree `3.8.13-reinvoke-audio-sd8887` already ships in the runtime and
+becomes the live one at that point, so Wi-Fi and Bluetooth should come up from
+the same image.
 
 Unknowns worth expecting:
 
-* the CD and CDP PHY programming may differ despite identical addresses;
-  `phy-mode = <2>` is unexplained and may be device versus host
-* both USB ports are currently host; making one dual-role may need the EHCI
-  node for that address removed or made conditional
+* no reInvoke kernel has ever booted on this unit; every flash to date records
+  `bootimgs` as byte-identical to the vendor payload
 * the vendor bootloader may configure the PHY for host before Linux runs
+* `phy-mode = <2>` in the device tree is unexplained and may select device or
+  host operation
 
 ## What it costs to try
 
