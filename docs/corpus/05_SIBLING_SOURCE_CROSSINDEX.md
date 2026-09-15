@@ -85,8 +85,16 @@ Acorn U-Boot and Nest's generic import do not fill those gaps. Later
 
 * [HKHacking][hkhack] supplies Invoke USB/U-Boot/ADB reports, firmware releases,
   and the historical MTD map. Discussion #3 also records a `99_IMAGE` failure
-  with loss of expected recovery. That image remains excluded from reInvoke's
-  serving set; the report does not identify a modified ROM or universal failure.
+  with loss of expected recovery: the reporting operator's own words are "stuck
+  in some loop, with no U-Boot output," tried on both the normal flashing
+  trigger and the alternate BT+Mic "green light" trigger, same result on each.
+  That image remains excluded from reInvoke's serving set; the report
+  identifies an observed symptom, not a modified ROM, a root cause or a
+  universal failure.
+  [Discussion #13][hkhack13] (2024-12-09, reaffirmed 2025-07-11) is that
+  project's most recent public status check: it reports no progress past the
+  same rootfs-level StockRoot result cited below, and no report there of a
+  booted custom kernel on this hardware.
 * [Aristoddle][aristoddle] was reviewed at
   `948e85e2ddbdd560e186913cdfaad3f57f118c93` (2026-06-23), retained as [P2-004].
   MIT covers its documentation/tooling, not vendor firmware. Useful prior art
@@ -114,6 +122,7 @@ Acorn U-Boot and Nest's generic import do not fill those gaps. Later
 [gmini]: https://github.com/courk/gmini-linux
 [psvr]: https://github.com/fail0verflow/sony-psvr-linux
 [hkhack]: https://github.com/coggy9/HKHacking/discussions/3
+[hkhack13]: https://github.com/coggy9/HKHacking/discussions/13
 [aristoddle]: https://github.com/Aristoddle/hk-invoke-opensource-speaker/tree/948e85e2ddbdd560e186913cdfaad3f57f118c93
 [flasher]: https://github.com/jryruegas92/hk-invoke-arm-flasher
 [podium]: https://github.com/CaramelKat/PodiumFlashing

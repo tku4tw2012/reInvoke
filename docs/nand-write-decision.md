@@ -15,7 +15,8 @@ the storage, backup and recovery limits behind that installation.
 > These are engineering decisions and results, not a flash recipe. Recovery
 > worked after observed failures, not arbitrary boot-chain corruption.
 > Native bundles used `83_IMAGE`. The excluded vendor filename is `99_IMAGE`;
-> its damaging mechanism is not established.
+> a community report of flashing it documents no U-Boot console output
+> afterward, on either boot-trigger path, but not a root cause.
 
 ## Unit facts to preserve
 
@@ -142,7 +143,10 @@ The [published StockRoot release](https://github.com/coggy9/HKHacking/releases/t
 was an independently reported custom-firmware success. The local bounded trial
 preserved app/status state and used a different programming path from the
 published whole-chip method. Its failure did not isolate rootfs contents as
-the cause or contradict that community result.
+the cause or contradict that community result. That project's own most recent
+public status check, December 2024 and reaffirmed July 2025, reports no
+progress past that same rootfs-level result: no public report of a booted
+custom kernel on this hardware exists there either.
 
 Reconstruction required combined single-page `MEMWRITE` PLACE mode:
 2,048 main bytes plus 32 exposed OOB bytes, preserving app tags. RAW, AUTO and
