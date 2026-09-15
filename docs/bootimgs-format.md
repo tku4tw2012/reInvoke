@@ -437,6 +437,90 @@ gates a future attempt now.
 
 Until then, keep `bootimgs` at the vendor image.
 
+## External research: does anyone else know the co-processor's transform
+
+Four AI research agents (GPT-6 Astra, Claude Opus 5, Grok 4.6, Claude Sonnet 5)
+searched independently and in parallel for prior art on this exact question.
+Opus 5 returned zero content across five distinct attempts (fresh research,
+retry, reworked prompt, critique of the other reports, reframed peer review) —
+a content-filter block on this topic, on this model, not a research result.
+The other three succeeded and converged with each other and with the findings
+above. Their most consequential citations were then independently re-verified
+directly against live sources (not taken on the reporting model's word),
+per this project's standing rule to ground every claim.
+
+* **`coggy9/HKHacking`** (real, public, dormant since 2022) independently
+  corroborates this project's own yellow-mode entry sequence and confirms
+  "Podium" as Invoke's internal codename. Its README links two archive.org
+  items — `HK-Invoke-source-disclosure` and `invoke-kernel` — confirmed real
+  via `archive.org/metadata`, downloaded, and MD5-verified against the
+  published metadata. The disclosed kernel (Linux 3.8.13, exact
+  `berlin2cdp-a0-acast` board match, firmware vintage `Barracuda_libre-11.1842.0`,
+  older than this unit's own `bootimgs`) was grepped end-to-end for
+  keystore/AESK/`bcm_image_verify` terms: **zero real hits**. This confirms,
+  rather than merely assumes, that the verification logic is entirely
+  bootloader-side and never touches Linux driver code, in a second real
+  source tree independent of the one already traced in this document.
+* **`senarytech/ubuntu`** is a later Synaptics VS680-era source tree (not
+  proven to be what built this unit's BG2CDP image; corroborating context,
+  not device-specific proof). Its `bcm_verify.c` independently confirms the
+  same mailbox-call shape already traced in `bootloader.c` (opcode, type/src/dst
+  arguments, register-level polling) but reveals nothing about the
+  co-processor's actual cryptographic transform or key — the same conclusion
+  reached from a second, independent, more recent source tree. That file
+  carries an explicit Synaptics NDA/confidentiality header; its contents are
+  described here at the mechanism level only and were not saved to this
+  repository or the evidence archive. Its `encryption.sh` build script shows
+  that when `ROM_KEY_DISABLE=1`, encryption runs unconditionally regardless of
+  the "disable encryption" config flag — by analogy, not proof, this is
+  circumstantial support that this chip family's own build tooling treats
+  kernel encryption as close to mandatory in real deployments.
+* **Google Home Mini** (`courk.cc`, two-part public writeup) uses a sibling
+  SoC in the same family (Marvell/Synaptics Armada 1500 Mini Plus) and a
+  similar NAND part. This is by-analogy evidence from a related product, not
+  a finding about this unit. Four points are worth carrying over, the last
+  of them a direct observation rather than an analogy:
+  1. The author achieved full physical NAND read/write via a custom
+     BGA-desoldering rework and FPGA-based interposer board ("NandBug",
+     open-sourced) — hardware capability far beyond hobbyist reach, consistent
+     with this project's own stated tool/skill limits.
+  2. With that privileged access in hand, the author states plainly: "an
+     extended secure boot implementation makes executing arbitrary code using
+     naive methods impossible." Kernel and bootloader partitions are
+     cryptographically verified there too, and no way was found to skip that
+     verification — the same wall this document has been tracing from the
+     other direction, now independently reached by a different researcher
+     starting from full hardware access instead of source study.
+  3. The actual successful exploit (part 2) was **not** a verification bypass.
+     It was a memory-corruption bug found by fuzzing the kernel's YAFFS2
+     filesystem driver, reachable only through `cache`/`factory_store` — NAND
+     regions explicitly outside that device's chain of trust — and it grants
+     code execution under the already-booted stock kernel, not a booted custom
+     kernel. This is a different strategy from anything this document
+     evaluates (it never replaces the kernel), unproven to have any analog on
+     this unit (this project has not established that any mounted filesystem
+     here uses YAFFS2, or that its driver carries a comparable bug), and would
+     be a multi-week fuzzing/vulnerability-research effort on a kernel this
+     project does not have exact matching source for, not a documentation task.
+  4. Google's own `kernel` partition ships as a plain,
+     unencrypted Android bootimg, while `rootfs` is dm-verity-protected
+     instead. This shows kernel encryption on this chip family is a
+     per-product build choice, not a hardware-forced universal — sharpening,
+     not contradicting, this unit's own measured `bcpu0_image_encrypt=1`.
+
+None of this external research surfaced the co-processor's transform or key.
+It closes off, rather than opens, the remaining avenues: the mechanism is now
+confirmed absent from two independent Linux/vendor source trees, one further,
+more sensitive NDA-marked tree, and a sibling product's own independent
+hardware-level research effort that had far greater physical access than is
+available here. A third flash guess (`6.2`) would still be exactly what it
+would have been before this research: an unlicensed guess against a
+transform nobody has found described anywhere. Its empirical cost is
+separately bounded — `6.0` and `6.1` both left the bad-block list and
+yellow-mode recovery unaffected — so the choice is a real trade-off between a
+low, evidence-based probability of success and a low, evidence-based cost of
+trying, not a hidden risk of further research.
+
 ## Rejected: overriding the U-Boot environment
 
 U-Boot reports `environment in SPI flash is invalid` and falls back to
