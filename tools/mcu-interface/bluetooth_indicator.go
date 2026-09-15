@@ -123,6 +123,12 @@ func decodeBluetoothIndicatorState(
 	readErr error,
 ) (mode, status string, err error) {
 	if readErr != nil {
+		// The state file does not exist until the pairing agent starts, which
+		// is after this first read on every boot. Off is the right indicator
+		// state and there is nothing wrong, so it is not reported as a fault.
+		if errors.Is(readErr, os.ErrNotExist) {
+			return "off", "off", nil
+		}
 		return "off", "error:" + readErr.Error(), readErr
 	}
 	state := strings.TrimRight(string(content), " \t\r\n")

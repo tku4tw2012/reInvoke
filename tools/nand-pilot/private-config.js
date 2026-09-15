@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
-const { run, hashFile, BLUETOOTH_NAME } = require('./build-lib');
+const { run, hashFile } = require('./build-lib');
 
 function localAccountNSS(text) {
   const missing = new Set(['passwd', 'group', 'shadow']);
@@ -97,10 +97,5 @@ function installConfig(config, root) {
     ['apPSK', 'provision-ap-psk']]) {
     if (config[key]) write(`opt/reinvoke/etc/${name}`, fs.readFileSync(config[key]));
   }
-  const bluez = path.join(root, 'opt/reinvoke/etc/bluez-main.conf');
-  let text = fs.readFileSync(bluez, 'utf8');
-  if (!/^Name\s*=/m.test(text)) throw new Error('Bluetooth name configuration missing');
-  text = text.replace(/^Name\s*=.*$/m, `Name = ${BLUETOOTH_NAME}`);
-  fs.writeFileSync(bluez, text);
 }
 module.exports = { readConfig, installConfig, localAccountNSS };

@@ -420,7 +420,7 @@ func collect(root string) status {
 	}
 	for _, dir := range []string{"/run/nand-pilot", "/run/reinvoke"} {
 		for _, name := range []string{"adbd", "adbd-supervisor", "sshd", "sshd-native",
-			"sshd-supervisor", "bluetoothd", "bluealsa", "mcu-interface", "dsp-interface",
+			"sshd-supervisor", "bluedroid", "mcu-interface", "dsp-interface",
 			"mic-capture", "provision-windowd", "bonefish", "syslogd", "pairing-agent",
 			"persistence", "wifi-resume", "networkd"} {
 			if read(at("/run/nand-pilot/failure-service-"+name)) != "" {

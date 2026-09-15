@@ -95,6 +95,16 @@ var micMuteSpec = procedureSpec{
 }
 
 // stateChangedSpec is a subscription in the donor, not a registration.
+// volumeSpec drives the amplifier directly. It mirrors the entry in procedures
+// so the control socket can reach the same hardware path the WAMP procedure
+// uses, without the socket having to route through a WAMP session.
+var volumeSpec = procedureSpec{
+	Name:      "DSP volume control",
+	ID:        messageIDControl,
+	Opcode:    0x04,
+	Arguments: 1,
+}
+
 var stateChangedSpec = procedureSpec{
 	Name:      stateTopic,
 	ID:        messageIDControl,

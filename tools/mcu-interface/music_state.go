@@ -44,7 +44,7 @@ func validateMusicStateDirectory(path string) error {
 func readMusicVolume(path string) (int, error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return defaultConnectCeiling, nil
+		return defaultVolume, nil
 	}
 	if err != nil || !info.Mode().IsRegular() || info.Size() > 4 {
 		return 0, errors.New("music volume state invalid")
@@ -64,7 +64,7 @@ func readMusicVolume(path string) (int, error) {
 	return value, nil
 }
 
-func (controller *blueALSAController) rememberMusicVolume(percent int) error {
+func (controller *dspVolumeController) rememberMusicVolume(percent int) error {
 	if controller.musicStatePath == "" {
 		return nil
 	}
