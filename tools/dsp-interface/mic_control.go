@@ -10,8 +10,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -73,37 +71,17 @@ func handleMicControlConnection(
 	if err := connection.SetDeadline(time.Now().Add(micControlTimeout)); err != nil {
 		return err
 	}
-	// Requests are short lines. "0" and "1" mute and unmute the microphone;
-	// "v<0-100>" sets the amplifier volume. Volume arrived here rather than on
-	// a socket of its own because the physical rotary control used to drive
-	// BlueALSA, which this runtime no longer ships, and one listener is less
-	// to get wrong than two.
-	request := make([]byte, 0, 8)
-	single := make([]byte, 1)
-	for len(request) < cap(request) {
-		if _, err := io.ReadFull(connection, single); err != nil {
-			return fmt.Errorf("read request: %w", err)
-		}
-		if single[0] == '\n' {
-			break
-		}
-		request = append(request, single[0])
+	request := make([]byte, 2)
+	if _, err := io.ReadFull(connection, request); err != nil {
+		return fmt.Errorf("read request: %w", err)
 	}
-
 	spec := micMuteSpec
 	var argument uint64
-	switch text := string(request); {
-	case text == "0":
+	switch string(request) {
+	case "0\n":
 		argument = 0
-	case text == "1":
+	case "1\n":
 		argument = 1
-	case strings.HasPrefix(text, "v"):
-		percent, err := strconv.Atoi(text[1:])
-		if err != nil || percent < 0 || percent > 100 {
-			return fmt.Errorf("invalid volume request: %q", text)
-		}
-		spec = volumeSpec
-		argument = uint64(percent)
 	default:
 		return errors.New("invalid request")
 	}

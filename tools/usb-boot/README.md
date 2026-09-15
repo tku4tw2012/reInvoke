@@ -257,19 +257,24 @@ not tmpfs/ramfs; do not delete the no-reissue marker to retry.
 
 ### Single-entry NAND flash wrapper
 
-Use `flash-nand.sh` for the reviewed NAND write path:
+Use `arm-flash.sh` for the reviewed NAND write path:
 
 ```bash
 INVOKE_USB_BOOT_BIN="<pinned-usb_boot_arm>" \
-  tools/usb-boot/flash-nand.sh "<staging-dir>" "<83_IMAGE-sha256>" \
+  tools/usb-boot/arm-flash.sh "<staging-dir>" "<83_IMAGE-sha256>" \
   "<private-evidence-dir>"
 ```
 
 The script runs all fail-closed preflight checks before the service-mode
-window. Start it first and reset the speaker only after it prints `READY`.
-If a run shows only request type `0x08`, service mode was never entered; a
-healthy seize takes three to four seconds from first sighting, as 23 of 27
-archived flashes did.
+window. Start it first and reset the speaker only after it prints `READY`. One
+helper and one console client remain waiting before the operator enters yellow
+mode. The helper matches USB vendor and product identifiers, so moving the
+speaker to another host port requires no configuration.
+
+Do not add descriptor watchers that kill or replace the helper. Candidate 05.7
+completed with the helper already waiting and no other process touching USB.
+The console client issued `l2nand 83` when U-Boot appeared and stayed connected
+until the device returned `u2nand succeed`.
 
 For passive normal-boot observation, USB may stay connected with the helper
 stopped. A disconnected start separately tests host independence; cable-only

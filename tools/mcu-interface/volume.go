@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 	"sync"
 )
@@ -18,8 +17,15 @@ import (
 // stack, so that binary is not shipped and every volume request failed with
 // "fork/exec /opt/reinvoke/bin/bluealsa-cli: no such file or directory".
 //
-// Volume now goes where the sound actually is: the DSP, over the same control
-// socket the microphone mute already uses.
+// The level is held here and reported to callers, and the preference is kept
+// across restarts. It is not yet pushed to the amplifier: the DSP service
+// ships from the RC12 rootfs rather than being rebuilt, and its control socket
+// accepts only the two microphone mute requests. Sending anything else closes
+// the connection. Extending that protocol therefore needs the DSP binary to be
+// built and installed like mcu-interface is, which is a separate change.
+//
+// Until then this keeps the procedures answering with consistent state instead
+// of failing outright, which is what a missing bluealsa-cli did.
 type dspVolumeController struct {
 	socket string
 
@@ -77,22 +83,11 @@ func clampVolume(percent int) int {
 	return percent
 }
 
-// applyLocked pushes the effective level to the DSP. Mute is sent as zero
-// rather than tracked separately on the hardware, so that unmuting restores
-// the level the user had chosen.
+// applyLocked records the effective level. Mute is held separately from the
+// level so unmuting restores what the user chose rather than a zero.
 func (controller *dspVolumeController) applyLocked(ctx context.Context) error {
-	level := controller.volume
-	if controller.muted {
-		level = 0
-	}
-	if err := setDSPVolume(ctx, controller.socket, level); err != nil {
-		return fmt.Errorf("apply volume: %w", err)
-	}
-	// The level is remembered only when unmuted, so unmuting restores what the
-	// user chose rather than the zero that mute sends to the hardware.
-	if controller.muted {
-		return nil
-	}
+	// Mute is held in its own field rather than by zeroing the level, so the
+	// chosen volume is always what gets remembered and unmuting restores it.
 	return controller.rememberMusicVolume(controller.volume)
 }
 

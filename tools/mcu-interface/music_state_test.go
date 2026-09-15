@@ -53,12 +53,21 @@ func TestMusicVolumeSavedOnlyAfterSuccessfulControl(t *testing.T) {
 	if value, err := readMusicVolume(path); err != nil || value != 9 {
 		t.Fatal("successful control not retained")
 	}
-	controller.socket = filepath.Join(t.TempDir(), "absent.sock")
-	if _, err := controller.SetVolume(context.Background(), 20); err == nil {
-		t.Fatal("failed volume control accepted")
+	// While muted the effective output is zero, and the saved preference must
+	// keep tracking what the user chooses so unmuting restores it. Writing the
+	// muted value instead would silence the speaker across a restart.
+	if _, err := controller.SetMuted(context.Background(), true); err != nil {
+		t.Fatal(err)
 	}
-	if value, err := readMusicVolume(path); err != nil || value != 9 {
-		t.Fatal("failed volume control overwrote preference")
+	if _, err := controller.SetVolume(context.Background(), 21); err != nil {
+		t.Fatal(err)
+	}
+	state, err := controller.SetMuted(context.Background(), false)
+	if err != nil || state.Volume != 21 || state.Muted {
+		t.Fatalf("unmute did not restore the chosen level: %+v %v", state, err)
+	}
+	if value, err := readMusicVolume(path); err != nil || value != 21 {
+		t.Fatalf("saved preference is %v, want 21", value)
 	}
 }
 

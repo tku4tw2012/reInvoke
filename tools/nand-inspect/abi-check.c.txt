@@ -1,0 +1,24 @@
+/* Compile-only ABI checks. This file performs no I/O or device operations. */
+#include <stddef.h>
+#include <sys/ioctl.h>
+#include <linux/blkpg.h>
+#include <mtd/mtd-user.h>
+
+_Static_assert(sizeof(struct blkpg_partition) == 152, "BLKPG partition size");
+_Static_assert(offsetof(struct blkpg_partition, start) == 0, "BLKPG start");
+_Static_assert(offsetof(struct blkpg_partition, length) == 8, "BLKPG length");
+_Static_assert(offsetof(struct blkpg_partition, pno) == 16, "BLKPG pno");
+_Static_assert(offsetof(struct blkpg_partition, devname) == 20, "BLKPG name");
+_Static_assert(sizeof(struct blkpg_ioctl_arg) == (sizeof(void *) == 4 ? 16 : 24), "BLKPG outer size");
+_Static_assert(offsetof(struct blkpg_ioctl_arg, data) == (sizeof(void *) == 4 ? 12 : 16), "BLKPG outer pointer");
+_Static_assert(sizeof(struct mtd_info_user) == 32, "MTD info");
+_Static_assert(sizeof(struct mtd_ecc_stats) == 16, "ECC stats");
+_Static_assert(sizeof(struct mtd_oob_buf64) == 24, "OOB request");
+_Static_assert(offsetof(struct mtd_oob_buf64, usr_ptr) == 16, "OOB pointer");
+_Static_assert(BLKPG == 0x1269, "BLKPG ioctl");
+_Static_assert(MEMGETINFO == 0x80204d01, "MEMGETINFO ioctl");
+_Static_assert(MEMERASE == 0x40084d02, "MEMERASE ioctl");
+_Static_assert(MEMGETBADBLOCK == 0x40084d0b, "MEMGETBADBLOCK ioctl");
+_Static_assert(ECCGETSTATS == 0x80104d12, "ECCGETSTATS ioctl");
+_Static_assert(MEMREADOOB64 == 0xc0184d16, "MEMREADOOB64 ioctl");
+_Static_assert(MTDFILEMODE == 0x4d13, "MTDFILEMODE ioctl");

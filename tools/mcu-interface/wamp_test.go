@@ -114,7 +114,7 @@ func TestWAMPUnmuteIsDeniedByDefault(t *testing.T) {
 	}
 }
 
-func TestVolumeSetReachesTheDSP(t *testing.T) {
+func TestVolumeSetHoldsRequestedLevel(t *testing.T) {
 	media, err := newDSPVolumeController(newStubDSPSocket(t))
 	if err != nil {
 		t.Fatal(err)
@@ -123,11 +123,11 @@ func TestVolumeSetReachesTheDSP(t *testing.T) {
 	if err != nil || snapshot.Volume != 42 || snapshot.Muted {
 		t.Fatalf("volume not applied: %+v %v", snapshot, err)
 	}
-	// A request the DSP cannot receive must fail rather than report success,
-	// which is what the BlueALSA-era controller did when its binary was absent.
-	media.socket = filepath.Join(t.TempDir(), "absent.sock")
-	if _, err := media.SetVolume(context.Background(), 9); err == nil {
-		t.Fatal("unreachable DSP reported success")
+	// Mute is tracked separately from the level so that unmuting restores the
+	// user's choice instead of a zero.
+	muted, err := media.SetMuted(context.Background(), true)
+	if err != nil || muted.Volume != 42 || !muted.Muted {
+		t.Fatalf("mute changed the level: %+v %v", muted, err)
 	}
 }
 
