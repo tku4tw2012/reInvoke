@@ -8,9 +8,13 @@ const assert = require('assert');
 const { crc32 } = require('zlib');
 const lib = require('./build-lib');
 
-assert.equal(process.argv.length, 6,
-  'usage: node native-bundle.js ARCHIVE PILOT_ARTIFACT COMPACT_BSL_ARTIFACT NEW_OUTPUT');
-const [archive, pilot, bsl, output] = process.argv.slice(2).map(value => path.resolve(value));
+assert(process.argv.length === 6 || process.argv.length === 7,
+  'usage: node native-bundle.js ARCHIVE PILOT_ARTIFACT COMPACT_BSL_ARTIFACT NEW_OUTPUT [KERNEL_81_IMAGE]');
+const [archive, pilot, bsl, output] = process.argv.slice(2, 6).map(value => path.resolve(value));
+// Replacing the kernel is opt-in. Every candidate through 05.8 left bootimgs
+// byte-identical to the vendor payload, so a build that changes it has to say
+// so explicitly rather than inherit it from a path that happens to exist.
+const kernelPath = process.argv[6] ? path.resolve(process.argv[6]) : null;
 assert(!fs.existsSync(output), 'output already exists');
 assert(!output.startsWith(path.resolve(__dirname, '../..') + path.sep),
   'firmware output must remain outside the repository');
@@ -51,6 +55,14 @@ const replacements = new Map([
   ['rootfs', fs.readFileSync(rootfsPath)],
   ['bsl', fs.readFileSync(bslPath)],
 ]);
+if (kernelPath) {
+  // Both slots carry the same payload in every vendor image observed, and the
+  // bootloader may select either, so a kernel that only lands in one would
+  // boot unpredictably.
+  const kernel = fs.readFileSync(kernelPath);
+  replacements.set('bootimgs', kernel);
+  replacements.set('bootimgs_B', kernel);
+}
 const table = Buffer.from(vendor.subarray(0, 640));
 const payloads = [], records = [];
 let sourceOffset = 640, outputOffset = 640;
@@ -80,8 +92,11 @@ for (let index = 0; index < names.length; index++) {
   sourceOffset += size;
   outputOffset += payload.length;
 }
+const changedRecords = kernelPath
+  ? ['bootimgs', 'bootimgs_B', 'rootfs', 'bsl']
+  : ['rootfs', 'bsl'];
 assert.deepEqual(records.filter(record => !record.vendorPayloadUnchanged).map(record => record.name),
-  ['rootfs', 'bsl'], 'only owned userspace records may differ');
+  changedRecords, 'only owned records may differ');
 assert.equal(records.find(record => record.name === 'app').dataType, 1);
 const image = Buffer.concat([table, ...payloads]);
 assert.equal(image.length, outputOffset);
@@ -110,5 +125,5 @@ lib.json(path.join(output, 'MANIFEST.json'), {
   remainingUnknowns: 'Actual native selection/execution and the exact Harman boot-state policy remain unproved',
 });
 console.log(JSON.stringify({ image: path.basename(imagePath), bytes: image.length,
-  sha256: lib.sha(image), changedRecords: ['rootfs', 'bsl'], records: records.length,
+  sha256: lib.sha(image), changedRecords, records: records.length,
   flashAuthorizedByBuilder: false }, null, 2));
