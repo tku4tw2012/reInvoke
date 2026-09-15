@@ -67,25 +67,10 @@ func main() {
 		"",
 		"executable permitted to activate the physical playback path",
 	)
-	blueALSACLI := flag.String(
-		"bluealsa-cli",
-		"",
-		"BlueALSA CLI used for physical rotary volume control",
-	)
 	musicVolumeState := flag.String(
 		"music-volume-state",
 		"",
 		"optional private RAM music-volume preference restored by persistence",
-	)
-	blueALSAPeer := flag.String(
-		"bluealsa-peer",
-		"",
-		"allowlisted Bluetooth peer used for rotary volume control",
-	)
-	mediaControl := flag.String(
-		"media-control",
-		"",
-		"BlueZ AVRCP helper used by the top-panel short tap",
 	)
 	pairingAgentPID := flag.String(
 		"pairing-agent-pid",
@@ -120,9 +105,6 @@ func main() {
 	if *gpioNumber < 0 {
 		log.Fatal("gpio must be non-negative")
 	}
-	if (*blueALSACLI == "") != (*blueALSAPeer == "") {
-		log.Fatal("bluealsa-cli and bluealsa-peer must be supplied together")
-	}
 	playbackPolicyValues := 0
 	for _, value := range []string{
 		*playbackStatus,
@@ -136,11 +118,6 @@ func main() {
 	if playbackPolicyValues != 0 && playbackPolicyValues != 3 {
 		log.Fatal(
 			"playback-status, playback-lease, and playback-owner-executable must be supplied together",
-		)
-	}
-	if *mediaControl != "" && (*blueALSAPeer == "" || *playbackStatus == "") {
-		log.Fatal(
-			"media-control requires bluealsa-peer and playback-status",
 		)
 	}
 	if (*pairingAgentPID == "") != (*pairingAgentExecutable == "") {
@@ -198,14 +175,10 @@ func main() {
 	}
 
 	var inputControls inputControllerList
-	var media *blueALSAController
+	var media *dspVolumeController
 	var lights *ledPlayer
-	if *blueALSACLI != "" {
-		media, err = newBlueALSAController(
-			*blueALSACLI,
-			*blueALSAPeer,
-			nil,
-		)
+	if *microphoneControlSocket != "" {
+		media, err = newDSPVolumeController(*microphoneControlSocket)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -220,27 +193,9 @@ func main() {
 			media.musicStatePath = *musicVolumeState
 			media.savedVolume = volume
 			media.hasSavedVolume = true
+			media.volume = volume
 		}
 		inputControls = append(inputControls, media)
-		// A freshly acquired BlueALSA transport starts at maximum volume, so a
-		// phone that simply connects would play at full output.
-		mediaController := media
-		go func() {
-			_ = runConnectCeilingWatcher(
-				ctx,
-				mediaController.EnforceConnectCeiling,
-				sleepContext,
-				log.Printf,
-			)
-		}()
-	}
-	if *mediaControl != "" {
-		inputControls = append(inputControls, &blueZMediaController{
-			command:    *mediaControl,
-			peer:       *blueALSAPeer,
-			statusPath: *playbackStatus,
-			run:        runMediaControlCommand,
-		})
 	}
 	if *pairingAgentPID != "" {
 		inputControls = append(inputControls, pairingSignalController{

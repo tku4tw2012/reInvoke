@@ -23,7 +23,7 @@ const replaced = Object.freeze([
   'opt/reinvoke/bin/bluealsa',
   'opt/reinvoke/bin/bluealsa-aplay',
   'opt/reinvoke/bin/bluealsa-cli',
-  'opt/reinvoke/bin/bluez-pairing-agent',
+  'opt/reinvoke/bin/reinvoke-pairing-agent',
   'opt/reinvoke/bin/bluez-media-control',
   'opt/reinvoke/bin/hci-init',
   'opt/reinvoke/etc/bluez-main.conf',
@@ -224,7 +224,7 @@ function installBluedroid(config, root, launcher) {
   // ships. Without something holding that contract the button lit the top
   // panel and went nowhere, and the indicator LED stayed dark because nothing
   // created the state file the MCU reads.
-  const pairingAgentTarget = path.join(absoluteRoot, 'opt/reinvoke/bin/bluez-pairing-agent');
+  const pairingAgentTarget = path.join(absoluteRoot, 'opt/reinvoke/bin/reinvoke-pairing-agent');
   fs.mkdirSync(path.dirname(pairingAgentTarget), { recursive: true, mode: 0o755 });
   fs.copyFileSync(config.pairingAgent.path, pairingAgentTarget);
   fs.chmodSync(pairingAgentTarget, 0o755);

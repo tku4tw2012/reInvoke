@@ -5,19 +5,17 @@ package main
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
 func TestMusicVolumeStateRoundTripAndValidation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "music-volume")
-	if value, err := readMusicVolume(path); err != nil || value != defaultConnectCeiling {
+	if value, err := readMusicVolume(path); err != nil || value != defaultVolume {
 		t.Fatal("missing preference did not preserve safe default")
 	}
-	controller := &blueALSAController{musicStatePath: path}
+	controller := &dspVolumeController{musicStatePath: path}
 	if err := controller.rememberMusicVolume(7); err != nil {
 		t.Fatal(err)
 	}
@@ -45,9 +43,9 @@ func TestMusicVolumeStateRoundTripAndValidation(t *testing.T) {
 
 func TestMusicVolumeSavedOnlyAfterSuccessfulControl(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "music-volume")
-	controller := &blueALSAController{
-		musicStatePath: path, cachedValid: true, cachedVolume: 7, cachedPath: "synthetic-pcm",
-		run: func(context.Context, ...string) ([]byte, error) { return nil, nil },
+	controller := &dspVolumeController{
+		musicStatePath: path, volume: 7,
+		socket: newStubDSPSocket(t),
 	}
 	if _, err := controller.SetVolume(context.Background(), 9); err != nil {
 		t.Fatal(err)
@@ -55,7 +53,7 @@ func TestMusicVolumeSavedOnlyAfterSuccessfulControl(t *testing.T) {
 	if value, err := readMusicVolume(path); err != nil || value != 9 {
 		t.Fatal("successful control not retained")
 	}
-	controller.run = func(context.Context, ...string) ([]byte, error) { return nil, errors.New("synthetic failure") }
+	controller.socket = filepath.Join(t.TempDir(), "absent.sock")
 	if _, err := controller.SetVolume(context.Background(), 20); err == nil {
 		t.Fatal("failed volume control accepted")
 	}
@@ -64,38 +62,11 @@ func TestMusicVolumeSavedOnlyAfterSuccessfulControl(t *testing.T) {
 	}
 }
 
-func TestSavedMusicVolumeNeverBypassesSafeCeiling(t *testing.T) {
-	for _, saved := range []int{0, 7, 90} {
-		var written string
-		controller := &blueALSAController{
-			peer: "02:00:00:00:00:02", connectCeiling: defaultConnectCeiling,
-			hasSavedVolume: true, savedVolume: saved,
-			run: func(_ context.Context, args ...string) ([]byte, error) {
-				switch args[0] {
-				case "list-pcms":
-					return []byte("/org/bluealsa/hci0/dev_02_00_00_00_00_02/a2dpsnk/source\n"), nil
-				case "info":
-					return []byte("Volume: 127\nMuted: N\n"), nil
-				case "volume":
-					written = strings.Join(args[2:], ",")
-					return nil, nil
-				}
-				return nil, errors.New("unexpected command")
-			},
-		}
-		snapshot, lowered, err := controller.EnforceConnectCeiling(context.Background())
-		if err != nil || !lowered || written == "" || snapshot.Muted || snapshot.Volume > defaultConnectCeiling ||
-			(saved <= defaultConnectCeiling && snapshot.Volume != saved) {
-			t.Fatal("saved preference bypassed safe ceiling or lost silence")
-		}
-	}
-}
-
 func TestUserVolumeZeroIsDistinctFromTransportMute(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "music-volume")
-	controller := &blueALSAController{
-		musicStatePath: path, cachedValid: true, cachedVolume: 7, cachedPath: "synthetic-pcm",
-		run: func(context.Context, ...string) ([]byte, error) { return nil, nil },
+	controller := &dspVolumeController{
+		musicStatePath: path, volume: 7,
+		socket: newStubDSPSocket(t),
 	}
 	zero, err := controller.SetVolume(context.Background(), 0)
 	if err != nil || zero.Volume != 0 || zero.Muted {

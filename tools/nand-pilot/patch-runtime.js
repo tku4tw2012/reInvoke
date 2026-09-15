@@ -222,7 +222,7 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
     '      # and forwards the press to the donor stack, and creates the state file',
     '      # the MCU reads before it will drive the indicator LED.',
     '      supervise pairing-agent \\',
-    '        /opt/reinvoke/bin/bluez-pairing-agent',
+    '        /opt/reinvoke/bin/reinvoke-pairing-agent',
     '',
   ].join('\n'));
   return text;

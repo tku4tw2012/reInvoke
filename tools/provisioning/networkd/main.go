@@ -1858,7 +1858,10 @@ func supervise(
 			interfaceName,
 		)
 		if statusErr != nil {
-			if statusFailures == 0 {
+			// A control directory that does not exist yet means the supplicant
+			// has not started, which happens on every boot and is not worth a
+			// line in a log that matters during a flash post-mortem.
+			if statusFailures == 0 && !errors.Is(statusErr, os.ErrNotExist) {
 				log.Printf("supplicant status query failed: %v", statusErr)
 			}
 			statusFailures++

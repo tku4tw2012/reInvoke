@@ -114,54 +114,20 @@ func TestWAMPUnmuteIsDeniedByDefault(t *testing.T) {
 	}
 }
 
-func TestVolumeSetUsesBlueALSAAsAuthority(t *testing.T) {
-	var calls [][]string
-	media, err := newBlueALSAController(
-		"bluealsa-cli",
-		"AA:BB:CC:11:22:33",
-		func(ctx context.Context, args ...string) ([]byte, error) {
-			calls = append(calls, append([]string(nil), args...))
-			switch args[0] {
-			case "list-pcms":
-				return []byte(
-					"/org/bluealsa/hci0/dev_AA_BB_CC_11_22_33/a2dpsnk/source\n",
-				), nil
-			case "info":
-				return []byte(
-					"Volume: L: 64 R: 64\nMuted: L: N R: N\n",
-				), nil
-			case "volume":
-				return nil, nil
-			default:
-				return nil, errors.New("unexpected command")
-			}
-
-		},
-	)
+func TestVolumeSetReachesTheDSP(t *testing.T) {
+	media, err := newDSPVolumeController(newStubDSPSocket(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := wampService{media: media}
-	response := invokeForTest(
-		t,
-		&service,
-		"com.harman.volumeSet",
-		[]interface{}{uint64(25), "music"},
-	)
-	if messageType(response) != wampYield {
-		t.Fatalf("response = %#v", response)
+	snapshot, err := media.SetVolume(context.Background(), 42)
+	if err != nil || snapshot.Volume != 42 || snapshot.Muted {
+		t.Fatalf("volume not applied: %+v %v", snapshot, err)
 	}
-	wantCall := []string{
-		"volume",
-		"/org/bluealsa/hci0/dev_AA_BB_CC_11_22_33/a2dpsnk/source",
-		"32",
-		"32",
-	}
-	if !reflect.DeepEqual(calls[len(calls)-1], wantCall) {
-		t.Fatalf("volume call = %v, want %v", calls[len(calls)-1], wantCall)
-	}
-	if !reflect.DeepEqual(response[3], []interface{}{uint64(25), "music"}) {
-		t.Fatalf("result args = %#v", response[3])
+	// A request the DSP cannot receive must fail rather than report success,
+	// which is what the BlueALSA-era controller did when its binary was absent.
+	media.socket = filepath.Join(t.TempDir(), "absent.sock")
+	if _, err := media.SetVolume(context.Background(), 9); err == nil {
+		t.Fatal("unreachable DSP reported success")
 	}
 }
 
@@ -175,27 +141,7 @@ func TestVolumeSetClampsAndReturnsEffectiveValue(t *testing.T) {
 		{name: "above maximum", value: uint64(101), want: 100},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			media, err := newBlueALSAController(
-				"bluealsa-cli",
-				"AA:BB:CC:11:22:33",
-				func(_ context.Context, args ...string) ([]byte, error) {
-					switch args[0] {
-					case "list-pcms":
-						return []byte(
-							"/org/bluealsa/hci0/dev_AA_BB_CC_11_22_33/" +
-								"a2dpsnk/source\n",
-						), nil
-					case "info":
-						return []byte(
-							"Volume: L: 64 R: 64\nMuted: L: N R: N\n",
-						), nil
-					case "volume":
-						return nil, nil
-					default:
-						return nil, errors.New("unexpected command")
-					}
-				},
-			)
+			media, err := newDSPVolumeController(newStubDSPSocket(t))
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -54,7 +54,7 @@ type wampService struct {
 	address       string
 	realm         string
 	controller    *controller
-	media         *blueALSAController
+	media         *dspVolumeController
 	lights        *ledPlayer
 	indicatorLEDs *indicatorLEDController
 	events        eventSource
@@ -328,13 +328,13 @@ func (service *wampService) handleInvocation(
 			},
 		)
 	case "com.harman.volumeGet":
-		var snapshot blueALSASnapshot
+		var snapshot volumeSnapshot
 		snapshot, invocationError = service.mediaSnapshot(ctx)
 		if invocationError == nil {
 			resultKwargs = mediaVolumeState(snapshot)
 		}
 	case "com.harman.volumeSet":
-		var snapshot blueALSASnapshot
+		var snapshot volumeSnapshot
 		var value int
 		value, invocationError = mediaIntegerArgument(args, true)
 		if invocationError == nil && service.media == nil {
@@ -349,7 +349,7 @@ func (service *wampService) handleInvocation(
 			events = mediaVolumeEvents(snapshot, false)
 		}
 	case "com.harman.volumeAdjust":
-		var snapshot blueALSASnapshot
+		var snapshot volumeSnapshot
 		var delta int
 		delta, invocationError = mediaIntegerArgument(args, true)
 		if invocationError == nil && service.media == nil {
@@ -364,7 +364,7 @@ func (service *wampService) handleInvocation(
 			events = mediaVolumeEvents(snapshot, false)
 		}
 	case "com.harman.musicMuteSet":
-		var snapshot blueALSASnapshot
+		var snapshot volumeSnapshot
 		var muted bool
 		muted, invocationError = mediaMuteArgument(args)
 		if invocationError == nil && service.media == nil {
@@ -379,7 +379,7 @@ func (service *wampService) handleInvocation(
 			events = mediaVolumeEvents(snapshot, true)
 		}
 	case "com.harman.musicMuteToggle":
-		var snapshot blueALSASnapshot
+		var snapshot volumeSnapshot
 		if len(args) != 0 {
 			invocationError = errors.New("invalid argument format")
 		} else if service.media == nil {
@@ -502,9 +502,9 @@ type mediaEvent struct {
 
 func (service *wampService) mediaSnapshot(
 	ctx context.Context,
-) (blueALSASnapshot, error) {
+) (volumeSnapshot, error) {
 	if service.media == nil {
-		return blueALSASnapshot{}, errors.New("media backend is unavailable")
+		return volumeSnapshot{}, errors.New("media backend is unavailable")
 	}
 	return service.media.Snapshot(ctx)
 }
@@ -586,7 +586,7 @@ func indicatorLEDArguments(
 	return target, mode, color, nil
 }
 
-func mediaVolumeState(snapshot blueALSASnapshot) map[string]interface{} {
+func mediaVolumeState(snapshot volumeSnapshot) map[string]interface{} {
 	mute := uint64(0)
 	if snapshot.Muted {
 		mute = 1
@@ -604,7 +604,7 @@ func mediaVolumeState(snapshot blueALSASnapshot) map[string]interface{} {
 }
 
 func mediaVolumeEvents(
-	snapshot blueALSASnapshot,
+	snapshot volumeSnapshot,
 	includeMute bool,
 ) []mediaEvent {
 	volume := snapshot.Volume
