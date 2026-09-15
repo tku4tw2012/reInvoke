@@ -224,6 +224,13 @@ function installBluedroid(config, root, launcher) {
   // ships. Without something holding that contract the button lit the top
   // panel and went nowhere, and the indicator LED stayed dark because nothing
   // created the state file the MCU reads.
+  // The RC12 rootfs carries the BlueZ pairing agent this runtime replaced.
+  // Leaving it would ship 764 KB of a stack that is not present, and its name
+  // is what the MCU used to signal, so an operator could reasonably believe it
+  // is the live agent.
+  const deadBlueZAgent = path.join(absoluteRoot, 'opt/reinvoke/bin/bluez-pairing-agent');
+  if (fs.existsSync(deadBlueZAgent)) fs.rmSync(deadBlueZAgent);
+
   const pairingAgentTarget = path.join(absoluteRoot, 'opt/reinvoke/bin/reinvoke-pairing-agent');
   fs.mkdirSync(path.dirname(pairingAgentTarget), { recursive: true, mode: 0o755 });
   fs.copyFileSync(config.pairingAgent.path, pairingAgentTarget);
