@@ -86,16 +86,19 @@ tagged-record convention (`MV_KEY_STORE_HEAD`) used throughout this file. A
 layout (its `h3` variant: `custk`, `extrsak`, `image`, `0xc00` bytes total) for
 a kernel image that carries both a customer AES key and an RSA key record.
 `load_lastk()` writes `MV_KEY_STORE_TYPE_ENDK` (`0x0f01c0de`, masked to
-`0xc0de`) into the third slot's type field before handing the whole structure
-to `bcm_image_verify()` for the kernel-loading path (gated `#if BG2CDP`,
-confirmed present and active for this chip family). Measured against this
-unit: the kernel file's third-slot type is `0x0402c0de`, whose low 16 bits
-(`0xc0de`, the only bits `MV_KEY_STORE_TYPE_MASK` checks) match `ENDK`
-exactly; the four non-kernel files (`sysinit.img`, `bootloader.img`,
-`bcm_erom.bin.usb`, `drm_erom.img`) instead read `0xc3bb`-based values there,
-which do not match any constant found in this source file. That is consistent
-with the kernel specifically going through `load_lastk`/`bcm_image_verify`
-while the other four files are consumed by a different, untraced code path.
+`0xc0de`) into its own working copy's third-slot type field before handing
+that copy to `bcm_image_verify()` (gated `#if BG2CDP`, confirmed present and
+active for this chip family). Measured against this unit: the kernel file's
+own third-slot type is `0x0402c0de`, whose low 16 bits (`0xc0de`, the only
+bits `MV_KEY_STORE_TYPE_MASK` checks) match `ENDK` exactly; the four
+non-kernel files (`sysinit.img`, `bootloader.img`, `bcm_erom.bin.usb`,
+`drm_erom.img`) instead read `0xc3bb`-based values there, which do not match
+any constant found in this source file. This match is real, but — see the
+correction below — `load_lastk()`'s own copy is sourced from a different NAND
+location than this file, so a matching type value here is evidence of a
+shared build-time convention (the kernel file is the one everyone expects to
+carry a final/`ENDK`-tagged record), not evidence that `load_lastk` itself
+reads these exact bytes.
 
 A second, independent field match: the same source defines
 `CPU_IMG_OFFS_IMGSIZ` as byte offset 40 (`0x28`) into a "CPU image" structure,
@@ -106,27 +109,98 @@ this unit's kernel file reads `fe 5f 4b 00`, decoding as `0x004b5ffe` =
 image and `0xA33A` for a USB-sourced one; this unit's file reads `0x0` at that
 position, consistent with a NAND boot.
 
-**Inference, not yet fully traced**: the actual runtime consumer of this
-per-file copy of the three-slot table remains unconfirmed. `load_lastk()`, as
-read, populates its working copy from a separate, small, redundant "version
-table" area (the last 4 KiB of NAND blocks 1 through 8), not from the
-`bootimgs` image itself, then aliases a kernel-specific sub-field of that copy
-against whatever memory the kernel image was just read into. Whether that is
-the exact mechanism that reads and checks the copy embedded in the file itself
-was not established from source reading alone; `bcm_image_verify()` on this
-chip family is a mailbox call into the separate BCM co-processor, and the
-processor's own firmware (closed, not in this repository) is very likely
-where the per-file table is actually parsed. This is the same "closed
-co-processor" boundary the payload-encryption question below runs into.
+**Correction after tracing the actual kernel-load function, not just the
+struct definitions it uses**: an earlier version of this section said the
+per-file table was "consistent with the kernel specifically going through
+`load_lastk`/`bcm_image_verify`." That causal claim was checked directly
+against the real kernel-loading code (`Image_Load_And_Start()`, the Linux
+build's variant, `bootloader.c:1812`, distinct from a same-named
+Android-boot variant at `bootloader.c:1732` gated by a separate `#if`) and
+does not hold up as written. It is weaker than previously stated, not
+stronger, and the correction is recorded here rather than quietly folded in.
 
-**What this changes**: the region that needs to be understood and reproduced
-is not a 44-byte header followed immediately by payload. It is a fixed,
-0xc00-byte (3,072-byte) three-slot table — customer AES key, RSA key record,
-and a per-file third slot — followed by the actual image body starting at
-`+0xc00`. The 44-byte boundary previously documented is real (it is where the
-low-entropy, human-readable part of slot one ends) but it is not where the
-header ends; slot one is padded with what is very likely wrapped key material
-out to the full 1,024 bytes, same as slots two and three.
+**Documentation, newly traced**: `Image_Load_And_Start()` reads a header
+(`Image3_Attr`, global `img3_hdr`, declared at `bootloader.c:278`) starting
+at the NAND address given by a version-table entry, `vt_img3`, that this
+function's own comment block identifies by name: the Linux-path variant of
+this function is introduced by the comment "For Linux ... Android needs to
+load SM from bootimgs" (`bootloader.c:1808-1811`), and the Android-path
+variant carries the matching comment "For Android not need to load SM from
+bootimgs ... save the space of flash memory of bootimgs & bootimgs-B"
+(`bootloader.c:1724-1729`). `vt_img3` itself is populated earlier by matching
+a constant, `IMG3_NAME`, against each version-table entry's stored name
+(`bootloader.c:2235`, exact call: `UtilMemCmp(IMG3_NAME, vt_entry->name,
+sizeof(IMG3_NAME))`). `IMG3_NAME`'s literal string value is not defined in
+`bootloader.c` itself — it comes from one of two dozen included headers not
+fetched — so this is not a byte-grepped proof that `IMG3_NAME == "bootimgs"`.
+It rests on the file's own comment vocabulary, in the exact function that
+consumes `vt_img3`, consistently naming the thing it reads "bootimgs" both
+times the function is discussed. That is strong internal corroboration, not
+a gap-free proof; it is recorded as documentation-level, not
+verified-on-this-unit.
+
+Once found, `Image3_Attr` is used to compute the kernel (`cpu0`) sub-image's
+NAND address by chaining forward from the header through an SM sub-image,
+using each sub-image's own recorded size (`get_next_img_addr`,
+`bootloader.c:1881-1884`; the header itself is read starting at
+`vt_img3.part2_start_blkind * iBlockSize`, confirmed at
+`bootloader.c:1846-1850`, via `nand_read_generic(..., &img3_hdr, ...)` at
+`bootloader.c:1859`, so `Image3_Attr` sits at the very start of whichever
+region `vt_img3` designates). Whether the kernel image is treated as
+encrypted at all is decided by `if(cpu0_hdr->bcpu0_image_encrypt)`
+(`bootloader.c:2023`, full conditional block `2023-2046`) — **a flag inside
+`Image3_Attr`, not inside the three-slot table measured above.** Only when
+that flag is set (and only in the `#if BG2CDP` branch already confirmed
+active for this chip family; a sibling `#else` branch at `2037-2044` calls a
+different function, `VerifyImage()`, on non-`BG2CDP` builds) does the code
+call `load_lastk(g.lastk)` followed by
+`bcm_image_verify(BCM_IMG_KERNEL_TYPE, ...)` (`bootloader.c:2025,2031`).
+Either way, once past that point, the resulting buffer is read as
+`linux_hdr_t` (fields `kernel_size`, `ramdisk_size`, `ramdisk_addr`, used
+directly at `bootloader.c:2051-2060`, outside and after the encrypt-flag
+block, so this step always runs) — a **third** header type, distinct from
+both `MV_KEY_STORE_HEAD` and `Image3_Attr`.
+
+Neither `Image3_Attr` nor `linux_hdr_t` is defined in the one file fetched
+(`bootloader.c`); both are used as already-declared types, so their field
+offsets and total sizes are not available from this source alone, and were
+not guessed at.
+
+**What this leaves unresolved, stated plainly**: three things that were
+previously read as one connected story turn out to be three separate,
+imperfectly-connected facts.
+
+1. `load_lastk()` populates `g.lastk` from the version-table area (last 4 KiB
+   of NAND blocks 1 through 8, confirmed exactly:
+   `UtilMemCpy(g.lastk, &g.partition_info_buff[3*1024], 1024)`,
+   `bootloader.c:2227`) — **not from `bootimgs`.** Even on the branch where
+   `load_lastk`/`bcm_image_verify` do run, they do not read the specific
+   bytes measured at `bootimgs+0x20000`.
+2. Whether `cpu0_hdr->bcpu0_image_encrypt` is set on this unit is
+   **unmeasured** — `Image3_Attr`'s layout is unknown, so its value cannot be
+   read from the capture without guessing at offsets, which was not done.
+   If it is unset, `load_lastk`/`bcm_image_verify` never run for the kernel
+   at all, and the three-slot table found by entropy scanning would be
+   consulted by no traced code path.
+3. The three-slot table's byte-for-byte match to real `MV_KEY_STORE_HEAD`/
+   `MV_LASTK_IMAGE` struct definitions is still a fact, verified against the
+   capture and cross-checked across five files. What is no longer supported
+   is the stronger claim that this is *the* mechanism gating whether this
+   unit's kernel boots. It could be that; it could equally be inert
+   signing-tool metadata that no on-device code reads back, or read by a
+   still-untraced function. `bcm_image_verify()`'s own logic remains a
+   mailbox call into the closed BCM co-processor regardless of which story
+   is true, so this does not reopen the payload-cipher question below —
+   it only weakens confidence in *why* the three-slot table is where it is.
+
+**What this changes**: the entropy-measured layout (three 1,024-byte slots,
+`+0x000` to `+0xc00`, body afterward) stands as a measured fact about the
+file's contents. Treating it as *the* header that gates kernel boot,
+strong enough to guide what a replacement image must reproduce, is
+downgraded from "well-supported inference" to "one of at least two
+open possibilities," pending either the missing `Image3_Attr`/`linux_hdr_t`
+definitions or a direct, non-destructive way to read `cpu0_hdr`'s value on
+this unit.
 
 ## The two failed attempts
 
@@ -136,14 +210,16 @@ out to the full 1,024 bytes, same as slots two and three.
 | 6.1 | vendor descriptor kept, uImage spliced at `+0x20000`, `bootimgs_B` left vendor | no boot |
 
 06.0 destroyed the descriptor and left nothing at `+0x20000`. 6.1 corrected
-the placement and still failed. Given the finding above, 6.1's splice point
-was also wrong in a way not previously documented: writing a bare uImage
-starting at `+0x20000` overwrites the entire three-slot table, not just a
-44-byte header, and places kernel bytes where the AES-key, RSA-key and
-image-descriptor slots belong instead of at the body's real start, `+0x20c00`.
-Either defect alone would be expected to fail; which one actually caused the
-observed failure was not isolated, and does not need to be, since a correct
-attempt must fix both.
+the placement and still failed. 6.1's splice point overwrote the three-slot
+table found at `+0x20000` with raw kernel bytes either way, which is a defect
+on its own regardless of where the real kernel sub-image turns out to start:
+if the vendor loader reads that table for anything on the kernel path, 6.1
+destroyed it; if it does not, 6.1 still placed kernel bytes at a NAND offset
+that is at best a guess (see the correction above — the real kernel
+sub-image address, `cpu0_addr`, is computed at boot time from a
+not-yet-measured header, not fixed at `+0x20c00`). Either way, 6.1 did not
+demonstrate a correctly-targeted write; it is evidence a guessed offset
+failed, not evidence about which offset is correct.
 
 ## Signing is not the barrier
 
@@ -181,9 +257,10 @@ still shows enforcement off on this specific unit.
 
 ## What the payload is, and is not
 
-Measured directly at `bootimgs+0x20c00` (the body start established above),
-re-run at that corrected offset rather than assumed carried over from the old
-`+0x2002c` figure:
+Measured directly at `bootimgs+0x20c00` (the offset where the three-slot
+table's low-entropy structure ends, not confirmed as the real loader's
+`cpu0_addr` — see the correction above), re-run at that corrected offset
+rather than assumed carried over from the old `+0x2002c` figure:
 
 * not zlib, gzip, bzip2 or lzma: no valid stream at any tested offset in 4 MiB;
   the handful of 2-byte gzip-magic byte pairs found are within the count
@@ -199,13 +276,24 @@ takes a uImage, the NAND path does not.
 
 ## What would have to be true first
 
-1. The three-slot table (`0xc00` bytes: customer AES key, RSA key record, a
-   per-file third slot) is understood well enough to generate one, not just
-   the 44-byte customer-key record that begins it.
-2. The transform applied to the body starting at `+0xc00` is identified, or
-   shown to be optional.
-3. Either is demonstrated without a flash cycle, because each guess currently
-   costs one non-booting boot.
+1. `Image3_Attr` (the header `Image_Load_And_Start()` reads at the start of
+   `bootimgs`, containing the real per-component encryption flags including
+   `cpu0_hdr->bcpu0_image_encrypt`) and `linux_hdr_t` (the header immediately
+   preceding kernel+ramdisk content in memory) are both used but not defined
+   in the one source file fetched. Neither's field layout is known, so
+   neither can be read from the capture without guessing at offsets.
+2. Whether `bcpu0_image_encrypt` is set on this unit is unmeasured. If unset,
+   the three-slot table and `bcm_image_verify()` are never consulted for the
+   kernel at all, and the real blocker is simply "the loader computes
+   `cpu0_addr` dynamically and a replacement image must land there," not a
+   cipher question.
+3. If it is set, the three-slot table (`0xc00` bytes: customer AES key, RSA
+   key record, a per-file third slot) is understood well enough to generate
+   one, not just the 44-byte customer-key record that begins it — and the
+   transform applied to the body after it is identified, or shown optional.
+4. Either branch is demonstrated without a flash cycle, because each guess
+   currently costs one non-booting boot, and two guesses (06.0, 6.1) have
+   already been spent without resolving which branch applies.
 
 Until then, keep `bootimgs` at the vendor image.
 
