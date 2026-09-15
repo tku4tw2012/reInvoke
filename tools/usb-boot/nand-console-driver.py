@@ -29,6 +29,7 @@ import argparse
 import socket
 import sys
 import time
+from typing import Optional
 
 PROMPT = "MV88DE3100"
 SUCCESS = "u2nand succeed"
@@ -51,8 +52,12 @@ def strip_telnet(raw: bytes) -> bytes:
     return bytes(out)
 
 
-def connect(port: int, deadline: float):
-    while time.time() < deadline:
+def before_deadline(deadline: Optional[float]) -> bool:
+    return deadline is None or time.monotonic() < deadline
+
+
+def connect(port: int, deadline: Optional[float]):
+    while before_deadline(deadline):
         try:
             sock = socket.create_connection(("127.0.0.1", port), 2)
             sock.settimeout(0.3)
@@ -63,7 +68,7 @@ def connect(port: int, deadline: float):
 
 
 def run(port: int, command: str, timeout: float, quiet: bool) -> int:
-    deadline = time.time() + timeout
+    deadline = None if timeout <= 0 else time.monotonic() + timeout
     seen = bytearray()
     sent = False
     nudged = 0.0
@@ -72,7 +77,7 @@ def run(port: int, command: str, timeout: float, quiet: bool) -> int:
         if not quiet:
             print(message, flush=True)
 
-    while time.time() < deadline:
+    while before_deadline(deadline):
         sock = connect(port, deadline)
         if sock is None:
             say("FAIL no console relay appeared")
@@ -80,7 +85,7 @@ def run(port: int, command: str, timeout: float, quiet: bool) -> int:
         say("console attached")
 
         try:
-            while time.time() < deadline:
+            while before_deadline(deadline):
                 try:
                     chunk = sock.recv(4096)
                     if chunk:
@@ -107,8 +112,8 @@ def run(port: int, command: str, timeout: float, quiet: bool) -> int:
                     sock.sendall(command.encode() + b"\r\n")
                     sent = True
                     say(f"sent {command}")
-                elif not sent and time.time() - nudged > 3:
-                    nudged = time.time()
+                elif not sent and time.monotonic() - nudged > 3:
+                    nudged = time.monotonic()
                     sock.sendall(b"\r\n")
         except OSError as exc:
             # Reconnect rather than exit: the write may already be running on
@@ -129,7 +134,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8141)
     parser.add_argument("--command", default="l2nand 83")
-    parser.add_argument("--timeout", type=float, default=1200.0)
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=0,
+        help="seconds to wait; 0 waits indefinitely",
+    )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args()
     return run(args.port, args.command, args.timeout, args.quiet)

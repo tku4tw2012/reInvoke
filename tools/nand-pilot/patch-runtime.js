@@ -225,6 +225,20 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
     '        /opt/reinvoke/bin/reinvoke-pairing-agent',
     '',
   ].join('\n'));
+
+  // Candidate 05.7 removed BlueZ and BlueALSA, but the RC12 init still passed
+  // the MCU three flags naming those binaries. Go exits 2 on an unknown flag,
+  // so the service crash-looped and the boot sequence never reached the rest
+  // of the runtime: seven services became three. Volume is answered from the
+  // MCU's own state now, and the donor registers its own media procedures, so
+  // these flags have no replacement.
+  replace('      --bluealsa-cli "${runtime_bin}/bluealsa-cli" \\\n' +
+    '      --bluealsa-peer "${PEER_ADDRESS}" \\\n' +
+    '      --media-control "${runtime_bin}/bluez-media-control" \\\n', '');
+
+  // The pairing agent is this project's now, not the donor's BlueZ one.
+  replace('      --pairing-agent-executable "${runtime_bin}/bluez-pairing-agent" \\',
+    '      --pairing-agent-executable /opt/reinvoke/bin/reinvoke-pairing-agent \\');
   return text;
 }
 module.exports = { patchRuntime, INIT_SHA256 };

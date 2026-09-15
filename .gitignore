@@ -56,5 +56,4 @@ tools/provisioning/windowd/windowd
 tools/provisioning/applyd/applyd
 tools/hci-down/hci-down
 tools/pairing-agent/pairing-agent
-tools/keep-helper-free/keep-helper-free
 tools/identifiers/identifiers

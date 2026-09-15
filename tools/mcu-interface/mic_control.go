@@ -14,13 +14,6 @@ import (
 
 const dspMicControlTimeout = 5 * time.Second
 
-// setDSPVolume sets the amplifier level over the same control socket the
-// microphone mute uses. Volume used to go through bluealsa-cli, which this
-// runtime does not ship.
-func setDSPVolume(ctx context.Context, path string, percent int) error {
-	return sendDSPControl(ctx, path, fmt.Sprintf("v%d\n", percent))
-}
-
 func setDSPMicrophone(
 	ctx context.Context,
 	path string,

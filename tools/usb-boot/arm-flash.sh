@@ -1,56 +1,99 @@
 #!/bin/bash
-# Keep one USB boot helper camped until the NAND write completes.
+# Arm the complete NAND flash path before the operator enters yellow mode.
 #
-# Lives in the repository, not /tmp: a /tmp wipe silently disarmed the whole rig
-# mid-session and the next power cycle had nothing listening for it.
+# The reliable sequence is deliberately simple:
+#   1. validate the staged image while no hardware interaction is underway;
+#   2. start one console client and leave it waiting;
+#   3. start one boot helper and leave it waiting;
+#   4. restart only when the helper's own device wait expires;
+#   5. stop only after the device prints "u2nand succeed".
 #
-# No timeouts here. The pinned helper binary has its own hardcoded 120 second
-# device wait and exits when it expires, so this relaunches it immediately and
-# indefinitely. Exactly one helper runs at a time: two both claim interface 0
-# and the device then drops every transfer.
+# Nothing watches USB subclass, kills a helper, assumes a port path, or waits
+# for an operator message. The helper matches the Invoke by VID:PID and serves
+# whatever stage appears. This is the same ready-before-yellow path that
+# completed candidate 05.7.
 #
-# Nothing is gated on USB subclass. The helper serves whatever the device asks
-# for, and the console driver reacts to the U-Boot prompt when it appears.
-set -u
+# Usage:
+#   arm-flash.sh STAGING_DIR EXPECTED_SHA256 EVIDENCE_DIR
+set -euo pipefail
 
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "${here}/../.." && pwd)"
-A="${REINVOKE_ARCHIVE:-${repo}/../reinvoke-archive}"
-H="${A}/tools/hk-invoke-arm-flasher/63444e82/usb_boot_arm"
-S="${A}/staging/recovery-051-20260914"
-D="${here}/nand-console-driver.py"
-KEEPER="${A}/tools/keep-helper-free"  # compiled artifact, built from tools/keep-helper-free
-LOG="${A}/evidence/native056-flash-20260914/arm.log"
+archive="${REINVOKE_ARCHIVE:-${repo}/../reinvoke-archive}"
+staging="${1:?STAGING_DIR}"
+expected_sha="${2:?EXPECTED_SHA256}"
+evidence="${3:?EVIDENCE_DIR}"
+helper="${INVOKE_USB_BOOT_BIN:-${archive}/tools/hk-invoke-arm-flasher/63444e82/usb_boot_arm}"
+driver_path="${here}/nand-console-driver.py"
+port="${INVOKE_CONSOLE_PORT:-8141}"
+log="${evidence}/arm.log"
 
-mkdir -p "$(dirname "${LOG}")"
-: >"${LOG}"
+fail() {
+  printf 'FAIL %s\n' "$*" >&2
+  exit 1
+}
 
-python3 -u "${D}" --port 8141 --timeout 999999 >>"${LOG}" 2>&1 &
+[[ -d "${staging}" ]] || fail "staging not found: ${staging}"
+[[ -x "${helper}" ]] || fail "helper not executable: ${helper}"
+[[ -r "${driver_path}" ]] || fail "console driver missing: ${driver_path}"
+
+for required in 06_IMAGE 07_IMAGE 08_IMAGE 09_IMAGE 79_IMAGE 81_IMAGE 82_IMAGE \
+  83_IMAGE bcm_erom.bin.usb bootloader.img drm_erom.img sysinit.img; do
+  [[ -f "${staging}/${required}" ]] ||
+    fail "staging is missing ${required}"
+done
+
+actual_sha="$(sha256sum "${staging}/83_IMAGE" | cut -d' ' -f1)"
+[[ "${actual_sha}" == "${expected_sha}" ]] ||
+  fail "83_IMAGE is ${actual_sha}, expected ${expected_sha}"
+
+[[ "$(pgrep -cx usb_boot_arm || true)" == "0" ]] ||
+  fail "a boot helper is already running"
+[[ "$(ps -eo cmd --no-headers | grep -c '[n]and-console-driver' || true)" == "0" ]] ||
+  fail "a console driver is already running"
+
+mkdir -p "${evidence}"
+: >"${log}"
+
+python3 -u "${driver_path}" --port "${port}" --timeout 0 >>"${log}" 2>&1 &
 driver=$!
-echo "driver ${driver}" >>"${LOG}"
-
-# With a bootable image on NAND the ROM only offers USB for about two seconds,
-# where it used to wait indefinitely. The helper cannot see that window while it
-# is committed to an ordinary 0xFE boot, so this releases it back to detection
-# and then keeps its hands off entirely once the window is caught.
-keeper=""
-if [[ -x "${KEEPER}" ]]; then
-  "${KEEPER}" >>"${LOG}" 2>&1 &
-  keeper=$!
-  echo "keeper ${keeper}" >>"${LOG}"
-fi
+helper_pid=""
 
 cleanup() {
+  [[ -z "${helper_pid}" ]] || kill "${helper_pid}" 2>/dev/null || true
   kill "${driver}" 2>/dev/null || true
-  [[ -n "${keeper}" ]] && kill "${keeper}" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-while true; do
-  if grep -q "u2nand succeed" "${LOG}" 2>/dev/null; then
-    echo "=== FLASH COMPLETE $(date -u +%H:%M:%S) ===" >>"${LOG}"
-    exit 0
+printf 'READY helper and console driver are waiting; enter yellow mode at any time\n'
+printf 'payload %s %s bytes\n' "${actual_sha}" "$(stat -c%s "${staging}/83_IMAGE")"
+
+while kill -0 "${driver}" 2>/dev/null; do
+  "${helper}" 1286 8174 "${staging}/" "${port}" >>"${log}" 2>&1 &
+  helper_pid=$!
+  while kill -0 "${helper_pid}" 2>/dev/null &&
+    kill -0 "${driver}" 2>/dev/null; do
+    sleep 0.1
+  done
+  if ! kill -0 "${driver}" 2>/dev/null; then
+    kill "${helper_pid}" 2>/dev/null || true
+    wait "${helper_pid}" 2>/dev/null || true
+    helper_pid=""
+    break
   fi
-  "${H}" 1286 8174 "${S}/" 8141 >>"${LOG}" 2>&1
+  wait "${helper_pid}" 2>/dev/null || true
+  helper_pid=""
   sleep 0.2
 done
+
+set +e
+wait "${driver}"
+status=$?
+set -e
+
+if [[ "${status}" == "0" ]] && grep -q "u2nand succeed" "${log}"; then
+  printf 'FLASHED device confirmed u2nand succeed\n'
+  exit 0
+fi
+
+fail "console driver exited ${status} without a write confirmation; see ${log}"

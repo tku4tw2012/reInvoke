@@ -61,25 +61,38 @@ done
 
 ## Host setup
 
-Use the catcher rather than starting the helper by hand:
+Arm the complete path before entering yellow mode:
 
 ```bash
-REINVOKE_ARCHIVE=... tools/usb-boot/catch-irom.sh <staging> <attempt-dir>
+REINVOKE_ARCHIVE=... \
+  tools/usb-boot/arm-flash.sh <staging> <83_IMAGE-sha256> <attempt-dir>
 ```
 
-It watches the kernel's USB descriptors without opening the device and starts
-exactly one helper when subclass `FF` appears. It never times out, so the
-operator can take as long as they like, and `flock` makes a second instance
-impossible.
+Wait for `READY` before touching the speaker. The command starts exactly one
+helper and one console client, then leaves both waiting. Nothing else should
+watch, claim or reset the USB device. The helper matches the Invoke by vendor
+and product identifiers, not a host port path.
 
-Both properties exist because of measured failures:
+These controls exist because of measured failures:
 
-* A helper left polling across a power cycle claims the device at subclass
-  `FE`, which is past iROM, and then loops on `08_IMAGE` forever.
-* The pinned helper exits after a 120-second device wait, which repeatedly
-  expired between arming and the operator's reset.
+* The pinned helper exits after its internal device wait. The wrapper restarts
+  it while keeping exactly one instance active.
 * Two helpers both log `Claimed interface 0` and the device drops immediately
   after every transfer.
+* Descriptor-driven processes that killed helpers destroyed live sessions
+  after Phase 1 returned the device to subclass `FE`.
+* Hard-coding host port `3-1.2` reported that the device was absent while it
+  was enumerating on `2-1.2`. Port paths are not part of the flash decision.
+
+Candidate 05.7 used this sequence without an operator-timed command:
+
+```text
+helper and console client waiting
+operator enters yellow mode
+09 -> 02 -> 03 -> 05 -> 79 -> 83 -> 07
+l2nand 83
+u2nand succeed
+```
 
 ## Service-mode entry
 
