@@ -46,13 +46,23 @@ def main():
     if not os.path.exists(FIFO):
         os.mkfifo(FIFO)
 
-    sock = socket.create_connection((HOST, PORT), timeout=10)
+    # Open the FIFO before the socket. Arming happens before yellow mode, so
+    # the helper's relay port does not exist yet and the connect below will be
+    # refused for as long as the operator takes to enter service mode. Exiting
+    # on that leaves the command FIFO with no reader, and a loader watching for
+    # a reader concludes the capture session died and stops driving the boot.
+    fifo = os.open(FIFO, os.O_RDONLY | os.O_NONBLOCK)
+
+    sock = None
+    while sock is None:
+        try:
+            sock = socket.create_connection((HOST, PORT), timeout=10)
+        except OSError:
+            time.sleep(0.5)
     sock.setblocking(False)
 
     log = open(LOG, "ab", buffering=0)
     log.write(f"\n=== connected {time.strftime('%H:%M:%S')} ===\n".encode())
-
-    fifo = os.open(FIFO, os.O_RDONLY | os.O_NONBLOCK)
 
     while True:
         readable, _, _ = select.select([sock, fifo], [], [], 1.0)

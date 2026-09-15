@@ -57,3 +57,4 @@ tools/provisioning/applyd/applyd
 tools/hci-down/hci-down
 tools/pairing-agent/pairing-agent
 tools/identifiers/identifiers
+usb_boot_arm.log
