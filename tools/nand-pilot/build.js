@@ -155,6 +155,7 @@ function prepare() {
     ['console', 5, 1, '0600'], ['null', 1, 3, '0666'], ['ptmx', 5, 2, '0666'],
   ])
     run('mknod', ['-m', mode, path.join(boot, 'dev', name), 'c', String(major), String(minor)]);
+  json(path.join(output, 'runtime-checksums.json'), lib.refreshRuntimeChecksums(root));
   normalize(root); normalize(boot);
   // Documentation and transient test fixtures are not executable build inputs.
   const sourceCode = inventory(here).filter(v => v.type === 'f' &&

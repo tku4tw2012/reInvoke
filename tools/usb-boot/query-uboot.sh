@@ -11,6 +11,7 @@
 set -euo pipefail
 
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+. "${here}/query-grammar.sh"
 repo="$(cd "${here}/../.." && pwd)"
 archive="${REINVOKE_ARCHIVE:-${repo}/../reinvoke-archive}"
 staging="${1:?STAGING_DIR}"
@@ -32,10 +33,7 @@ fail() { printf 'FAIL %s\n' "$*" >&2; exit 1; }
 grep -qvE '^\s*#|^\s*$' "${staging}/79_IMAGE" &&
   fail "79_IMAGE carries active commands; it must be comment-only"
 for command in "${commands[@]}"; do
-  case "${command}" in
-    printenv*|version*|"nand info"*|"nand dump"*|nandrd*|md*|help*|bdinfo*|mtdparts*) ;;
-    *) fail "refusing non-query command: ${command}" ;;
-  esac
+  query_command_allowed "${command}" || fail "refusing unsupported query syntax"
 done
 
 [[ "$(pgrep -cx usb_boot_arm || true)" == "0" ]] || fail "a boot helper is already running"

@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) Microsoft Corporation.
+# SPDX-License-Identifier: MIT
+#
 # Arm the complete NAND flash path before the operator enters yellow mode.
 #
 # The reliable sequence is deliberately simple:
@@ -55,7 +58,8 @@ actual_sha="$(sha256sum "${staging}/83_IMAGE" | cut -d' ' -f1)"
 mkdir -p "${evidence}"
 : >"${log}"
 
-python3 -u "${driver_path}" --port "${port}" --timeout 0 >>"${log}" 2>&1 &
+python3 -u "${driver_path}" --port "${port}" --timeout 0 \
+  --console-log "${evidence}/console.raw" >>"${log}" 2>&1 &
 driver=$!
 helper_pid=""
 
@@ -90,6 +94,10 @@ set +e
 wait "${driver}"
 status=$?
 set -e
+
+if [[ "${status}" == "4" ]]; then
+  fail "device reported completion but command/evidence verification is incomplete; do not retry automatically"
+fi
 
 if [[ "${status}" == "0" ]] && grep -q "u2nand succeed" "${log}"; then
   printf 'FLASHED device confirmed u2nand succeed\n'
