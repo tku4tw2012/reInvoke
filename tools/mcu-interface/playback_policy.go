@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -22,8 +21,26 @@ type playbackMuteController interface {
 	setPlaybackActive(bool) error
 }
 
+func playbackState(status []byte) (string, bool) {
+	line := strings.TrimSpace(strings.SplitN(string(status), "\n", 2)[0])
+	if line == "closed" {
+		return line, true
+	}
+	fields := strings.Fields(line)
+	if len(fields) != 2 || fields[0] != "state:" {
+		return "", false
+	}
+	switch fields[1] {
+	case "OPEN", "SETUP", "PREPARED", "RUNNING", "XRUN", "DRAINING", "PAUSED", "SUSPENDED", "DISCONNECTED":
+		return fields[1], true
+	default:
+		return "", false
+	}
+}
+
 func playbackIsRunning(status []byte) bool {
-	return bytes.Contains(status, []byte("state: RUNNING"))
+	state, valid := playbackState(status)
+	return valid && state == "RUNNING"
 }
 
 func playbackOwnerPID(status []byte) (int, bool) {

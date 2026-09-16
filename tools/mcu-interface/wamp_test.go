@@ -62,6 +62,8 @@ func TestMinimumWAMPSurface(t *testing.T) {
 		"com.harman.ledSet",
 		"com.harman.ledOff",
 		"com.harman.dsp.micMute",
+		"com.harman.extStateUpdate",
+		"com.harman.source.nowPlayingUpdate",
 	}
 	if !reflect.DeepEqual(procedures, expected) {
 		t.Fatalf("procedures = %#v, want %#v", procedures, expected)
