@@ -64,7 +64,7 @@ done
   ${BB} cat /proc/version /proc/cmdline /proc/mtd /proc/self/mountinfo
 } >/run/reinvoke-bsl/entry.txt
 
-PILOT_ADBD_PRODUCT=reInvoke-NAND-05.8.5
+PILOT_ADBD_PRODUCT=reInvoke-NAND-05.8.6
 PILOT_ADBD_STARTED_PHASE=adb-started
 PILOT_ADBD_DEGRADED_PHASE=adb-degraded
 PILOT_ADBD_ENABLE_DEV_FILE=/sys/class/misc/android_adb_enable/dev
