@@ -81,7 +81,7 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
     '      pairing-agent-guard \\\n' +
     '      bluealsa-aplay bluealsa bluetoothd dbus bonefish networkd; do',
     'for service_name in mic-capture provision-windowd wifi-resume dsp-interface \\\n' +
-    '      pairing-agent bluedroid identifiers \\\n' +
+    '      pairing-agent bluedroid servicemanager identifiers \\\n' +
     '      dbus bonefish networkd; do');
   replace('  stop_service syslogd\n',
     '  wait_service_stop bluedroid\n' +
@@ -164,7 +164,11 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
     '  (',
     '    runtime_logger_failures=0',
     '    while ! ${BB} test -e /run/reinvoke/shutdown; do',
-    '      /system/bin/logcat -v threadtime \\',
+    '      # logcat runs under the donor loader with a matched library path.',
+    '      # The system glibc is older than the donor: logcat needs GLIBC_2.15.',
+    '      /opt/bluedroid/lib/ld-linux-armhf.so.3 --library-path \\',
+    '        /system/lib:/system/lib/hw:/opt/bluedroid/usr/lib:/opt/bluedroid/lib \\',
+    '        /system/bin/logcat -v threadtime \\',
     '        -f /run/reinvoke/logs/android.log -r 256 -n 2 &',
     '      runtime_logger_pid="$!"',
     '      echo "${runtime_logger_pid}" >/run/reinvoke/syslogd.pid',
@@ -273,6 +277,24 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
     '        ${BB} test "${identifiers_wait}" -lt 10; do',
     '        ${BB} sleep 1',
     '        identifiers_wait=$((identifiers_wait + 1))',
+    '      done',
+    '      # The donor blocks on Android ServiceManager the moment an A2DP',
+    '      # stream config arrives, and retries forever if nobody answers.',
+    '      # Observed on 05.8.5: BTIF_AV_SINK_CONFIG_REQ_EVT 44100 2 was',
+    '      # followed by 278 "Waiting for initialization" errors at 250ms and',
+    '      # the audio device was never opened. The donor kit ships this',
+    '      # binary; it was simply never packaged. It must be running before',
+    '      # the stack starts, and it needs LD_LIBRARY_PATH rather than the',
+    '      # loader --library-path form, which trips a getpagesize assertion.',
+    '      supervise servicemanager \\',
+    '        ${BB} env \\',
+    '        LD_LIBRARY_PATH=/system/lib:/opt/bluedroid/usr/lib:/opt/bluedroid/lib \\',
+    '        /system/bin/servicemanager',
+    '      servicemanager_wait=0',
+    '      while ! ${BB} test -f /run/reinvoke/servicemanager.pid &&',
+    '        ${BB} test "${servicemanager_wait}" -lt 10; do',
+    '        ${BB} sleep 1',
+    '        servicemanager_wait=$((servicemanager_wait + 1))',
     '      done',
     '      supervise bluedroid \\',
     '        ${BB} sh /opt/bluedroid/start.sh',

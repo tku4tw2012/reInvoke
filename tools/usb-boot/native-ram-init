@@ -72,7 +72,11 @@ start_runtime_logger() {
   (
     runtime_logger_failures=0
     while ! ${BB} test -e /run/reinvoke/shutdown; do
-      /system/bin/logcat -v threadtime \
+      # logcat runs under the donor loader with a matched library path.
+      # The system glibc is older than the donor: logcat needs GLIBC_2.15.
+      /opt/bluedroid/lib/ld-linux-armhf.so.3 --library-path \
+        /system/lib:/system/lib/hw:/opt/bluedroid/usr/lib:/opt/bluedroid/lib \
+        /system/bin/logcat -v threadtime \
         -f /run/reinvoke/logs/android.log -r 256 -n 2 &
       runtime_logger_pid="$!"
       echo "${runtime_logger_pid}" >/run/reinvoke/syslogd.pid
