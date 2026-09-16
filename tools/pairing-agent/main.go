@@ -70,7 +70,7 @@ func main() {
 		"WAMP client used to reach the router")
 	longPress := flag.String("long-press", "com.harman.bluetoothPairing",
 		"procedure called for a long press")
-	shortPress := flag.String("short-press", "",
+	shortPress := flag.String("short-press", "com.harman.bluetoothPairing",
 		"procedure called for a short press; empty ignores short presses")
 	statePath := flag.String("state-file", "/run/reinvoke/bluetooth-state",
 		"file the MCU reads to drive the Bluetooth indicator LED")

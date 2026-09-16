@@ -29,6 +29,8 @@ const (
 	wampHello      = 1
 	wampWelcome    = 2
 	wampPublish    = 16
+	wampCall       = 48
+	wampResult     = 50
 	wampRegister   = 64
 	wampRegistered = 65
 	wampInvocation = 68
@@ -183,6 +185,45 @@ func (c *connection) register(procedure string) (uint64, error) {
 	}
 }
 
+func (c *connection) callProcedure(procedure string, arguments []interface{}, timeout time.Duration) ([]interface{}, error) {
+	if timeout <= 0 {
+		return nil, errors.New("call timeout must be positive")
+	}
+	if err := c.socket.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, err
+	}
+	c.next++
+	request := c.next
+	if err := c.writeFrame([]interface{}{
+		wampCall, request, map[string]interface{}{}, procedure, arguments,
+	}); err != nil {
+		return nil, fmt.Errorf("send call: %w", err)
+	}
+	for {
+		message, err := c.readFrame()
+		if err != nil {
+			return nil, fmt.Errorf("read call reply: %w", err)
+		}
+		switch messageType(message) {
+		case wampResult:
+			if len(message) < 3 {
+				return nil, errors.New("malformed call result")
+			}
+			if id, ok := unsigned(message[1]); ok && id == request {
+				return message, nil
+			}
+		case 8:
+			if len(message) < 5 {
+				return nil, errors.New("malformed call error")
+			}
+			original, _ := unsigned(message[1])
+			if id, ok := unsigned(message[2]); original == wampCall && ok && id == request {
+				return nil, fmt.Errorf("call rejected: %v", message[4:])
+			}
+		}
+	}
+}
+
 func main() {
 	log.SetFlags(0)
 	host := flag.String("router-host", "127.0.0.1", "WAMP router host")
@@ -249,38 +290,13 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		client.next++
-		request := client.next
-		if err := client.writeFrame([]interface{}{
-			48, request, map[string]interface{}{}, *call, arguments,
-		}); err != nil {
+		reply, err := client.callProcedure(*call, arguments, 15*time.Second)
+		if err != nil {
 			log.Printf("IDENTIFIERS_CALL_FAILED: %v", err)
 			os.Exit(1)
 		}
-		deadline := time.Now().Add(15 * time.Second)
-		for time.Now().Before(deadline) {
-			_ = socket.SetReadDeadline(deadline)
-			message, err := client.readFrame()
-			if err != nil {
-				log.Printf("IDENTIFIERS_CALL_NO_REPLY: %v", err)
-				os.Exit(1)
-			}
-			// RESULT carries the request id at index 1; ERROR repeats the
-			// original message type there and carries the id at index 2.
-			index := 1
-			if messageType(message) == 8 {
-				index = 2
-			}
-			if len(message) <= index {
-				continue
-			}
-			if id, ok := unsigned(message[index]); ok && id == request {
-				log.Printf("IDENTIFIERS_CALL_REPLY %v", message)
-				return
-			}
-		}
-		log.Print("IDENTIFIERS_CALL_TIMEOUT")
-		os.Exit(1)
+		log.Printf("IDENTIFIERS_CALL_REPLY %v", reply)
+		return
 	}
 	const procedure = "com.harman.identifiersGet"
 	identityResult := map[string]interface{}{"mac-hex": value, "unique-hex": value}
