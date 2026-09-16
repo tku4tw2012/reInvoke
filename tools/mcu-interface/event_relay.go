@@ -10,6 +10,7 @@ import (
 )
 
 const micMuteDebounce = 300 * time.Millisecond
+const repeatedButtonFrameWindow = 50 * time.Millisecond
 
 type inputController interface {
 	Apply(context.Context, inputEvent) error
@@ -51,7 +52,7 @@ func runEventRelay(
 	var workerDone chan struct{}
 	var buttonEvents chan inputEvent
 	var volumeDeltas chan int
-	var lastMicMute time.Time
+	lastButtons := make(map[string]time.Time)
 	if controller != nil {
 		workerDone = make(chan struct{})
 		buttonEvents = make(chan inputEvent, 4)
@@ -79,19 +80,28 @@ func runEventRelay(
 			if !ok {
 				return
 			}
-			if event.Name == "micmute" {
+			switch event.Name {
+			case "micmute", "micmute-long", "action", "action-long", "bluetooth", "bluetooth-long":
 				occurredAt := event.OccurredAt
 				if occurredAt.IsZero() {
 					occurredAt = time.Now()
 				}
-				if !lastMicMute.IsZero() &&
-					occurredAt.Sub(lastMicMute) < micMuteDebounce {
+				last := lastButtons[event.Name]
+				window := repeatedButtonFrameWindow
+				if event.Name == "micmute" {
+					window = micMuteDebounce
+				}
+				if !last.IsZero() && occurredAt.Sub(last) < window {
 					if logf != nil {
-						logf("ignored duplicate Mic-Mute press")
+						if event.Name == "micmute" {
+							logf("ignored duplicate Mic-Mute press")
+						} else {
+							logf("ignored duplicate %s press", event.Name)
+						}
 					}
 					continue
 				}
-				lastMicMute = occurredAt
+				lastButtons[event.Name] = occurredAt
 			}
 			if buttonEvents != nil {
 				queued := false
