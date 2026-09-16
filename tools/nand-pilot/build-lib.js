@@ -14,8 +14,8 @@ const pins = {
   capture: { path: 'evidence/nand-restored-ram-inspection-20260909/restored-main-256MiB.bin', bytes: 268435456,
     sha256: '2fac4159fe23aa25581c29f6c90033af3a1126a02593db0bd47e2c10d2c09f19' },
 };
-const CANDIDATE = '06.0';
-const BUILD_ID = `reInvoke-NAND-${CANDIDATE}-20260914`;
+const CANDIDATE = '05.8.3';
+const BUILD_ID = `reInvoke-NAND-${CANDIDATE}-20260916`;
 const BLUETOOTH_NAME = `reInvoke-NAND-${CANDIDATE}`;
 const BUNDLE_NAME = `83_IMAGE.reinvoke-${CANDIDATE}`;
 const BB_SHA256 = '5fc83ab6cd37841b8d73e07bf3cd8af47ae5af56c93fe085b2db91e0d1f4207b';
@@ -68,6 +68,19 @@ function inventory(root) {
     if (type === 'c' || type === 'b') item.device = run('stat', ['-c', '%t:%T', file]).trim();
     return item;
   });
+}
+function refreshRuntimeChecksums(root) {
+  const runtime = path.join(root, 'opt/reinvoke');
+  const entries = inventory(runtime).filter(item =>
+    item.type === 'f' && item.path !== 'SHA256SUMS');
+  if (!entries.length) throw new Error('runtime checksum inventory is empty');
+  for (const item of entries)
+    if (/[\r\n\\]/.test(item.path)) throw new Error('unsupported runtime checksum path');
+  const contents = entries.map(item => `${item.sha256}  ./${item.path}\n`).join('');
+  const target = path.join(runtime, 'SHA256SUMS');
+  fs.rmSync(target, { force: true });
+  fs.writeFileSync(target, contents, { flag: 'wx', mode: 0o444 });
+  return { files: entries.length, sha256: sha(contents) };
 }
 function compareTrees(a, b) {
   const x = inventory(a), y = inventory(b);
@@ -161,4 +174,4 @@ function proposal(image, capture, out) {
   };
 }
 module.exports = { pins, CANDIDATE, BUILD_ID, BLUETOOTH_NAME, BUNDLE_NAME, BB_SHA256, ADB_SHA256, sha, hashFile, run, json, verify,
-  rooted, inventory, compareTrees, elfClosure, proposal };
+  rooted, inventory, refreshRuntimeChecksums, compareTrees, elfClosure, proposal };
