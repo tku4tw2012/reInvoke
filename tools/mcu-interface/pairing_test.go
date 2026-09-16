@@ -38,13 +38,11 @@ func TestPairingControllerRejectsWrongExecutable(t *testing.T) {
 		pidPath:    pidPath,
 		executable: "/not-this-test",
 	}
-	for _, name := range []string{"bluetooth", "bluetooth-long"} {
-		if err := controller.Apply(
-			context.Background(),
-			inputEvent{Name: name},
-		); err == nil {
-			t.Fatalf("%s: wrong executable was accepted", name)
-		}
+	if err := controller.Apply(
+		context.Background(),
+		inputEvent{Name: "bluetooth"},
+	); err == nil {
+		t.Fatal("wrong executable was accepted")
 	}
 }
 
@@ -56,13 +54,11 @@ func TestPairingControllerRejectsInvalidPIDForBothSignals(t *testing.T) {
 			return []byte("1\n"), nil
 		},
 	}
-	for _, name := range []string{"bluetooth", "bluetooth-long"} {
-		if err := controller.Apply(
-			context.Background(),
-			inputEvent{Name: name},
-		); err == nil {
-			t.Fatalf("%s: invalid PID was accepted", name)
-		}
+	if err := controller.Apply(
+		context.Background(),
+		inputEvent{Name: "bluetooth"},
+	); err == nil {
+		t.Fatal("invalid PID was accepted")
 	}
 }
 
@@ -72,7 +68,6 @@ func TestPairingControllerSignalsVerifiedAgent(t *testing.T) {
 		signal syscall.Signal
 	}{
 		{name: "bluetooth", signal: syscall.SIGUSR2},
-		{name: "bluetooth-long", signal: syscall.SIGUSR1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var signaledPID int
@@ -100,6 +95,18 @@ func TestPairingControllerSignalsVerifiedAgent(t *testing.T) {
 			}
 			if signaledPID != 42 || signaledSignal != test.signal {
 				t.Fatalf("signal = (%d, %v)", signaledPID, signaledSignal)
+			}
+			// The long press no longer starts pairing: it duplicated the short
+			// press, leaving the control without a distinct meaning.
+			signaledPID, signaledSignal = 0, 0
+			if err := controller.Apply(
+				context.Background(),
+				inputEvent{Name: "bluetooth-long"},
+			); err != nil {
+				t.Fatal(err)
+			}
+			if signaledPID != 0 {
+				t.Fatalf("bluetooth-long signalled pid %d", signaledPID)
 			}
 		})
 	}

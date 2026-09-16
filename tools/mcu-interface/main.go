@@ -87,6 +87,17 @@ func main() {
 		"",
 		"authoritative pairing-agent state used for the rear indicator",
 	)
+	bluetoothControlCaller := flag.String(
+		"bluetooth-control-caller",
+		"/bin/reinvoke-identifiers",
+		"fixed WAMP caller for the top-tap pause; empty disables it",
+	)
+	buttonDispatch := flag.String(
+		"button-dispatch",
+		"local",
+		"local performs button actions here; publish-only announces them and "+
+			"leaves them to whatever owns the button state machine",
+	)
 	provisioningSocket := flag.String(
 		"provisioning-socket",
 		"",
@@ -101,6 +112,13 @@ func main() {
 
 	if *routerPort < 1 || *routerPort > 65535 {
 		log.Fatal("router-port must be from 1 through 65535")
+	}
+	if !validButtonDispatch(*buttonDispatch) {
+		log.Fatalf(
+			"button-dispatch must be %q or %q",
+			dispatchLocal,
+			dispatchPublishOnly,
+		)
 	}
 	if *gpioNumber < 0 {
 		log.Fatal("gpio must be non-negative")
@@ -177,6 +195,7 @@ func main() {
 	var inputControls inputControllerList
 	var media *dspVolumeController
 	var lights *ledPlayer
+	var actionDone chan struct{}
 	if *microphoneControlSocket != "" {
 		media, err = newDSPVolumeController(*microphoneControlSocket)
 		if err != nil {
@@ -197,7 +216,7 @@ func main() {
 		}
 		inputControls = append(inputControls, media)
 	}
-	if *pairingAgentPID != "" {
+	if *pairingAgentPID != "" && *buttonDispatch == dispatchLocal {
 		inputControls = append(inputControls, pairingSignalController{
 			pidPath:    *pairingAgentPID,
 			executable: *pairingAgentExecutable,
@@ -220,7 +239,21 @@ func main() {
 			}
 		}
 	}
-	if *provisioningSocket != "" {
+	if *bluetoothControlCaller != "" && *playbackStatus != "" &&
+		*buttonDispatch == dispatchLocal {
+		actions := &mediaActionController{
+			caller: *bluetoothControlCaller, host: *routerHost, port: *routerPort,
+			realm: *realm, playbackStatus: *playbackStatus,
+			requests: make(chan struct{}, 1), logf: log.Printf,
+		}
+		inputControls = append(inputControls, actions)
+		actionDone = make(chan struct{})
+		go func() {
+			defer close(actionDone)
+			actions.Run(ctx)
+		}()
+	}
+	if *provisioningSocket != "" && *buttonDispatch == dispatchLocal {
 		inputControls = append(inputControls, provisioningController{
 			socketPath: *provisioningSocket,
 			lights:     lights,
@@ -246,6 +279,9 @@ func main() {
 	indicatorLEDs := newIndicatorLEDController(bus)
 	bluetoothDone := make(chan error, 1)
 	if *bluetoothState != "" {
+		if err := ensureBluetoothStateDirectory(*bluetoothState); err != nil {
+			log.Printf("bluetooth state directory: %v", err)
+		}
 		watcher := &bluetoothStateWatcher{
 			path:      *bluetoothState,
 			indicator: indicatorLEDs,
@@ -280,16 +316,18 @@ func main() {
 	}
 
 	service := wampService{
-		address:       *routerHost + ":" + strconv.Itoa(*routerPort),
-		realm:         *realm,
-		controller:    control,
-		media:         media,
-		lights:        lights,
-		indicatorLEDs: indicatorLEDs,
-		events:        source,
-		version:       recoveredMCUVersion,
-		privacy:       privacy,
-		logf:          log.Printf,
+		address:        *routerHost + ":" + strconv.Itoa(*routerPort),
+		realm:          *realm,
+		controller:     control,
+		media:          media,
+		lights:         lights,
+		indicatorLEDs:  indicatorLEDs,
+		events:         source,
+		version:        recoveredMCUVersion,
+		privacy:        privacy,
+		bluetoothState: *bluetoothState,
+		playbackStatus: *playbackStatus,
+		logf:           log.Printf,
 	}
 	log.Printf(
 		"hardware initialized muted; WAMP unmute policy=%t",
@@ -331,6 +369,9 @@ func main() {
 		log.Printf,
 	)
 	cancel()
+	if actionDone != nil {
+		<-actionDone
+	}
 	<-privacyDone
 	heartbeatErr := <-heartbeatDone
 	playbackErr := <-playbackDone

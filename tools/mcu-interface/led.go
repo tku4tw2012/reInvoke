@@ -46,9 +46,16 @@ func (player *ledPlayer) Apply(
 	switch event.Name {
 	case "action":
 		return player.Start(ctx, "L_312_d_shorttap", false)
-	case "bluetooth-long":
-		return player.Start(ctx, "L_302_d_wifisetup", false)
 	default:
+		// Only the short tap has an animation in this asset set. The retail
+		// long-tap cue, L_313_d_longtap, is absent from the donor lights
+		// directory this runtime ships, and that directory is pinned by
+		// checksum, so referencing it would fail at the first long press.
+		//
+		// The Wi-Fi setup animation is deliberately not started here either:
+		// it belongs to the long Mic-Mute press and is played by the
+		// provisioning controller that actually opens the window. Starting it
+		// for bluetooth-long put the Wi-Fi cue on an unrelated control.
 		return nil
 	}
 }
@@ -235,16 +242,16 @@ func runLEDAnimationStarted(
 			if err != nil {
 				return fmt.Errorf("send LED animation chunk: %w", err)
 			}
-			if end < len(data) || repeat {
-				timer := time.NewTimer(ledChunkDelay)
-				select {
-				case <-ctx.Done():
-					if !timer.Stop() {
-						<-timer.C
-					}
-					return nil
-				case <-timer.C:
+			// The final chunk also needs display time before a one-shot
+			// caller sends the clear packet.
+			timer := time.NewTimer(ledChunkDelay)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
 				}
+				return nil
+			case <-timer.C:
 			}
 		}
 		if !repeat {

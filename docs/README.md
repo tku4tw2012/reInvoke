@@ -44,6 +44,7 @@ not exclusively emulated results.
 | --------------------------------------------------------------- | ------------------------------------------------ |
 | [Owned speaker control](emulation/owned-speaker-control.md)     | Mute policy, active-PCM ownership and volume     |
 | [MCU boundary](emulation/mcu-boundary.md)                       | I2C, physical inputs and indicators              |
+| [Vendor button semantics](vendor-button-semantics.md)           | Recovered button-to-action table and its limits  |
 | [DSP boundary](emulation/dsp-boundary.md)                       | Firmware, SPI/GPIO control and message framing   |
 | [Bluetooth stack](emulation/bluetooth-stack.md)                 | Donor limitations and replacement media path     |
 | [Control-plane emulation](emulation/control-plane-emulation.md) | WAMP execution and vendor control surface        |

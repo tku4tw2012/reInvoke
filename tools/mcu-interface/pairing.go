@@ -29,9 +29,12 @@ func (controller pairingSignalController) Apply(
 	switch event.Name {
 	case "bluetooth":
 		requestedSignal = syscall.SIGUSR2
-	case "bluetooth-long":
-		requestedSignal = syscall.SIGUSR1
 	default:
+		// Only the short press starts pairing. The long press duplicated it
+		// here, which left the control with no distinct meaning; the retail
+		// speaker sent a diagnostic bundle from it and shipped with that
+		// disabled. It now publishes the bugreport action and does nothing
+		// locally until something implements it.
 		return nil
 	}
 	select {
