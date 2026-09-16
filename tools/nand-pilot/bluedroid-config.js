@@ -175,6 +175,28 @@ function installBluedroid(config, root, launcher) {
     }
     halInstalled.push(`system/lib/${entry.name}`);
   }
+  // The donor logcat is the only reader of the Android logger, which the
+  // donor stack writes through liblog at a compiled-in path. Without it the
+  // stack's own errors have nowhere to go, which is how a connected A2DP
+  // stream rendered nothing and recorded no failure.
+  const binSource = path.join(stackRoot, 'system/bin');
+  if (fs.existsSync(binSource)) {
+    const binTarget = path.join(absoluteRoot, 'system/bin');
+    fs.mkdirSync(binTarget, { recursive: true, mode: 0o755 });
+    for (const entry of fs.readdirSync(binSource, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const to = path.join(binTarget, entry.name);
+      if (fs.existsSync(to))
+        throw new Error(`donor bin would overwrite runtime file: system/bin/${entry.name}`);
+      fs.copyFileSync(path.join(binSource, entry.name), to);
+      fs.chmodSync(to, 0o755);
+      halInstalled.push(`system/bin/${entry.name}`);
+    }
+    fs.rmSync(binSource, { recursive: true, force: true });
+  }
+  if (!fs.existsSync(path.join(absoluteRoot, 'system/bin/logcat')))
+    throw new Error('system/bin/logcat is missing after install');
+
   // Remove the relocated copy so there is exactly one HAL tree and no doubt
   // about which one the loader used.
   fs.rmSync(halSource, { recursive: true, force: true });

@@ -118,20 +118,16 @@ func main() {
 	if *gpioNumber < 0 {
 		log.Fatal("gpio must be non-negative")
 	}
-	playbackPolicyValues := 0
-	for _, value := range []string{
-		*playbackStatus,
-		*playbackLease,
-		*playbackOwnerExecutable,
-	} {
-		if value != "" {
-			playbackPolicyValues++
-		}
-	}
-	if playbackPolicyValues != 0 && playbackPolicyValues != 3 {
+	// The lease is optional now that the renderer is the donor stack, which
+	// never writes one. Status and owner still travel together: without both,
+	// the policy cannot tell who is holding the playback device.
+	if (*playbackStatus == "") != (*playbackOwnerExecutable == "") {
 		log.Fatal(
-			"playback-status, playback-lease, and playback-owner-executable must be supplied together",
+			"playback-status and playback-owner-executable must be supplied together",
 		)
+	}
+	if *playbackLease != "" && *playbackStatus == "" {
+		log.Fatal("playback-lease requires playback-status")
 	}
 	if (*pairingAgentPID == "") != (*pairingAgentExecutable == "") {
 		log.Fatal(
