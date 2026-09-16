@@ -184,6 +184,7 @@ func main() {
 	var media *dspVolumeController
 	var lights *ledPlayer
 	var actionDone chan struct{}
+	var volumeDone chan struct{}
 	if *microphoneControlSocket != "" {
 		media, err = newDSPVolumeController(*microphoneControlSocket)
 		if err != nil {
@@ -202,7 +203,20 @@ func main() {
 			media.hasSavedVolume = true
 			media.volume = volume
 		}
+		// The DSP applies the level; 05.8.6 only remembered it. The caller is
+		// the same fixed WAMP caller the top-tap pause uses.
+		media.caller = *bluetoothControlCaller
+		media.host = *routerHost
+		media.port = *routerPort
+		media.realm = *realm
+		media.dspProcedure = "com.harman.dsp.volumeSet"
+		media.logf = log.Printf
 		inputControls = append(inputControls, media)
+		volumeDone = make(chan struct{})
+		go func() {
+			defer close(volumeDone)
+			media.Run(ctx)
+		}()
 	}
 	if *pairingAgentPID != "" && *buttonDispatch == dispatchLocal {
 		inputControls = append(inputControls, pairingSignalController{
@@ -356,6 +370,9 @@ func main() {
 	cancel()
 	if actionDone != nil {
 		<-actionDone
+	}
+	if volumeDone != nil {
+		<-volumeDone
 	}
 	<-privacyDone
 	heartbeatErr := <-heartbeatDone

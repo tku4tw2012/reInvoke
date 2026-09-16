@@ -6,8 +6,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os/exec"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // dspVolumeController owns the speaker's volume and mute state.
@@ -17,17 +20,33 @@ import (
 // stack, so that binary is not shipped and every volume request failed with
 // "fork/exec /opt/reinvoke/bin/bluealsa-cli: no such file or directory".
 //
-// The level is held here and reported to callers, and the preference is kept
-// across restarts. It is not yet pushed to the amplifier: the DSP service
-// ships from the RC12 rootfs rather than being rebuilt, and its control socket
-// accepts only the two microphone mute requests. Sending anything else closes
-// the connection. Extending that protocol therefore needs the DSP binary to be
-// built and installed like mcu-interface is, which is a separate change.
+// Candidate 05.8.6 held the level here and reported it to callers but never
+// applied it, so the speaker played at whatever the DSP happened to boot with
+// and the rotary control moved a number that reached no hardware. Verified on
+// hardware during a looped playback: calling com.harman.dsp.volumeSet with 10,
+// then 90, then 5 produced clearly audible quiet, loud and quiet again. That
+// procedure is a plain WAMP registration of the DSP service, so it needs
+// neither the microphone control socket extended nor the DSP binary rebuilt,
+// which is what previously blocked this.
 //
-// Until then this keeps the procedures answering with consistent state instead
-// of failing outright, which is what a missing bluealsa-cli did.
+// The DSP takes a single byte. Percent is passed straight through: the scale
+// is NOT established as linear, and the only measured points are 5 and 10
+// (comfortable) against 90 (loud), so values are kept in that low range rather
+// than scaled up to fill the byte.
 type dspVolumeController struct {
 	socket string
+
+	// caller invokes a WAMP procedure; it is the same fixed caller the top-tap
+	// pause uses. Left empty the controller keeps working and simply does not
+	// reach the hardware, which is the 05.8.6 behaviour.
+	caller, host, realm, dspProcedure string
+	port                              int
+
+	// pushes carries the latest level to the worker. It holds one entry so a
+	// fast rotary sweep collapses to the most recent value instead of queuing
+	// a process per detent.
+	pushes chan int
+	logf   func(string, ...interface{})
 
 	mu     sync.Mutex
 	volume int
@@ -44,14 +63,20 @@ type volumeSnapshot struct {
 	Muted  bool
 }
 
-// defaultVolume is where the speaker starts before anything sets a level.
-const defaultVolume = 30
+// defaultVolume is where the speaker starts before anything sets a level. The
+// retail unit is loud: an unattenuated playback was reported as "very loud" on
+// hardware, so this starts low deliberately.
+const defaultVolume = 12
 
 func newDSPVolumeController(socket string) (*dspVolumeController, error) {
 	if socket == "" {
 		return nil, errors.New("DSP control socket is required for volume")
 	}
-	return &dspVolumeController{socket: socket, volume: defaultVolume}, nil
+	return &dspVolumeController{
+		socket: socket,
+		volume: defaultVolume,
+		pushes: make(chan int, 1),
+	}, nil
 }
 
 // Apply handles the physical rotary control.
@@ -83,12 +108,85 @@ func clampVolume(percent int) int {
 	return percent
 }
 
-// applyLocked records the effective level. Mute is held separately from the
-// level so unmuting restores what the user chose rather than a zero.
+// applyLocked records the effective level and asks the worker to push it.
 func (controller *dspVolumeController) applyLocked(ctx context.Context) error {
 	// Mute is held in its own field rather than by zeroing the level, so the
 	// chosen volume is always what gets remembered and unmuting restores it.
-	return controller.rememberMusicVolume(controller.volume)
+	err := controller.rememberMusicVolume(controller.volume)
+	controller.requestPushLocked()
+	return err
+}
+
+// requestPushLocked queues the effective level. The channel holds one entry and
+// the oldest is dropped, so a fast sweep of the rotary control settles on the
+// level the user stopped at rather than replaying every step.
+func (controller *dspVolumeController) requestPushLocked() {
+	if controller.pushes == nil {
+		return
+	}
+	level := controller.volume
+	if controller.muted {
+		level = 0
+	}
+	for {
+		select {
+		case controller.pushes <- level:
+			return
+		default:
+		}
+		select {
+		case <-controller.pushes:
+		default:
+			return
+		}
+	}
+}
+
+// Run applies queued levels to the DSP until the context is cancelled.
+func (controller *dspVolumeController) Run(ctx context.Context) {
+	if controller.pushes == nil {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case level := <-controller.pushes:
+			if ctx.Err() != nil {
+				return
+			}
+			request, cancel := context.WithTimeout(ctx, 3*time.Second)
+			err := controller.pushVolume(request, level)
+			cancel()
+			if err != nil && ctx.Err() == nil && controller.logf != nil {
+				controller.logf("apply DSP volume %d: %v", level, err)
+			}
+		}
+	}
+}
+
+// pushVolume hands one level to the DSP service. The DSP accepts a single
+// byte, so the level is range checked here rather than relying on the callee.
+func (controller *dspVolumeController) pushVolume(
+	ctx context.Context,
+	level int,
+) error {
+	if controller.caller == "" || controller.dspProcedure == "" {
+		return nil
+	}
+	if level < 0 || level > 0xff {
+		return fmt.Errorf("level %d is outside the DSP byte range", level)
+	}
+	command := exec.CommandContext(ctx, controller.caller,
+		"--router-host", controller.host,
+		"--router-port", strconv.Itoa(controller.port),
+		"--realm", controller.realm,
+		"--call", controller.dspProcedure,
+		"--call-args", "["+strconv.Itoa(level)+"]")
+	if output, err := command.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s: %w: %s", controller.dspProcedure, err, output)
+	}
+	return nil
 }
 
 func (controller *dspVolumeController) snapshotLocked() volumeSnapshot {
