@@ -152,6 +152,7 @@ func createPrivateDevice(p partition, mknod func(string, uint32, int) error) err
 
 func mountRecord(p partition, content string) (bool, error) {
 	found := false
+	bluedroidBindFound := false
 	for _, line := range strings.Split(content, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 10 {
@@ -159,7 +160,10 @@ func mountRecord(p partition, content string) (bool, error) {
 		}
 		sameDevice := fields[2] == fmt.Sprintf("31:%d", p.index)
 		samePath := fields[4] == mountPoint
-		if !sameDevice && !samePath {
+		// /data resolves here in the runtime; Bluedroid binds only this
+		// subdirectory, not a second root mount of the app filesystem.
+		bluedroidPath := fields[4] == "/home/galois_rwdata/misc/bluedroid"
+		if !sameDevice && !samePath && !bluedroidPath {
 			continue
 		}
 		separator := -1
@@ -169,7 +173,15 @@ func mountRecord(p partition, content string) (bool, error) {
 			}
 		}
 		options := "," + fields[5] + ","
-		if found || !sameDevice || !samePath || fields[3] != "/" ||
+		primary := samePath && fields[3] == "/"
+		bluedroidBind := bluedroidPath && fields[3] == "/reinvoke/bluedroid"
+		// Repeated Bluedroid binds are tolerated on purpose. Each one is
+		// provably the same subtree, on the same device, over the same target,
+		// so stacking them changes nothing a caller can observe. Treating the
+		// second as a conflict made one leaked mount disable persistence for
+		// the rest of the boot, which is a far worse failure than the leak.
+		if !sameDevice || (!primary && !bluedroidBind) ||
+			(primary && found) ||
 			separator < 6 || separator+3 >= len(fields) || fields[separator+1] != "yaffs2" {
 			return false, errors.New("PERSIST_MOUNT_CONFLICT")
 		}
@@ -178,7 +190,14 @@ func mountRecord(p partition, content string) (bool, error) {
 				return false, errors.New("PERSIST_MOUNT_OPTIONS_UNSAFE")
 			}
 		}
-		found = true
+		if primary {
+			found = true
+		} else {
+			bluedroidBindFound = true
+		}
+	}
+	if bluedroidBindFound && !found {
+		return false, errors.New("PERSIST_MOUNT_CONFLICT")
 	}
 	return found, nil
 }
