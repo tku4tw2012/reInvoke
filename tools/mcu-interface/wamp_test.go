@@ -72,7 +72,7 @@ func TestMinimumWAMPSurface(t *testing.T) {
 
 func TestGetMCUStatusReturnsCapturedVersion(t *testing.T) {
 	hardware := newRecordingHardware(0)
-	control := newController(hardware, mutePolicy{})
+	control := newController(hardware)
 	service := wampService{
 		controller: control,
 		version:    recoveredMCUVersion,
@@ -93,9 +93,9 @@ func TestGetMCUStatusReturnsCapturedVersion(t *testing.T) {
 	}
 }
 
-func TestWAMPUnmuteIsDeniedByDefault(t *testing.T) {
+func TestWAMPUnmuteIsApplied(t *testing.T) {
 	hardware := newRecordingHardware(0)
-	control := newController(hardware, mutePolicy{})
+	control := newController(hardware)
 	control.initialized = true
 	service := wampService{
 		controller: control,
@@ -108,11 +108,11 @@ func TestWAMPUnmuteIsDeniedByDefault(t *testing.T) {
 		"com.harman.vui.mutedaccontrol",
 		[]interface{}{"unmute"},
 	)
-	if messageType(response) != wampError {
+	if messageType(response) != wampYield {
 		t.Fatalf("response = %#v", response)
 	}
-	if response[4] != "com.harman.error" {
-		t.Fatalf("error URI = %#v", response[4])
+	if control.dacMuted {
+		t.Fatal("DAC is still muted after an accepted unmute")
 	}
 }
 

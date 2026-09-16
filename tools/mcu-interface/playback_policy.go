@@ -80,17 +80,26 @@ func runPlaybackPolicy(
 	check := func() error {
 		status, err := os.ReadFile(statusPath)
 		running := err == nil && playbackIsRunning(status)
-		if running {
-			lease, leaseErr := os.ReadFile(leasePath)
+		if running && ownerExecutable != "" {
+			// Confirm the renderer is the expected program before energising
+			// the amplifier. The lease is optional: the donor Bluedroid stack
+			// renders in-process through BtSocketHandler::OpenAlsa and knows
+			// nothing about a lease file, so requiring one left the amplifier
+			// muted for every source this runtime actually has.
 			ownerPID, ownerOK := playbackOwnerPID(status)
-			leasePID, leaseOK := playbackLeasePID(lease)
-			running = leaseErr == nil && ownerOK && leaseOK &&
-				leasePID == ownerPID
-			if running && ownerExecutable != "" {
+			running = ownerOK
+			if running {
 				actual, linkErr := os.Readlink(
 					"/proc/" + strconv.Itoa(ownerPID) + "/exe",
 				)
 				running = linkErr == nil && actual == ownerExecutable
+			}
+			if running && leasePath != "" {
+				if lease, leaseErr := os.ReadFile(leasePath); leaseErr == nil {
+					if leasePID, leaseOK := playbackLeasePID(lease); leaseOK {
+						running = leasePID == ownerPID
+					}
+				}
 			}
 		}
 		now := time.Now()

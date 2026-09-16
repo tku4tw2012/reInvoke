@@ -203,6 +203,25 @@ function installBluedroid(config, root, launcher) {
     fs.chmodSync(target, 0o644);
   }
 
+  // ALSA routing. The donor renders A2DP in-process and opens a named device,
+  // "music", through its own libasound. That name is defined by the stock
+  // asound-product.conf, which asound.conf loads and which the base
+  // /usr/share/alsa/alsa.conf includes. Neither file was ever packaged, so the
+  // name could not resolve and snd_pcm_open had nothing to open. Observed on
+  // 05.8.3: A2DP connected and negotiated 44100/2, then no playback device ever
+  // opened across several hundred samples.
+  const alsaConfigs = ['asound.conf', 'asound-product.conf'];
+  for (const config of alsaConfigs) {
+    const source = path.join(stackRoot, 'etc', config);
+    if (!fs.existsSync(source))
+      throw new Error(`donor payload has no etc/${config}`);
+    const target = path.join(absoluteRoot, 'etc', config);
+    if (fs.existsSync(target))
+      throw new Error(`etc/${config} already exists; refusing to overwrite`);
+    fs.copyFileSync(source, target);
+    fs.chmodSync(target, 0o644);
+  }
+
   const launcherTarget = path.join(stackRoot, 'start.sh');
   fs.copyFileSync(launcher, launcherTarget);
   fs.chmodSync(launcherTarget, 0o755);

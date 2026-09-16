@@ -47,11 +47,6 @@ func main() {
 		"/run/reinvoke/dsp-mic-control.sock",
 		"root-only DSP microphone control socket",
 	)
-	allowUnmute := flag.Bool(
-		"allow-unmute",
-		false,
-		"allow verified WAMP unmute requests after safe initialization",
-	)
 	playbackStatus := flag.String(
 		"playback-status",
 		"",
@@ -153,10 +148,7 @@ func main() {
 	}
 	defer bus.Close()
 
-	control := newController(bus, mutePolicy{
-		AllowUnmute:         *allowUnmute,
-		AllowPlaybackUnmute: playbackPolicyValues == 3,
-	})
+	control := newController(bus)
 	if err := control.initialize(); err != nil {
 		log.Fatalf("safe hardware initialization failed: %v", err)
 	}
@@ -329,10 +321,7 @@ func main() {
 		playbackStatus: *playbackStatus,
 		logf:           log.Printf,
 	}
-	log.Printf(
-		"hardware initialized muted; WAMP unmute policy=%t",
-		*allowUnmute,
-	)
+	log.Print("hardware initialized muted")
 	heartbeatDone := make(chan error, 1)
 	go func() {
 		err := runMCUHeartbeat(ctx, bus, mcuHeartbeatInterval)

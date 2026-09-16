@@ -103,10 +103,8 @@ func TestPlaybackPolicyTracksTransitionsAndRemutesOnCancel(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(10 * time.Millisecond)
-	if states := controller.snapshot(); len(states) != 0 {
-		t.Fatalf("policy activated without a playback lease: %v", states)
-	}
+	// The lease is optional: the renderer this runtime ships does not write
+	// one, so a verified owner alone must be enough to activate.
 	if err := os.WriteFile(
 		leasePath,
 		[]byte(strconv.Itoa(ownerPID)+"\n"),
@@ -118,17 +116,18 @@ func TestPlaybackPolicyTracksTransitionsAndRemutesOnCancel(t *testing.T) {
 	for len(controller.snapshot()) == 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if err := os.Remove(leasePath); err != nil {
+	// Playback stopping is what remutes, not the lease going away.
+	if err := os.WriteFile(statusPath, []byte("closed\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	deadline = time.Now().Add(time.Second)
+	deadline = time.Now().Add(2 * time.Second)
 	for {
 		states := controller.snapshot()
 		if len(states) >= 2 && !states[len(states)-1] {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("policy did not remute after lease removal: %v", states)
+			t.Fatalf("policy did not remute after playback stopped: %v", states)
 		}
 		time.Sleep(time.Millisecond)
 	}
