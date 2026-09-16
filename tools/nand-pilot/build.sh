@@ -28,6 +28,9 @@ cd "${repo}"
 nice -n 10 "${PILOT_GO}" test -p 1 ./tools/nand-pilot/status
 nice -n 10 env GOOS=linux GOARCH=arm GOARM=7 "${PILOT_GO}" build \
   -p 1 -trimpath -ldflags="-s -w -buildid=" -o "${output}/reinvoke-status" ./tools/nand-pilot/status
+nice -n 10 "${PILOT_GO}" test -p 1 ./tools/propertyd
+nice -n 10 env GOOS=linux GOARCH=arm GOARM=7 "${PILOT_GO}" build \
+  -p 1 -trimpath -ldflags="-s -w -buildid=" -o "${output}/reinvoke-propertyd" ./tools/propertyd
 for build in build-a build-b; do
   mkdir "${output}/${build}"
   nice -n 10 fakeroot -s "${output}/work/${build}.fakeroot" \

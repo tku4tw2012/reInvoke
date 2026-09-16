@@ -75,6 +75,39 @@ volume zero. Newly acquired BlueALSA transports start at maximum volume;
 connect policy caps them at twelve without raising a quieter transport.
 Rotary control changes media volume. See [speaker control](emulation/owned-speaker-control.md).
 
+Candidate 05.8.6 and earlier recorded the level without applying it, so the
+speaker played at whatever gain the DSP booted with and the rotary control
+moved a number that reached no hardware. Candidate 05.8.7 pushes the level to
+`com.harman.dsp.volumeSet`, which was confirmed audibly on hardware by stepping
+a looped playback through 10, 90 and 5. That scale is not established as
+linear; 5 and 10 were reported comfortable against 90 loud, so percent is
+passed through unscaled and the startup default is twelve.
+
+### Bluetooth audio rendering
+
+The donor stack calls `defaultServiceManager()` from its A2DP
+`connection_state_cb`. The donor `libbinder` spins there until the Android
+property `service.servicemanager` reads back set, and `servicemanager` only
+sets it once a property service answers. Without one the callback never
+returns: traced on 05.8.6, the callback and the first
+`Waiting for initialization` share a millisecond on the BTIF thread, which
+then spins 1257 times and emits no further `btif_av` event. The state machine
+never leaves `opening`, the media task never decodes, and all 707 delivered
+SBC packets are discarded while the amplifier stays muted because no renderer
+ever opens the PCM.
+
+Candidate 05.8.7 therefore publishes an Android property area and the
+`property_service` socket before `servicemanager` and the donor stack start.
+The layout is the donor's, recovered from its own `lib/libglibc_bridge.so`:
+the magic at `+8` is `PROP`, but the version at `+12` is `0x45434F76` where
+upstream bionic uses `0xFC6ED0AB`, so an implementation written from the
+published specification is unmapped without a diagnostic. Readers never open
+the area by path; the loader parses `ANDROID_PROPERTY_WORKSPACE` as
+`<fd>,<size>` and maps that inherited descriptor read-only.
+
+The kernel already provides `/dev/binder` and `ashmem`, so nothing else was
+required. See [propertyd](../tools/propertyd/main.go).
+
 ### Microphone privacy boundary
 
 The MCU controller is the sole privacy-policy authority:
@@ -199,6 +232,18 @@ never upgraded by reInvoke. Bonefish supplies compatibility, not product policy.
 The runtime excludes vendor `system-manager`, Bluedroid, `audio-ui`,
 `music-source-manager`, Cortana, OTA updater, crash-dump writers and flash
 utilities. Normal operation needs neither cloud services nor SSH.
+
+Two of those exclusions carry contracts this runtime partially answers.
+`audio-ui` owned the system state, registering `com.harman.stateGet` and
+publishing `com.harman.stateChanged`. `music-source-manager` owned source
+arbitration: `com.harman.source.register`, `.start`, `.get-active`,
+`.get-registered`, `.flush`, `.nowPlayingUpdate`, `.trackPositionUpdate`,
+`.volumeSet` and `.volumeChanged`. This runtime answers `stateGet`,
+`source.register` and `source.get-active` from a fixed table in the
+identifiers service and implements none of the rest, so source switching and
+published state are stubs rather than a state machine. The donor's own test
+suite documents the intended behaviour, including that `source.get-active`
+returns a positional URI rather than the keyword map answered here.
 
 Held artifacts support deterministic composition, not complete reconstruction
 from a clean public clone. See [build provenance](native-nand-platform.md#build-and-reproducibility-boundary).

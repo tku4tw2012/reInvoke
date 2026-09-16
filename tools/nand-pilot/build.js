@@ -138,6 +138,12 @@ function prepare() {
     write(path.join(tree, 'etc/nand-pilot/build-id'), lib.BUILD_ID + '\n');
     link('/opt/reinvoke/lib/ld-linux-armhf.so.3', path.join(tree, 'lib/ld-linux-armhf.so.3'));
   }
+  // Runtime only. The donor stack blocks its A2DP callback inside
+  // defaultServiceManager() until a property service answers, and the
+  // bootstrap never starts Bluetooth, so shipping this there would only spend
+  // part of the fixed 5 MiB BSL allocation.
+  install(path.join(path.dirname(output), 'reinvoke-propertyd'),
+    path.join(root, 'usr/bin/reinvoke-propertyd'));
   // Preserve the independently checked soft-float adbd loader family.
   for (const name of ['ld-linux.so.3', 'libdl.so.2', 'librt.so.1',
     'libpthread.so.0', 'libm.so.6', 'libc.so.6']) {
