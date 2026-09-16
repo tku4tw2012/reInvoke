@@ -26,6 +26,11 @@ CONFIG_LIVE=/data/misc/bluedroid
 PERSIST_ROOT=/persist
 PERSIST_CONFIG=/persist/reinvoke/bluedroid
 STACK_CONF=/etc/bluetooth/bt_stack.conf
+# Opt-in HCI capture. Creating SNOOP_FLAG turns it on at the next start; the
+# capture and the rewritten config both live in tmpfs so neither reaches NAND.
+SNOOP_FLAG=/persist/reinvoke/hci-capture
+SNOOP_CONF=/run/reinvoke/bt_stack.snoop.conf
+SNOOP_FILE=/run/reinvoke/logs/btsnoop_hci.log
 HCI_DOWN=/bin/reinvoke-hci-down
 LOADER="${ROOT}/lib/ld-linux-armhf.so.3"
 SERVICE="${ROOT}/usr/bin/bluetooth"
@@ -62,6 +67,26 @@ ${BB} test -x "${HCI_DOWN}" || fail "the HCI handover helper is missing"
 ${BB} test -f "${STACK_CONF}" ||
   fail "${STACK_CONF} is missing; the stack would load a NULL config"
 
+# Opt-in HCI capture. The donor can log every HCI command and event, which is
+# the only way to see what the radio was actually told: it is how the 05.8.1
+# scan state was settled (Write Scan Enable 0x02, connectable but not
+# discoverable) against a host scan that suggested otherwise.
+#
+# It stays off unless the flag file exists, and the capture is redirected into
+# the runtime tmpfs. The donor never rotates this file, so a default-on capture
+# would grow without bound on an appliance that is expected to run unattended,
+# and pointing it at the vendor path would write that growth to NAND.
+if ${BB} test -f "${SNOOP_FLAG}"; then
+  if ${BB} sed -e 's#^BtSnoopLogOutput=false#BtSnoopLogOutput=true#' \
+      -e "s#^BtSnoopFileName=.*#BtSnoopFileName=${SNOOP_FILE}#" \
+      "${STACK_CONF}" >"${SNOOP_CONF}" &&
+    ${BB} mount --bind "${SNOOP_CONF}" "${STACK_CONF}"; then
+    echo "bluedroid: HCI capture enabled at ${SNOOP_FILE}"
+  else
+    echo "bluedroid: HCI capture could not be enabled; continuing without it"
+  fi
+fi
+
 # The donor keeps writable copies separate from the read-only originals.
 if ! ${BB} test -d "${CONFIG_LIVE}"; then
   ${BB} mkdir -p "${CONFIG_LIVE}" || fail "writable configuration is unavailable"
@@ -76,7 +101,15 @@ fi
 # directly and a dangling link is indistinguishable from a missing file.
 if ${BB} test -d "${PERSIST_ROOT}"; then
   ${BB} mkdir -p "${PERSIST_CONFIG}" || fail "persistent configuration is unavailable"
-  if ! ${BB} mount | ${BB} grep -q " ${CONFIG_LIVE} "; then
+  # The guard has to compare the path the kernel reports, not the one written
+  # here. /data is a symlink to /home/galois_rwdata, so the mount table lists
+  # the resolved directory and a grep for CONFIG_LIVE never matched: every
+  # restart stacked another identical bind. Observed on 05.8.1 with three
+  # bluedroid starts and three nested binds, which the persistence service
+  # then refused as PERSIST_MOUNT_CONFLICT, leaving no state.json at all.
+  config_live_real="$(${BB} readlink -f "${CONFIG_LIVE}" 2>/dev/null)"
+  [ -n "${config_live_real}" ] || config_live_real="${CONFIG_LIVE}"
+  if ! ${BB} grep -q " ${config_live_real} " /proc/self/mounts; then
     ${BB} mount --bind "${PERSIST_CONFIG}" "${CONFIG_LIVE}" ||
       fail "persistent configuration could not be bound"
   fi

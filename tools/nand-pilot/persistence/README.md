@@ -22,6 +22,12 @@ The donor scripts and Berlin configuration identify YAFFS2. The helper requires:
 * An unmounted partition, empty private `/persist`, and a successful
   `rw,nosuid,nodev,noexec,noatime` mount whose identity is rechecked
 
+The current Bluedroid runtime also binds `/persist/reinvoke/bluedroid` at
+`/home/galois_rwdata/misc/bluedroid` (the resolved `/data/misc/bluedroid`
+path). The guard permits that exact subdirectory bind alongside the primary
+mount, with the same device, filesystem and restrictive flags. A bind without
+the primary mount, duplicates, and unexpected aliases remain errors.
+
 If startup removed generic MTD nodes, the helper creates only a private block
 node for the already verified app device. It never adds partitions, formats,
 erases, marks bad blocks, selects the whole-chip device, or runs vendor startup.
