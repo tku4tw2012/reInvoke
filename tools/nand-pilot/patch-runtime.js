@@ -90,6 +90,61 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
     '  stop_service syslogd\n');
   replace('log "native RAM environment is running"', `pilot_phase runtime-dispatched
 log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence, not this message"`);
+  // /dev/log is either the BusyBox syslog socket or the Android logger
+  // directory, and this BusyBox hardcodes the socket path. Earlier candidates
+  // moved the logger nodes aside so syslogd could own /dev/log. The donor
+  // stack is an Android binary whose liblog opens /dev/log/main by absolute
+  // path, so that choice discarded every ALOGE it wrote. It hid the donor's
+  // own errors through the whole A2DP investigation: the stack reported a
+  // connected stream, rendered nothing, and recorded no failure anywhere.
+  //
+  // The Android logger wins because it cannot be reconfigured: liblog is
+  // compiled into binaries this project does not build. Service output is
+  // redirected instead, which costs nothing, and the donor logcat carries the
+  // Android side into its own bounded file.
+  replace([
+    '      if ${BB} test -S /dev/log; then',
+    '        service_log_pipe="/run/reinvoke/logs/${service_name}.pipe"',
+  ].join('\n'), [
+    '      if ${BB} test -d /run/reinvoke/logs; then',
+    '        service_log_pipe="/run/reinvoke/logs/${service_name}.pipe"',
+  ].join('\n'));
+  replace([
+    '        ${BB} logger -t "reinvoke-${service_name}" \\',
+    '          <"${service_log_pipe}" &',
+    '        logger_pid="$!"',
+    '        ${BB} logger -t "reinvoke-${service_name}" \\',
+    '          "start uptime=$(${BB} cut -d\' \' -f1 /proc/uptime)"',
+  ].join('\n'), [
+    '        (',
+    '          while read -r service_log_line; do',
+    '            echo "reinvoke-${service_name}: ${service_log_line}"',
+    '          done <"${service_log_pipe}" \\',
+    '            >>/run/reinvoke/logs/runtime.log',
+    '        ) &',
+    '        logger_pid="$!"',
+    '        echo "reinvoke-${service_name}: start uptime=$(${BB} cut -d\' \' -f1 /proc/uptime)" \\',
+    '          >>/run/reinvoke/logs/runtime.log',
+  ].join('\n'));
+  // Nothing waits on a socket that no longer exists.
+  replace([
+    '  runtime_logger_attempt=0',
+    '  while ! ${BB} test -S /dev/log &&',
+    '    ${BB} test "${runtime_logger_attempt}" -lt 5; do',
+    '    ${BB} sleep 1',
+    '    runtime_logger_attempt=$((runtime_logger_attempt + 1))',
+    '  done',
+    '  ${BB} test -S /dev/log',
+  ].join('\n'), [
+    '  runtime_logger_attempt=0',
+    '  while ! ${BB} test -f /run/reinvoke/logs/android.log &&',
+    '    ${BB} test "${runtime_logger_attempt}" -lt 5; do',
+    '    ${BB} sleep 1',
+    '    runtime_logger_attempt=$((runtime_logger_attempt + 1))',
+    '  done',
+    '  ${BB} test -f /run/reinvoke/logs/android.log',
+  ].join('\n'));
+
   // Candidate 4.1. Android ueventd creates /dev/log as a directory of kernel
   // logger nodes, so BusyBox syslogd cannot create its socket at that path.
   // Observed on hardware: syslogd died with "bind: Address already in use",
@@ -99,20 +154,20 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
     'start_runtime_logger() {',
     '  (',
     '    while ! ${BB} test -e /run/reinvoke/shutdown; do',
+    '      ${BB} syslogd -n -S \\',
+    '        -O /run/reinvoke/logs/runtime.log -s 256 -b 1 &',
+    '      runtime_logger_pid="$!"',
+    '      echo "${runtime_logger_pid}" >/run/reinvoke/syslogd.pid',
     '',
   ].join('\n'), [
     'start_runtime_logger() {',
-    '  if ${BB} test -d /dev/log && ! ${BB} test -S /dev/log; then',
-    '    ${BB} rm -rf /dev/androidlog',
-    '    if ${BB} mv /dev/log /dev/androidlog; then',
-    '      log "kernel logger nodes moved to /dev/androidlog for the syslog socket"',
-    '    else',
-    '      log "kernel logger nodes could not be moved; runtime logging unavailable"',
-    '    fi',
-    '  fi',
     '  (',
     '    runtime_logger_failures=0',
     '    while ! ${BB} test -e /run/reinvoke/shutdown; do',
+    '      /system/bin/logcat -v threadtime \\',
+    '        -f /run/reinvoke/logs/android.log -r 256 -n 2 &',
+    '      runtime_logger_pid="$!"',
+    '      echo "${runtime_logger_pid}" >/run/reinvoke/syslogd.pid',
     '',
   ].join('\n'));
   replace([
@@ -254,6 +309,16 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
   replace('      --playback-lease /run/reinvoke/bluealsa-playback-active \\\n' +
     '      --playback-owner-executable "${runtime_bin}/bluealsa-aplay" \\',
     '      --playback-owner-executable /opt/bluedroid/lib/ld-linux-armhf.so.3 \\');
+  // One service missing its precondition must not silently cancel every
+  // service after it. Candidate 05.8.4 shipped an mcu-interface that refused
+  // its own flags, so the microphone state never appeared, this bare return
+  // fired, and dbus, identifiers, bluedroid, pairing-agent, dsp-interface and
+  // mic-capture were all skipped with nothing in the log to say why. The
+  // speaker came up with no Bluetooth and no DSP for one bad flag.
+  replace('      log "microphone privacy state was not initialized"\n' +
+    '      return\n',
+    '      pilot_failure "service-mcu-interface" \\\n' +
+    '        "microphone privacy state absent; continuing without it"\n');
   return text;
 }
 module.exports = { patchRuntime, INIT_SHA256 };

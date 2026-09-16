@@ -69,24 +69,11 @@ supervise() {
 }
 
 start_runtime_logger() {
-  # Android's ueventd creates /dev/log as a directory holding the kernel logger
-  # nodes. BusyBox syslogd must create its own socket at that exact path, so it
-  # dies with "bind: Address already in use" and the supervisor below retries
-  # forever, flooding the kernel log and destroying the evidence we need.
-  # Relocate the Android nodes once; nothing in this runtime reads them.
-  if ${BB} test -d /dev/log && ! ${BB} test -S /dev/log; then
-    ${BB} rm -rf /dev/androidlog
-    if ${BB} mv /dev/log /dev/androidlog; then
-      log "kernel logger nodes moved to /dev/androidlog for the syslog socket"
-    else
-      log "kernel logger nodes could not be moved; runtime logging unavailable"
-    fi
-  fi
   (
     runtime_logger_failures=0
     while ! ${BB} test -e /run/reinvoke/shutdown; do
-      ${BB} syslogd -n -S \
-        -O /run/reinvoke/logs/runtime.log -s 256 -b 1 &
+      /system/bin/logcat -v threadtime \
+        -f /run/reinvoke/logs/android.log -r 256 -n 2 &
       runtime_logger_pid="$!"
       echo "${runtime_logger_pid}" >/run/reinvoke/syslogd.pid
       if ${BB} test -e /run/reinvoke/shutdown; then
@@ -100,8 +87,8 @@ start_runtime_logger() {
         break
       fi
       log "runtime logger exited ${runtime_logger_status}"
-      # Count every unexpected exit, including a zero status: a logger that
-      # keeps exiting while the system runs is failing either way.
+      # Count every unexpected exit, including a zero status: a logger
+      # that keeps exiting while the system runs is failing either way.
       runtime_logger_failures=$((runtime_logger_failures + 1))
       if ${BB} test "${runtime_logger_failures}" -ge 5; then
         log "runtime logger failed ${runtime_logger_failures} times; retries stopped"
@@ -113,14 +100,13 @@ start_runtime_logger() {
   echo "$!" >/run/reinvoke/syslogd-supervisor.pid
 
   runtime_logger_attempt=0
-  while ! ${BB} test -S /dev/log &&
+  while ! ${BB} test -f /run/reinvoke/logs/android.log &&
     ${BB} test "${runtime_logger_attempt}" -lt 5; do
     ${BB} sleep 1
     runtime_logger_attempt=$((runtime_logger_attempt + 1))
   done
-  ${BB} test -S /dev/log
+  ${BB} test -f /run/reinvoke/logs/android.log
 }
-
 stop_service() {
   stop_name="$1"
   stop_pid_file="/run/reinvoke/${stop_name}.pid"
