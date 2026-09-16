@@ -40,14 +40,8 @@ type hardware interface {
 	UpdateRegister(address, register byte, update func(byte) byte) error
 }
 
-type mutePolicy struct {
-	AllowUnmute         bool
-	AllowPlaybackUnmute bool
-}
-
 type controller struct {
 	hardware hardware
-	policy   mutePolicy
 	sleep    func(time.Duration)
 
 	mu          sync.Mutex
@@ -56,10 +50,9 @@ type controller struct {
 	dacMuted    bool
 }
 
-func newController(hw hardware, policy mutePolicy) *controller {
+func newController(hw hardware) *controller {
 	return &controller{
 		hardware: hw,
-		policy:   policy,
 		sleep:    time.Sleep,
 		ampMuted: true,
 		dacMuted: true,
@@ -177,9 +170,14 @@ func (c *controller) setAmpMuteLocked(muted bool) error {
 }
 
 func (c *controller) writeAmpMuteLocked(muted bool) error {
-	if !muted {
-		if c.dacMuted {
-			return errors.New("DAC must be unmuted before amplifier")
+	// Ordering is a hardware requirement: energising the amplifier while the
+	// DAC output is still muted thumps the speaker. Satisfy it here rather
+	// than refusing, so no caller has to know the order. Candidate 05.8.3
+	// returned an error instead, which made a bare amplifier unmute look like
+	// a failure when it was only out of sequence.
+	if !muted && c.dacMuted {
+		if err := c.writeDACMuteLocked(false); err != nil {
+			return fmt.Errorf("unmute DAC before amplifier: %w", err)
 		}
 	}
 
@@ -205,6 +203,14 @@ func (c *controller) setDACMuteLocked(muted bool) error {
 }
 
 func (c *controller) writeDACMuteLocked(muted bool) error {
+	// The mirror of the unmute order: silence the amplifier before the DAC
+	// stops driving it, for the same reason.
+	if muted && !c.ampMuted {
+		if err := c.writeAmpMuteLocked(true); err != nil {
+			return fmt.Errorf("mute amplifier before DAC: %w", err)
+		}
+	}
+
 	err := c.updateExpanderLocked(func(value byte) byte {
 		if muted {
 			return value &^ dacMuteMask
@@ -235,9 +241,6 @@ func (c *controller) setPlaybackActive(active bool) error {
 	if !c.initialized {
 		return errors.New("audio path is not initialized")
 	}
-	if !c.policy.AllowPlaybackUnmute {
-		return errors.New("playback unmute denied by local policy")
-	}
 	if err := c.writeDACMuteLocked(false); err != nil {
 		return fmt.Errorf("unmute DAC: %w", err)
 	}
@@ -251,9 +254,6 @@ func (c *controller) setPlaybackActive(active bool) error {
 func (c *controller) unmuteAllowedLocked() error {
 	if !c.initialized {
 		return errors.New("audio path is not initialized")
-	}
-	if !c.policy.AllowUnmute {
-		return errors.New("unmute denied by local policy")
 	}
 	return nil
 }

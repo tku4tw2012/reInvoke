@@ -77,10 +77,14 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
   replace('      --lights-dir "${runtime_root}/share/lights"',
     '      --music-volume-state /run/reinvoke/music-volume \\\n' +
     '      --lights-dir "${runtime_root}/share/lights"');
-  replace('for service_name in mic-capture provision-windowd dsp-interface \\\n',
-    'for service_name in mic-capture provision-windowd wifi-resume dsp-interface \\\n');
+  replace('for service_name in mic-capture provision-windowd dsp-interface \\\n' +
+    '      pairing-agent-guard \\\n' +
+    '      bluealsa-aplay bluealsa bluetoothd dbus bonefish networkd; do',
+    'for service_name in mic-capture provision-windowd wifi-resume dsp-interface \\\n' +
+    '      pairing-agent bluedroid identifiers \\\n' +
+    '      dbus bonefish networkd; do');
   replace('  stop_service syslogd\n',
-    '  wait_service_stop bluetoothd\n' +
+    '  wait_service_stop bluedroid\n' +
     '  stop_service persistence\n' +
     '  wait_service_stop persistence\n' +
     '  stop_service syslogd\n');
@@ -239,6 +243,17 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
   // The pairing agent is this project's now, not the donor's BlueZ one.
   replace('      --pairing-agent-executable "${runtime_bin}/bluez-pairing-agent" \\',
     '      --pairing-agent-executable /opt/reinvoke/bin/reinvoke-pairing-agent \\');
+
+  // The amplifier is only unmuted while a verified renderer holds the playback
+  // device. That check still named bluealsa-aplay, which this candidate stops
+  // shipping: the donor Bluedroid stack renders in-process through
+  // BtSocketHandler::OpenAlsa. The owner is therefore the donor's loader, which
+  // is what /proc/<pid>/exe resolves to for that process. Observed on 05.8.3:
+  // the amplifier stayed muted for every source because the named owner could
+  // never exist, and WAMP unmute was refused as well.
+  replace('      --playback-lease /run/reinvoke/bluealsa-playback-active \\\n' +
+    '      --playback-owner-executable "${runtime_bin}/bluealsa-aplay" \\',
+    '      --playback-owner-executable /opt/bluedroid/lib/ld-linux-armhf.so.3 \\');
   return text;
 }
 module.exports = { patchRuntime, INIT_SHA256 };

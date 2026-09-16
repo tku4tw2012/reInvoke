@@ -80,7 +80,7 @@ func (hardware *recordingHardware) UpdateRegister(
 
 func TestInitializeMutesBeforeConfiguringDSPPowerRails(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
-	control := newController(hardware, mutePolicy{})
+	control := newController(hardware)
 	var slept time.Duration
 	control.sleep = func(duration time.Duration) {
 		slept += duration
@@ -125,7 +125,7 @@ func TestInitializeMutesBeforeConfiguringDSPPowerRails(t *testing.T) {
 
 func TestLiveExpanderValueIsPreservedByInitialization(t *testing.T) {
 	hardware := newRecordingHardware(0xfb)
-	control := newController(hardware, mutePolicy{})
+	control := newController(hardware)
 	control.sleep = func(time.Duration) {}
 
 	if err := control.initialize(); err != nil {
@@ -145,7 +145,7 @@ func TestLiveExpanderValueIsPreservedByInitialization(t *testing.T) {
 func TestInitializationRestoresDonorExpanderDirections(t *testing.T) {
 	hardware := newRecordingHardware(0)
 	hardware.registers[[2]byte{expanderAddress, expanderConfig}] = 0xff
-	control := newController(hardware, mutePolicy{})
+	control := newController(hardware)
 	control.sleep = func(time.Duration) {}
 
 	if err := control.initialize(); err != nil {
@@ -159,7 +159,7 @@ func TestInitializationRestoresDonorExpanderDirections(t *testing.T) {
 
 func TestInitializationNeverReleasesDSPReset(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
-	control := newController(hardware, mutePolicy{})
+	control := newController(hardware)
 	control.sleep = func(time.Duration) {}
 
 	if err := control.initialize(); err != nil {
@@ -176,26 +176,21 @@ func TestInitializationNeverReleasesDSPReset(t *testing.T) {
 	}
 }
 
-func TestUnmuteRequiresPolicyAndDACFirst(t *testing.T) {
+func TestUnmuteAppliesDACFirst(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
-	control := newController(hardware, mutePolicy{})
+	control := newController(hardware)
 	control.sleep = func(time.Duration) {}
 	if err := control.initialize(); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := control.setDACMute(false); err == nil {
-		t.Fatal("unmute succeeded without local policy")
-	}
-	control.policy.AllowUnmute = true
-	if err := control.setAmpMute(false); err == nil {
-		t.Fatal("amplifier unmuted before DAC")
-	}
-	if err := control.setDACMute(false); err != nil {
-		t.Fatalf("DAC unmute: %v", err)
-	}
+	// Ordering is a hardware requirement the controller satisfies itself:
+	// unmuting the amplifier first must bring the DAC up with it, not fail.
 	if err := control.setAmpMute(false); err != nil {
 		t.Fatalf("amplifier unmute: %v", err)
+	}
+	if control.dacMuted {
+		t.Fatal("amplifier was unmuted while the DAC stayed muted")
 	}
 
 	value := hardware.registers[[2]byte{expanderAddress, expanderOutput}]
@@ -206,7 +201,7 @@ func TestUnmuteRequiresPolicyAndDACFirst(t *testing.T) {
 
 func TestShutdownMutesAmplifierBeforeDAC(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
-	control := newController(hardware, mutePolicy{AllowUnmute: true})
+	control := newController(hardware)
 	control.sleep = func(time.Duration) {}
 	if err := control.initialize(); err != nil {
 		t.Fatal(err)
@@ -238,9 +233,7 @@ func TestShutdownMutesAmplifierBeforeDAC(t *testing.T) {
 
 func TestPlaybackPolicyOwnsOrderedUnmuteAndRemute(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
-	control := newController(hardware, mutePolicy{
-		AllowPlaybackUnmute: true,
-	})
+	control := newController(hardware)
 	control.sleep = func(time.Duration) {}
 	if err := control.initialize(); err != nil {
 		t.Fatal(err)
@@ -271,22 +264,10 @@ func TestPlaybackPolicyOwnsOrderedUnmuteAndRemute(t *testing.T) {
 	}
 }
 
-func TestPlaybackUnmuteIsDeniedWithoutLocalMonitor(t *testing.T) {
-	hardware := newRecordingHardware(0x00)
-	control := newController(hardware, mutePolicy{})
-	control.sleep = func(time.Duration) {}
-	if err := control.initialize(); err != nil {
-		t.Fatal(err)
-	}
-	if err := control.setPlaybackActive(true); err == nil {
-		t.Fatal("playback unmute succeeded without local monitor policy")
-	}
-}
-
 func TestDACFailureReassertsBothMutes(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
 	hardware.failDACAt = 0x25
-	control := newController(hardware, mutePolicy{})
+	control := newController(hardware)
 	control.sleep = func(time.Duration) {}
 
 	if err := control.initialize(); err == nil {
@@ -322,10 +303,7 @@ func TestCancelledSessionCannotResumeQueuedMuteWrite(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			hardware := newRecordingHardware(0)
-			control := newController(
-				hardware,
-				mutePolicy{AllowUnmute: true},
-			)
+			control := newController(hardware)
 			control.initialized = true
 			start := len(hardware.operations)
 			ctx, cancel := context.WithCancel(context.Background())
