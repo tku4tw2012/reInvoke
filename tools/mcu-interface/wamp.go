@@ -48,20 +48,29 @@ var procedures = []string{
 	"com.harman.ledSet",
 	"com.harman.ledOff",
 	"com.harman.dsp.micMute",
+	// The donor Bluedroid stack calls these to report its own state. Both were
+	// unregistered on 05.8 and every report was rejected with
+	// wamp.error.no_such_procedure: extStateUpdate nine times, including the
+	// "connected" report that should light the rear indicator, and
+	// nowPlayingUpdate thirteen times.
+	"com.harman.extStateUpdate",
+	"com.harman.source.nowPlayingUpdate",
 }
 
 type wampService struct {
-	address       string
-	realm         string
-	controller    *controller
-	media         *dspVolumeController
-	lights        *ledPlayer
-	indicatorLEDs *indicatorLEDController
-	events        eventSource
-	version       string
-	flushEvents   bool
-	privacy       *microphonePrivacyController
-	logf          func(string, ...interface{})
+	address        string
+	realm          string
+	controller     *controller
+	media          *dspVolumeController
+	lights         *ledPlayer
+	indicatorLEDs  *indicatorLEDController
+	events         eventSource
+	version        string
+	flushEvents    bool
+	privacy        *microphonePrivacyController
+	bluetoothState string
+	playbackStatus string
+	logf           func(string, ...interface{})
 }
 
 type wampConnection struct {
@@ -176,6 +185,21 @@ func (service *wampService) run(ctx context.Context) error {
 			topic, args := event.publication()
 			if err := client.publish(topic, args); err != nil {
 				return err
+			}
+			// Announce what the press means as well as which key it was, so a
+			// future owner of the button state machine can subscribe instead
+			// of re-deriving the mapping.
+			if action := resolveButtonAction(
+				event,
+				service.playbackStatus,
+				nil,
+			); action != "" {
+				if err := client.publish(
+					buttonActionTopic,
+					[]interface{}{action, event.Name},
+				); err != nil {
+					return err
+				}
 			}
 		case message, ok := <-messages:
 			if !ok {
@@ -312,6 +336,30 @@ func (service *wampService) handleInvocation(
 			invocationError = errors.New("invalid argument format")
 		} else {
 			result = []interface{}{service.version}
+		}
+	case "com.harman.extStateUpdate":
+		if !kwargsValid {
+			invocationError = errors.New("invalid argument format")
+			break
+		}
+		var indicator string
+		indicator, invocationError = bluetoothStateReport(args, kwargs)
+		// An empty indicator with no error means the report was for another
+		// subsystem: accept it without touching the Bluetooth state.
+		if invocationError == nil && indicator != "" {
+			invocationError = writeBluetoothState(
+				service.bluetoothState,
+				indicator,
+			)
+			if invocationError == nil && service.logf != nil {
+				service.logf("bluetooth state reported: %s", indicator)
+			}
+		}
+	case "com.harman.source.nowPlayingUpdate":
+		// Accepted so the donor stack stops erroring; the payload carries
+		// track metadata this runtime does not render.
+		if len(args) != 1 {
+			invocationError = errors.New("invalid argument format")
 		}
 	case "com.harman.vui.mutedaccontrol":
 		invocationError = applyMuteCommand(
