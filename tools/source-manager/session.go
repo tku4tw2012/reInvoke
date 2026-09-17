@@ -37,6 +37,15 @@ var procedures = []string{
 	"com.harman.music.resume",
 	"com.harman.music.stop",
 	"com.harman.music.cmdPlayPause",
+	// The active source reports where it is in the track; the manager relays
+	// that to anything watching. The donor split these in two: sources push
+	// source.trackPositionUpdate, listeners watch music.trackPositionChanged.
+	"com.harman.source.trackPositionUpdate",
+	// Per-source volume. The donor kept this separate from the master level so
+	// that switching sources did not carry one source's setting to the next.
+	"com.harman.source.volumeSet",
+	// Orderly shutdown, which podium.conf used to stop services in sequence.
+	"com.harman.music-source-manager.shutdown",
 }
 
 func (s *service) run(ctx context.Context, address, realm, name string) error {
@@ -236,6 +245,37 @@ func (s *service) handle(procedure string, args []interface{}) ([]interface{}, e
 			return nil, err
 		}
 		_ = s.publishState("stopped", s.sources.Active())
+		return []interface{}{}, nil
+
+	case "com.harman.source.trackPositionUpdate":
+		position, duration, err := trackPosition(args)
+		if err != nil {
+			return nil, err
+		}
+		// Relayed rather than stored: nothing on this unit displays it, and a
+		// remembered position would go stale the moment the phone seeks.
+		_ = s.publish("com.harman.music.trackPositionChanged",
+			[]interface{}{s.sources.Active(), position, duration})
+		return []interface{}{}, nil
+
+	case "com.harman.source.volumeSet":
+		uri, level, err := sourceVolume(args)
+		if err != nil {
+			return nil, err
+		}
+		if uri == "" {
+			uri = s.sources.Active()
+		}
+		if err := s.sources.SetVolume(uri, level); err != nil {
+			return nil, err
+		}
+		_ = s.publish("com.harman.source.volumeChanged",
+			[]interface{}{uri, int64(level)})
+		return []interface{}{}, nil
+
+	case "com.harman.music-source-manager.shutdown":
+		s.logf("shutdown requested")
+		s.requestShutdown()
 		return []interface{}{}, nil
 	}
 	return nil, fmt.Errorf("unhandled procedure %s", procedure)

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -59,6 +60,11 @@ type dspVolumeController struct {
 	mu     sync.Mutex
 	volume int
 	muted  bool
+	// duck holds the strongest attenuation any caller has asked for. The donor
+	// kept a map of named duck requests so that a voice prompt and an alert
+	// could overlap without either one restoring full volume while the other
+	// was still speaking; the same applies here even with one caller.
+	ducks map[string]duckState
 
 	// musicStatePath, when set, remembers the chosen level across restarts.
 	musicStatePath string
@@ -69,6 +75,52 @@ type dspVolumeController struct {
 type volumeSnapshot struct {
 	Volume int
 	Muted  bool
+	// Duck reports the attenuation in force, for callers that want to know why
+	// the level they set is not the level being played.
+	Duck string
+}
+
+// duckState is the donor's aui::DuckState. The donor attenuated rather than
+// muted, and distinguished a partial duck from a near-silent one, which is why
+// a voice prompt left music faintly audible underneath.
+type duckState int
+
+const (
+	duckNone duckState = iota
+	duckSoft
+	duckHard
+)
+
+// duckScale is the proportion of the chosen level that survives each duck.
+// The donor's exact ratios are not recorded in any file recovered from this
+// unit, so these are this project's values and are labelled as such rather
+// than presented as the vendor's.
+var duckScale = map[duckState]int{
+	duckNone: 100,
+	duckSoft: 40,
+	duckHard: 10,
+}
+
+func parseDuckState(name string) (duckState, error) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "none", "off":
+		return duckNone, nil
+	case "soft":
+		return duckSoft, nil
+	case "hard":
+		return duckHard, nil
+	}
+	return duckNone, fmt.Errorf("unknown duck state %q", name)
+}
+
+func (state duckState) String() string {
+	switch state {
+	case duckSoft:
+		return "soft"
+	case duckHard:
+		return "hard"
+	}
+	return "none"
 }
 
 // defaultVolume is the vendor's own starting level, recovered from its
@@ -170,10 +222,53 @@ func (controller *dspVolumeController) RequestPush() {
 func (controller *dspVolumeController) effectiveLevel() int {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
+	return controller.effectiveLevelLocked()
+}
+
+func (controller *dspVolumeController) effectiveLevelLocked() int {
 	if controller.muted {
 		return 0
 	}
-	return controller.volume
+	return controller.volume * duckScale[controller.strongestDuckLocked()] / 100
+}
+
+// strongestDuckLocked reports the deepest attenuation currently requested, so
+// releasing one duck while another is still held does not restore full volume.
+func (controller *dspVolumeController) strongestDuckLocked() duckState {
+	strongest := duckNone
+	for _, state := range controller.ducks {
+		if state > strongest {
+			strongest = state
+		}
+	}
+	return strongest
+}
+
+// SetDuck records or clears one named duck request and returns the resulting
+// state. Clearing is asking for "none", which is how the donor released one.
+func (controller *dspVolumeController) SetDuck(
+	ctx context.Context,
+	name string,
+	state duckState,
+) (volumeSnapshot, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return volumeSnapshot{}, errors.New("duck name is required")
+	}
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	if controller.ducks == nil {
+		controller.ducks = map[string]duckState{}
+	}
+	if state == duckNone {
+		delete(controller.ducks, name)
+	} else {
+		controller.ducks[name] = state
+	}
+	if err := controller.applyLocked(ctx); err != nil {
+		return controller.snapshotLocked(), err
+	}
+	return controller.snapshotLocked(), nil
 }
 
 // Run keeps the DSP at the level this controller holds, until the context is
@@ -261,7 +356,11 @@ func (controller *dspVolumeController) pushVolume(
 }
 
 func (controller *dspVolumeController) snapshotLocked() volumeSnapshot {
-	return volumeSnapshot{Volume: controller.volume, Muted: controller.muted}
+	return volumeSnapshot{
+		Volume: controller.volume,
+		Muted:  controller.muted,
+		Duck:   controller.strongestDuckLocked().String(),
+	}
 }
 
 func (controller *dspVolumeController) Snapshot(

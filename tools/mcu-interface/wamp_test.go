@@ -64,6 +64,11 @@ func TestMinimumWAMPSurface(t *testing.T) {
 		"com.harman.dsp.micMute",
 		"com.harman.extStateUpdate",
 		"com.harman.source.nowPlayingUpdate",
+		"com.harman.aui.adjustVolume",
+		"com.harman.aui.toggleMute",
+		"com.harman.volume.setDuck",
+		"com.harman.reboot",
+		"com.harman.timezoneSet",
 	}
 	if !reflect.DeepEqual(procedures, expected) {
 		t.Fatalf("procedures = %#v, want %#v", procedures, expected)
@@ -328,10 +333,32 @@ func TestServiceRegistersAndPublishesVerifiedEvent(t *testing.T) {
 				return
 			}
 		}
-		event, err := router.readFrame()
+		// Readiness must be published as soon as registration completes, and
+		// must come before anything else: a dependant gated on it is waiting
+		// for a service that can answer. Asserting the order here rather than
+		// skipping it keeps the skip below from hiding a missing publish.
+		first, err := router.readFrame()
 		if err != nil {
 			routerDone <- err
 			return
+		}
+		if topic, _ := first[3].(string); topic != readyTopic+mcuServiceName {
+			routerDone <- &unexpectedMessage{message: first}
+			return
+		}
+		// A heartbeat may overtake the rotary event; skip only those.
+		var event []interface{}
+		for {
+			frame, err := router.readFrame()
+			if err != nil {
+				routerDone <- err
+				return
+			}
+			if topic, _ := frame[3].(string); strings.HasPrefix(topic, heartbeatTopic) {
+				continue
+			}
+			event = frame
+			break
 		}
 		published <- event
 		routerDone <- nil

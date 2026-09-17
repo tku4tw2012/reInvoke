@@ -5,6 +5,8 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -26,10 +28,45 @@ type registry struct {
 	registered map[string]bool
 	order      []string
 	active     string
+	// volume is per source. The donor kept these apart from the master level so
+	// that moving between sources did not carry one source's setting onto the
+	// next, which is why its Bluetooth volume survived a switch away and back.
+	volume map[string]int
 }
 
 func newRegistry() *registry {
-	return &registry{registered: map[string]bool{}}
+	return &registry{registered: map[string]bool{}, volume: map[string]int{}}
+}
+
+// SetVolume records a level for one source. An unregistered source is refused,
+// because a level held for a source that never registered would be applied to
+// nothing and silently diverge from what the caller believes.
+func (r *registry) SetVolume(uri string, level int) error {
+	uri = strings.TrimSpace(uri)
+	if uri == "" {
+		return errors.New("source is required")
+	}
+	if level < 0 || level > 100 {
+		return fmt.Errorf("volume %d is outside 0 to 100", level)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.registered[uri] {
+		return fmt.Errorf("source %s is not registered", uri)
+	}
+	if r.volume == nil {
+		r.volume = map[string]int{}
+	}
+	r.volume[uri] = level
+	return nil
+}
+
+// Volume reports a source's level and whether one was ever set for it.
+func (r *registry) Volume(uri string) (int, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	level, known := r.volume[uri]
+	return level, known
 }
 
 // Register admits a source. Re-registering an existing source is not an error;

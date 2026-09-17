@@ -114,3 +114,116 @@ func TestFlushClearsEverything(t *testing.T) {
 		t.Errorf("registered = %v after flush, want empty", got)
 	}
 }
+
+// TestPerSourceVolumeIsKeptApart proves one source's level does not become
+// another's. The donor kept these separate so switching sources and back
+// returned to the level that source was last set to.
+func TestPerSourceVolumeIsKeptApart(t *testing.T) {
+	r := newRegistry()
+	for _, uri := range []string{"com.harman.bluetooth", "com.harman.linein"} {
+		if err := r.Register(uri); err != nil {
+			t.Fatalf("register %s: %v", uri, err)
+		}
+	}
+	if err := r.SetVolume("com.harman.bluetooth", 70); err != nil {
+		t.Fatalf("set bluetooth volume: %v", err)
+	}
+	if err := r.SetVolume("com.harman.linein", 20); err != nil {
+		t.Fatalf("set linein volume: %v", err)
+	}
+	if level, known := r.Volume("com.harman.bluetooth"); !known || level != 70 {
+		t.Fatalf("bluetooth volume is %d (known=%v), expected 70", level, known)
+	}
+	if level, known := r.Volume("com.harman.linein"); !known || level != 20 {
+		t.Fatalf("linein volume is %d (known=%v), expected 20", level, known)
+	}
+	if _, known := r.Volume("com.harman.never"); known {
+		t.Fatal("an unset source reported a volume")
+	}
+}
+
+// TestSetVolumeRefusesUnknownSourceAndRange proves the registry does not accept
+// a level for a source that never registered, or one outside the scale.
+func TestSetVolumeRefusesUnknownSourceAndRange(t *testing.T) {
+	r := newRegistry()
+	if err := r.SetVolume("com.harman.bluetooth", 50); err == nil {
+		t.Fatal("accepted a volume for an unregistered source")
+	}
+	if err := r.Register("com.harman.bluetooth"); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	for _, level := range []int{-1, 101} {
+		if err := r.SetVolume("com.harman.bluetooth", level); err == nil {
+			t.Fatalf("accepted out-of-range volume %d", level)
+		}
+	}
+	if err := r.SetVolume("", 50); err == nil {
+		t.Fatal("accepted an empty source")
+	}
+}
+
+// TestTrackPositionAcceptsDonorShapes proves the relay reads the payloads the
+// donor actually sent, including the form with a leading source URI, and
+// rejects the ones it never sent.
+func TestTrackPositionAcceptsDonorShapes(t *testing.T) {
+	position, duration, err := trackPosition([]interface{}{int64(30), int64(210)})
+	if err != nil || position != 30 || duration != 210 {
+		t.Fatalf("bare pair gave %d,%d,%v", position, duration, err)
+	}
+	position, duration, err = trackPosition(
+		[]interface{}{"com.harman.bluetooth", int64(5), int64(9)})
+	if err != nil || position != 5 || duration != 9 {
+		t.Fatalf("leading URI gave %d,%d,%v", position, duration, err)
+	}
+	if _, _, err := trackPosition([]interface{}{int64(7)}); err != nil {
+		t.Fatalf("position without duration was rejected: %v", err)
+	}
+	for _, args := range [][]interface{}{
+		{},
+		{int64(-1)},
+		{"com.harman.bluetooth"},
+		{int64(1), int64(-2)},
+		{int64(1), int64(2), int64(3), int64(4)},
+	} {
+		if _, _, err := trackPosition(args); err == nil {
+			t.Fatalf("trackPosition accepted %v", args)
+		}
+	}
+}
+
+// TestSourceVolumeArguments proves the volumeSet payload reader accepts both
+// the addressed and the implicit form and refuses anything else.
+func TestSourceVolumeArguments(t *testing.T) {
+	uri, level, err := sourceVolume([]interface{}{"com.harman.bluetooth", int64(40)})
+	if err != nil || uri != "com.harman.bluetooth" || level != 40 {
+		t.Fatalf("addressed form gave %q,%d,%v", uri, level, err)
+	}
+	uri, level, err = sourceVolume([]interface{}{int64(40)})
+	if err != nil || uri != "" || level != 40 {
+		t.Fatalf("implicit form gave %q,%d,%v", uri, level, err)
+	}
+	for _, args := range [][]interface{}{
+		{},
+		{int64(101)},
+		{int64(-1)},
+		{"com.harman.bluetooth", "loud"},
+		{int64(1), int64(2), int64(3)},
+	} {
+		if _, _, err := sourceVolume(args); err == nil {
+			t.Fatalf("sourceVolume accepted %v", args)
+		}
+	}
+}
+
+// TestShutdownIsIdempotent proves a repeated shutdown request does not panic on
+// a closed channel. podium.conf stopped services by name and could repeat.
+func TestShutdownIsIdempotent(t *testing.T) {
+	s := &service{sources: newRegistry(), shutdown: make(chan struct{}), logf: func(string, ...interface{}) {}}
+	s.requestShutdown()
+	s.requestShutdown()
+	select {
+	case <-s.shutdown:
+	default:
+		t.Fatal("shutdown was not signalled")
+	}
+}

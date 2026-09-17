@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -43,7 +44,108 @@ type service struct {
 	mu   sync.Mutex
 	conn *connection
 
+	// shutdown is closed when a peer asks this service to stop, so the process
+	// exits through the same path as a signal rather than being killed.
+	shutdownOnce sync.Once
+	shutdown     chan struct{}
+
 	logf func(string, ...interface{})
+}
+
+// requestShutdown asks the process to stop. It is safe to call more than once,
+// because podium.conf stopped services by name and could repeat a request.
+func (s *service) requestShutdown() {
+	s.shutdownOnce.Do(func() {
+		if s.shutdown != nil {
+			close(s.shutdown)
+		}
+	})
+}
+
+// publish emits an event if a session is up. A missing session is not an error:
+// events are advisory, and dropping one is better than failing the call that
+// produced it.
+func (s *service) publish(topic string, args []interface{}) error {
+	s.mu.Lock()
+	conn := s.conn
+	s.mu.Unlock()
+	if conn == nil {
+		return nil
+	}
+	return conn.publish(topic, args)
+}
+
+// trackPosition reads a [position, duration] payload in seconds. The donor sent
+// milliseconds from AVRCP; this keeps whatever unit the caller used and only
+// rejects values that cannot be a position.
+func trackPosition(args []interface{}) (int64, int64, error) {
+	if len(args) < 1 || len(args) > 3 {
+		return 0, 0, errors.New("invalid argument format")
+	}
+	// A leading source URI is accepted because the donor sent one from some
+	// call sites and not others.
+	if uri, ok := args[0].(string); ok {
+		_ = uri
+		args = args[1:]
+	}
+	if len(args) == 0 {
+		return 0, 0, errors.New("track position is required")
+	}
+	position, ok := signedNumber(args[0])
+	if !ok || position < 0 {
+		return 0, 0, errors.New("track position must be a non-negative number")
+	}
+	var duration int64
+	if len(args) > 1 {
+		value, ok := signedNumber(args[1])
+		if !ok || value < 0 {
+			return 0, 0, errors.New("track duration must be a non-negative number")
+		}
+		duration = value
+	}
+	return position, duration, nil
+}
+
+// sourceVolume reads a volumeSet payload. The source URI is optional; without
+// one the caller means the active source.
+func sourceVolume(args []interface{}) (string, int, error) {
+	if len(args) == 0 || len(args) > 2 {
+		return "", 0, errors.New("invalid argument format")
+	}
+	uri := ""
+	if len(args) == 2 {
+		name, ok := args[0].(string)
+		if !ok {
+			return "", 0, errors.New("source must be a string")
+		}
+		uri = name
+		args = args[1:]
+	}
+	level, ok := signedNumber(args[0])
+	if !ok {
+		return "", 0, errors.New("volume must be a number")
+	}
+	if level < 0 || level > 100 {
+		return "", 0, fmt.Errorf("volume %d is outside 0 to 100", level)
+	}
+	return uri, int(level), nil
+}
+
+func signedNumber(value interface{}) (int64, bool) {
+	switch number := value.(type) {
+	case int64:
+		return number, true
+	case uint64:
+		return int64(number), true
+	case int:
+		return int64(number), true
+	case float64:
+		if number != float64(int64(number)) {
+			return 0, false
+		}
+		return int64(number), true
+	}
+	return 0, false
 }
 
 // call invokes a procedure on whichever peer provides it, ignoring the result.
@@ -81,7 +183,11 @@ func main() {
 	log.SetFlags(0)
 	log.SetPrefix("source-manager: ")
 
-	s := &service{sources: newRegistry(), logf: log.Printf}
+	s := &service{
+		sources:  newRegistry(),
+		shutdown: make(chan struct{}),
+		logf:     log.Printf,
+	}
 	for _, uri := range strings.Split(*seed, ",") {
 		uri = strings.TrimSpace(uri)
 		if uri == "" {
@@ -98,7 +204,13 @@ func main() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
-		<-signals
+		// A shutdown procedure and a signal mean the same thing: stop. Both
+		// end the run loop rather than killing the process, so the session is
+		// closed cleanly and the router is not left with a half-open peer.
+		select {
+		case <-signals:
+		case <-s.shutdown:
+		}
 		cancel()
 	}()
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -33,6 +34,17 @@ const (
 	maxDeferredSetupMessages = 256
 	dspSessionTopic          = "com.reinvoke.dsp.session"
 	dspBootTopic             = "com.harman.dsp.bootup"
+
+	// Lifecycle topics. The donor's system-manager watched these and logged
+	// ": heartbeats timed out!" when one stopped arriving; a pid file cannot
+	// tell a forked process from a usable one.
+	readyTopic     = "com.harman.ready."
+	heartbeatTopic = "com.harman.heartbeat."
+	mcuServiceName = "mcu-interface"
+	// Well inside the donor's own timeout, so one missed tick is not a fault.
+	// Distinct from mcuHeartbeatInterval, which paces the I2C keepalive to the
+	// microcontroller; this one paces the WAMP lifecycle topic.
+	lifecycleHeartbeatInterval = 10 * time.Second
 )
 
 var procedures = []string{
@@ -55,6 +67,18 @@ var procedures = []string{
 	// nowPlayingUpdate thirteen times.
 	"com.harman.extStateUpdate",
 	"com.harman.source.nowPlayingUpdate",
+	// The donor's audio-ui facade. These are the names a user interface calls;
+	// they carry the same meaning as the volume procedures above, so they are
+	// answered by the same controller rather than by a parallel one.
+	"com.harman.aui.adjustVolume",
+	"com.harman.aui.toggleMute",
+	// Ducking attenuates rather than mutes, so a prompt can speak over music
+	// without stopping it. aui::VolumeManager::softvol_control::set_duck.
+	"com.harman.volume.setDuck",
+	// System control the donor put in system-manager. This runtime has no such
+	// service, and mcu-interface already owns the hardware a reboot acts on.
+	"com.harman.reboot",
+	"com.harman.timezoneSet",
 }
 
 type wampService struct {
@@ -121,6 +145,30 @@ func (service *wampService) run(ctx context.Context) error {
 		stopSession()
 		return err
 	}
+
+	// The donor published readiness and a heartbeat for every service, and
+	// podium.conf gated dependants on them. Readiness is announced only now,
+	// after every registration succeeded, so a waiter is waiting for a service
+	// that can actually answer rather than one that has merely started.
+	if err := client.publish(readyTopic+mcuServiceName, nil); err != nil {
+		stopSession()
+		return err
+	}
+	heartbeats := time.NewTicker(lifecycleHeartbeatInterval)
+	defer heartbeats.Stop()
+	go func() {
+		for {
+			select {
+			case <-sessionContext.Done():
+				return
+			case <-heartbeats.C:
+				if err := client.publish(heartbeatTopic+mcuServiceName, nil); err != nil {
+					service.logf("HEARTBEAT_FAILED: %v", err)
+					return
+				}
+			}
+		}
+	}()
 
 	messages := make(chan []interface{})
 	readErrors := make(chan error, 1)
@@ -420,6 +468,67 @@ func (service *wampService) handleInvocation(
 		}
 		if invocationError == nil {
 			snapshot, invocationError = service.media.SetMuted(ctx, muted)
+		}
+		if invocationError == nil {
+			result = []interface{}{snapshot.Muted, "music"}
+			resultKwargs = mediaVolumeState(snapshot)
+			events = mediaVolumeEvents(snapshot, true)
+		}
+	case "com.harman.aui.adjustVolume":
+		var snapshot volumeSnapshot
+		var delta int
+		delta, invocationError = mediaIntegerArgument(args, true)
+		if invocationError == nil && service.media == nil {
+			invocationError = errors.New("media backend is unavailable")
+		}
+		if invocationError == nil {
+			snapshot, invocationError = service.media.AdjustVolume(ctx, delta)
+		}
+		if invocationError == nil {
+			result = []interface{}{snapshot.Volume, "music"}
+			resultKwargs = mediaVolumeState(snapshot)
+			events = mediaVolumeEvents(snapshot, false)
+		}
+	case "com.harman.volume.setDuck":
+		var snapshot volumeSnapshot
+		var name string
+		var state duckState
+		name, state, invocationError = duckArguments(args)
+		if invocationError == nil && service.media == nil {
+			invocationError = errors.New("media backend is unavailable")
+		}
+		if invocationError == nil {
+			snapshot, invocationError = service.media.SetDuck(ctx, name, state)
+		}
+		if invocationError == nil {
+			result = []interface{}{snapshot.Duck, name}
+			resultKwargs = mediaVolumeState(snapshot)
+		}
+	case "com.harman.timezoneSet":
+		var zone string
+		zone, invocationError = firstStringArgument(args)
+		if invocationError == nil {
+			invocationError = applyTimezone(zone)
+		}
+		if invocationError == nil {
+			result = []interface{}{zone}
+		}
+	case "com.harman.reboot":
+		// Answered before acting: a caller that never gets a reply cannot tell
+		// a reboot from a service that died.
+		service.logf("REBOOT_REQUESTED")
+		result = []interface{}{true}
+		events = []mediaEvent{{topic: "com.harman.rebooting", args: []interface{}{}}}
+		defer requestReboot(service.logf)
+	case "com.harman.aui.toggleMute":
+		var snapshot volumeSnapshot
+		if len(args) != 0 {
+			invocationError = errors.New("invalid argument format")
+		} else if service.media == nil {
+			invocationError = errors.New("media backend is unavailable")
+		}
+		if invocationError == nil {
+			snapshot, invocationError = service.media.ToggleMuted(ctx)
 		}
 		if invocationError == nil {
 			result = []interface{}{snapshot.Muted, "music"}
@@ -940,4 +1049,39 @@ func unsigned(value interface{}) (uint64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// duckArguments reads a setDuck payload of [name, state]. The donor named each
+// duck so overlapping requests could be released independently.
+func duckArguments(args []interface{}) (string, duckState, error) {
+	if len(args) == 0 || len(args) > 2 {
+		return "", duckNone, errors.New("invalid argument format")
+	}
+	name, ok := args[0].(string)
+	if !ok || strings.TrimSpace(name) == "" {
+		return "", duckNone, errors.New("duck name must be a non-empty string")
+	}
+	if len(args) == 1 {
+		return name, duckNone, nil
+	}
+	requested, ok := args[1].(string)
+	if !ok {
+		return "", duckNone, errors.New("duck state must be a string")
+	}
+	state, err := parseDuckState(requested)
+	if err != nil {
+		return "", duckNone, err
+	}
+	return name, state, nil
+}
+
+func firstStringArgument(args []interface{}) (string, error) {
+	if len(args) != 1 {
+		return "", errors.New("invalid argument format")
+	}
+	value, ok := args[0].(string)
+	if !ok || strings.TrimSpace(value) == "" {
+		return "", errors.New("expected a non-empty string")
+	}
+	return strings.TrimSpace(value), nil
 }
