@@ -134,3 +134,71 @@ func TestMuteAppliesZeroAndRestores(t *testing.T) {
 		t.Errorf("restored level = %d, want 40", level)
 	}
 }
+
+// fakeSoftvol records every value written so a test can assert the path taken,
+// not just the destination.
+type fakeSoftvol struct {
+	value   int
+	written []int
+}
+
+func (f *fakeSoftvol) Read() (int, error) { return f.value, nil }
+func (f *fakeSoftvol) Write(v int) error {
+	f.value = v
+	f.written = append(f.written, v)
+	return nil
+}
+
+// The donor faded its softvol on a tick rather than jumping. Jumping is what a
+// listener heard as a stutter during a rotary sweep, so the intermediate steps
+// are the behaviour under test, not an implementation detail.
+func TestFadeWalksToTargetInSteps(t *testing.T) {
+	controller := newTestVolumeController(t)
+	fake := &fakeSoftvol{value: 0}
+	controller.softvol = fake
+
+	if err := controller.fadeToTarget(context.Background(), 60); err != nil {
+		t.Fatalf("fadeToTarget: %v", err)
+	}
+	if len(fake.written) < 2 {
+		t.Fatalf("expected a fade, got a jump: %v", fake.written)
+	}
+	if got := fake.written[len(fake.written)-1]; got != 60 {
+		t.Errorf("final value = %d, want 60", got)
+	}
+	for i, v := range fake.written {
+		if i > 0 && v-fake.written[i-1] > volumeFadeStep {
+			t.Errorf("step %d -> %d exceeds %d", fake.written[i-1], v, volumeFadeStep)
+		}
+	}
+}
+
+func TestFadeDescendsAndStopsExactly(t *testing.T) {
+	controller := newTestVolumeController(t)
+	fake := &fakeSoftvol{value: 200}
+	controller.softvol = fake
+
+	if err := controller.fadeToTarget(context.Background(), 13); err != nil {
+		t.Fatalf("fadeToTarget: %v", err)
+	}
+	if got := fake.value; got != 13 {
+		t.Errorf("final value = %d, want 13", got)
+	}
+	for _, v := range fake.written {
+		if v < 13 {
+			t.Errorf("fade undershot to %d", v)
+		}
+	}
+}
+
+// Percent maps onto the control's own 0..255 range; the ends must be exact so
+// zero is silent and full is full.
+func TestSoftvolPercentMapping(t *testing.T) {
+	for _, c := range []struct{ percent, want int }{
+		{0, 0}, {100, softvolMax}, {50, 127}, {-5, 0}, {150, softvolMax},
+	} {
+		if got := softvolForPercent(c.percent); got != c.want {
+			t.Errorf("softvolForPercent(%d) = %d, want %d", c.percent, got, c.want)
+		}
+	}
+}

@@ -62,6 +62,16 @@ func main() {
 		"",
 		"executable permitted to activate the physical playback path",
 	)
+	softvolCard := flag.Int(
+		"softvol-card",
+		0,
+		"ALSA card carrying the softvol controls",
+	)
+	softvolControl := flag.String(
+		"softvol-control",
+		"music",
+		"ALSA softvol control the user volume rides on; empty disables it",
+	)
 	musicVolumeState := flag.String(
 		"music-volume-state",
 		"",
@@ -211,6 +221,19 @@ func main() {
 		media.realm = *realm
 		media.dspProcedure = "com.harman.dsp.volumeSet"
 		media.logf = log.Printf
+		// The control only exists once the donor stack has opened the named
+		// PCM, so element lookups fail until then. Opening the card now and
+		// letting the worker retry keeps that a transient, logged condition
+		// rather than a startup failure.
+		if *softvolControl != "" {
+			control, err := openSoftvol(*softvolCard, *softvolControl)
+			if err != nil {
+				log.Printf("open softvol %s: %v", *softvolControl, err)
+			} else {
+				defer control.Close()
+				media.softvol = control
+			}
+		}
 		inputControls = append(inputControls, media)
 		volumeDone = make(chan struct{})
 		go func() {

@@ -51,6 +51,11 @@ type dspVolumeController struct {
 	// nil and the subprocess caller is used.
 	push func(context.Context, int) error
 
+	// softvol is the ALSA control that actually carries the user volume. The
+	// DSP keeps whatever gain it booted with; attenuating there instead cost a
+	// forked process per rotary detent and stuttered during playback.
+	softvol softvolWriter
+
 	mu     sync.Mutex
 	volume int
 	muted  bool
@@ -78,6 +83,13 @@ const (
 	volumePushTimeout = 3 * time.Second
 	// volumeRetryDelay spaces retries while the DSP service is still coming up.
 	volumeRetryDelay = 5 * time.Second
+
+	// The donor faded its softvol on a periodic tick rather than jumping to a
+	// new level, which is why its volume changes were smooth. A softvol write
+	// is an ioctl on an open descriptor, so a tick this short is cheap; the
+	// step is in control units, not percent, because the control is 0..255.
+	volumeFadeInterval = 20 * time.Millisecond
+	volumeFadeStep     = 6
 )
 
 func newDSPVolumeController(socket string) (*dspVolumeController, error) {
@@ -189,6 +201,17 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 		retry = nil
 
 		level := controller.effectiveLevel()
+		// The user volume rides on the ALSA softvol control and is faded there.
+		// The DSP call is kept for the services that still answer on it, but it
+		// no longer carries the level the listener hears.
+		if err := controller.fadeToTarget(ctx, softvolForPercent(level)); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			if controller.logf != nil {
+				controller.logf("fade softvol to %d: %v", level, err)
+			}
+		}
 		send := controller.push
 		if send == nil {
 			send = controller.pushVolume
@@ -297,4 +320,55 @@ func (controller *dspVolumeController) ToggleMuted(
 		return controller.snapshotLocked(), err
 	}
 	return controller.snapshotLocked(), nil
+}
+
+// softvolWriter is the ALSA control the user volume rides on.
+type softvolWriter interface {
+	Read() (int, error)
+	Write(int) error
+}
+
+// fadeToTarget walks the softvol control toward the requested level instead of
+// jumping, matching aui::VolumeManager::softvol_fading_tick. Jumping is what
+// made a rotary sweep audible as a stutter: fourteen changes in seven seconds,
+// two of which passed through zero and silenced playback outright.
+func (controller *dspVolumeController) fadeToTarget(
+	ctx context.Context,
+	target int,
+) error {
+	if controller.softvol == nil {
+		return nil
+	}
+	current, err := controller.softvol.Read()
+	if err != nil {
+		return err
+	}
+	for current != target {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if current < target {
+			current += volumeFadeStep
+			if current > target {
+				current = target
+			}
+		} else {
+			current -= volumeFadeStep
+			if current < target {
+				current = target
+			}
+		}
+		if err := controller.softvol.Write(current); err != nil {
+			return err
+		}
+		if current == target {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(volumeFadeInterval):
+		}
+	}
+	return nil
 }
