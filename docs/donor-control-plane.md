@@ -160,6 +160,46 @@ is wrong by one could put the microcontroller that owns power, the buttons and
 its own firmware into a state this project cannot recover from. These stay
 deferred until an opcode is established by observation rather than by guess.
 
+## What aui and vui stand for
+
+Both are user interfaces, distinguished by which sense they use.
+
+| prefix | meaning | evidence | owned by |
+| --- | --- | --- | --- |
+| `aui` | Audio UI | namespace `aui::AudioUI`, class `WampAudioUI` | `audio-ui` |
+| `vui` | Visual UI | class `WampVisualUI` | `visual-ui` |
+
+`mcu-interface` has no `vui::` namespace of its own. It registers the
+`com.harman.vui.*` procedures because it owns the hardware those procedures
+act on: the LED ring, the buttons, the amplifier mute, MCU power. The Visual UI
+is the speaker's light and touch; `visual-ui` is the client that drives it.
+This runtime answers the same contract for the same reason.
+
+The Audio UI is the speaker's voice: not music, but everything the device says
+back to you. In the donor it is a Boost.Statechart machine, `aui::System`, with
+orthogonal regions that run at once:
+
+* `AlertIdle` to `AlertActive` to `AlertPlaying` or `AlertPaused`
+* `VoiceIdle`
+* `MicmuteIdle`
+* `BluetoothOff`
+* `UiHandler`
+
+Two dedicated players sit under it, `aui::g_alert_player` and
+`aui::g_voice_player`, separate from music. That is what the whole ducking
+mechanism exists for: an alert or a prompt plays on its own player while music
+is attenuated underneath, then restored.
+
+Knowing this corrects an earlier grouping. `aui.alertPlay`, `aui.alertCancel`,
+`aui.callAccept`, `aui.callReject` and `aui.dialogTrigger` were filed as
+Cortana-adjacent and dismissed. They are not Cortana procedures; they drive the
+alert and voice regions of the Audio UI. The assets are still on the donor
+filesystem, and `usr/share/sounds/alarm/default.mp4` and
+`usr/share/sounds/timer/default.mp4` are not voice-assistant specific.
+
+What is Cortana-specific is the trigger. Nothing on this unit sets a timer or
+receives a call, so the alert player has nothing to announce.
+
 ## Ducking
 
 `volume.setDuck` attenuates rather than mutes, which is how a prompt spoke over
@@ -177,3 +217,10 @@ rediscovered.
 
 A duck never changes the level the user chose. Releasing every duck returns to
 that level exactly, and mute still silences regardless of ducking.
+
+It is worth stating plainly that **nothing in this runtime currently calls it**.
+`com.harman.volume.setDuck` is registered and answerable, and the behaviour
+behind it is tested, but there is no alert player and no voice agent here to
+duck for. It is working machinery waiting for a caller, which is a different
+thing from a working feature. If an alert player is ever added, this is the
+piece it will need and it will already be correct.
