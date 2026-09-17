@@ -77,6 +77,20 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
   replace('      --lights-dir "${runtime_root}/share/lights"',
     '      --music-volume-state /run/reinvoke/music-volume \\\n' +
     '      --lights-dir "${runtime_root}/share/lights"');
+  // A development build can turn the peer firewall off. A single /32 allowlist
+  // locks the operator out of a healthy device whenever their workstation takes
+  // a new DHCP lease, and the symptom is indistinguishable from a failed boot:
+  // ICMP still answers while every port hangs rather than refusing. Observed on
+  // 05.8.9, which ran correctly for twenty-three minutes while appearing dead.
+  replace('configure_wamp_firewall() {\n' +
+    '  ${BB} mkdir -p /usr/lib/xtables\n',
+    'configure_wamp_firewall() {\n' +
+    '  if ${BB} test -f /etc/native-admin/firewall-disabled; then\n' +
+    '    log "WAMP peer firewall disabled by build configuration"\n' +
+    '    return 0\n' +
+    '  fi\n' +
+    '  ${BB} mkdir -p /usr/lib/xtables\n');
+
   replace('for service_name in mic-capture provision-windowd dsp-interface \\\n' +
     '      pairing-agent-guard \\\n' +
     '      bluealsa-aplay bluealsa bluetoothd dbus bonefish networkd; do',
@@ -166,9 +180,6 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
     '    while ! ${BB} test -e /run/reinvoke/shutdown; do',
     '      # logcat runs under the donor loader with a matched library path.',
     '      # The system glibc is older than the donor: logcat needs GLIBC_2.15.',
-    '      # -r takes its size attached: "-r 256" parses as a bare -r, which',
-    '      # rotates every 16 KB and threw away the history that made a defect',
-    '      # explainable. Four rotations of 256 KB keep about a megabyte.',
     '      /opt/bluedroid/lib/ld-linux-armhf.so.3 --library-path \\',
     '        /system/lib:/system/lib/hw:/opt/bluedroid/usr/lib:/opt/bluedroid/lib \\',
     '        /system/bin/logcat -v threadtime \\',

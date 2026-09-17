@@ -203,6 +203,10 @@ run_bluetoothd_generation() {
 }
 
 configure_wamp_firewall() {
+  if ${BB} test -f /etc/native-admin/firewall-disabled; then
+    log "WAMP peer firewall disabled by build configuration"
+    return 0
+  fi
   ${BB} mkdir -p /usr/lib/xtables
   for module in libxt_standard.so libxt_tcp.so; do
     ${BB} ln -sf "${runtime_lib}/xtables/${module}" \

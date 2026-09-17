@@ -10,6 +10,18 @@ pilot_ssh_start() {
     pilot_failure ssh "private-key-configuration-missing"
     return 1
   fi
+  # A development build can turn the peer firewall off. A single /32 allowlist
+  # locks the operator out of a healthy device whenever their workstation takes
+  # a new DHCP lease, and the symptom looks exactly like a failed boot: ICMP
+  # answers while every port hangs rather than refusing. The listener still
+  # starts, so this trades peer filtering for reachability, deliberately.
+  if ${BB} test -f "${ssh_config}/firewall-disabled"; then
+    echo disabled >/run/nand-pilot/ssh-firewall
+    supervise sshd /usr/sbin/dropbear -F -E -j -k \
+      -p 0.0.0.0:22 -r "${ssh_config}/host-key" \
+      -P /run/nand-pilot/sshd-native.pid -I 900 -K 30
+    return 0
+  fi
   # Fail closed independently of the WAMP policy: install a complete chain
   # before its first INPUT jump, and launch no listener if any rule fails.
   ssh_iptables() {

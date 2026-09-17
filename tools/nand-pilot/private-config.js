@@ -75,6 +75,11 @@ function installConfig(config, root) {
   }
   write('etc/native-admin/host-key', fs.readFileSync(config.sshHostKey));
   write('etc/native-admin/allow-cidrs', config.sshCIDRs.join('\n') + '\n');
+  // Development builds can disable peer filtering entirely. The allowlist is
+  // still written so re-enabling is a one-line configuration change.
+  if (config.firewall === false)
+    write('etc/native-admin/firewall-disabled',
+      'peer firewall disabled by build configuration\n', 0o644);
   write('root/.ssh/authorized_keys', config.publicKey);
   fs.chmodSync(path.join(root, 'root'), 0o700);
   fs.chmodSync(path.join(root, 'root/.ssh'), 0o700);
