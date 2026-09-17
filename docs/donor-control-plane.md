@@ -82,15 +82,43 @@ That is the second time in this work a malformed pattern produced a confident
 and wrong conclusion about the donor. Read the donor's strings with a pattern
 that includes hyphens and dots, and confirm against a live log before acting.
 
+## What is left, and why
+
+`tools/donor-contract/compare.sh` reports 106 of the donor's 165 procedures as
+unimplemented. Most of that number is not work outstanding. Grouped honestly:
+
+| group | count | status |
+| --- | --- | --- |
+| Cortana and Spotify | 38 | out of scope for this unit |
+| Factory, demo and test line | 21 | out of scope |
+| MCU firmware upgrade | 6 | out of scope |
+| Registered by the donor itself | 8 | not ours to implement |
+| Error URIs, not procedures | 5 | nothing to register |
+| Services this runtime does not have | 3 | see below |
+| Blocked on unknown MCU opcodes | 10 | see below |
+| Truncated string fragments | 6 | artefacts of the scan |
+
+Three names belong to donor services with no counterpart here:
+`ready.audio-ui`, `heartbeat.connection-manager` and
+`connection-manager.shutdown`. Registering a lifecycle topic for a service that
+does not exist would assert a readiness nothing can honour, so they are left
+alone. `system-manager.shutdown` is the same case: init supervises this
+runtime, and stopping it is what `reboot` already does.
+
+`vui.uicommand` belongs to `visual-ui`, which is a terminal test harness that
+draws with ANSI escapes rather than the LED ring it was mistaken for. It is
+part of the excluded test line.
+
 ## Deliberately deferred: the MCU command space
 
-Four groups of donor procedures remain unimplemented because the MCU opcodes
-they need could not be recovered:
+These remain unimplemented because the MCU opcodes they need could not be
+recovered:
 
 * `SetRGBLEDBrightness`, which the donor validates as 0-100
 * `setDeviceColor` and `getDeviceColor`
 * `setmcupowermode` and `powerdspcontrol`
 * `mcustatus`, `restart` and `terminate`
+* `GetHWID` and `SetHWID`
 
 The vendor defaults for the LED group are known from the settings database:
 `LED_INTENSITY=50`, `LED_WHITE=50`, `LED_RGB=000000`, `LED_FLASHING=OFF`.
@@ -108,3 +136,21 @@ byte 0, and the same command space contains `startmcuupgrade`. An opcode that
 is wrong by one could put the microcontroller that owns power, the buttons and
 its own firmware into a state this project cannot recover from. These stay
 deferred until an opcode is established by observation rather than by guess.
+
+## Ducking
+
+`volume.setDuck` attenuates rather than mutes, which is how a prompt spoke over
+music on the stock unit without stopping it. The donor held a map of named duck
+requests in `aui::VolumeManager` so that an alert and a voice prompt could
+overlap without either one restoring full volume while the other was still
+speaking; this runtime keeps the same map and applies the deepest request in
+force.
+
+Two duck depths exist, `soft` and `hard`, matching the donor's own names. The
+attenuation each one applies is **this project's choice, not the vendor's**: no
+file recovered from this unit records the donor's ratios. They are stated here
+so that a later capture can correct them rather than leaving the numbers to be
+rediscovered.
+
+A duck never changes the level the user chose. Releasing every duck returns to
+that level exactly, and mute still silences regardless of ducking.

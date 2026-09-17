@@ -13,6 +13,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,4 +113,49 @@ func requestReboot(logf func(string, ...interface{})) {
 	if err := rebootFunc(); err != nil && logf != nil {
 		logf("REBOOT_FAILED: %v", err)
 	}
+}
+
+// networkConfiguration reports the active network interface.
+//
+// The donor's connection-manager owned this. That service does not exist here,
+// but the question it answered — what address is this speaker on — is the one
+// asked when a speaker stops responding, so it is answered live rather than
+// from anything cached at startup.
+func networkConfiguration() map[string]interface{} {
+	report := map[string]interface{}{
+		"interface": "",
+		"address":   "",
+		"mac":       "",
+		"connected": false,
+	}
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return report
+	}
+	for _, candidate := range interfaces {
+		if candidate.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if candidate.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addresses, err := candidate.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, address := range addresses {
+			network, ok := address.(*net.IPNet)
+			if !ok || network.IP.To4() == nil {
+				continue
+			}
+			ones, _ := network.Mask.Size()
+			report["interface"] = candidate.Name
+			report["address"] = network.IP.String()
+			report["prefix"] = uint64(ones)
+			report["mac"] = candidate.HardwareAddr.String()
+			report["connected"] = true
+			return report
+		}
+	}
+	return report
 }

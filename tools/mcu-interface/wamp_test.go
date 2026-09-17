@@ -69,6 +69,7 @@ func TestMinimumWAMPSurface(t *testing.T) {
 		"com.harman.volume.setDuck",
 		"com.harman.reboot",
 		"com.harman.timezoneSet",
+		"com.harman.networkConfiguration",
 	}
 	if !reflect.DeepEqual(procedures, expected) {
 		t.Fatalf("procedures = %#v, want %#v", procedures, expected)

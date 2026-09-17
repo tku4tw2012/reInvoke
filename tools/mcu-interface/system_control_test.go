@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -184,5 +185,37 @@ func TestDuckArgumentsRejectsMalformed(t *testing.T) {
 	}
 	if _, state, err := duckArguments([]interface{}{"voice"}); err != nil || state != duckNone {
 		t.Fatalf("a bare name should release the duck, got %v,%v", state, err)
+	}
+}
+
+// TestNetworkConfigurationReportsAnInterface proves the report is built from
+// the live interface list rather than returning a fixed shape. It asserts the
+// keys a caller reads and, when this host has a usable interface, that the
+// address is real.
+func TestNetworkConfigurationReportsAnInterface(t *testing.T) {
+	report := networkConfiguration()
+	for _, key := range []string{"interface", "address", "mac", "connected"} {
+		if _, present := report[key]; !present {
+			t.Fatalf("report is missing %q", key)
+		}
+	}
+	connected, _ := report["connected"].(bool)
+	if !connected {
+		// A host with no non-loopback IPv4 interface is legitimate; the report
+		// must then be empty rather than partly filled.
+		if report["address"] != "" || report["interface"] != "" {
+			t.Fatalf("disconnected report still carries %v", report)
+		}
+		return
+	}
+	address, _ := report["address"].(string)
+	if net.ParseIP(address) == nil {
+		t.Fatalf("address %q is not an IP", address)
+	}
+	if name, _ := report["interface"].(string); name == "" {
+		t.Fatal("connected report has no interface name")
+	}
+	if _, present := report["prefix"]; !present {
+		t.Fatal("connected report has no prefix length")
 	}
 }

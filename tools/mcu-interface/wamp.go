@@ -79,6 +79,9 @@ var procedures = []string{
 	// service, and mcu-interface already owns the hardware a reboot acts on.
 	"com.harman.reboot",
 	"com.harman.timezoneSet",
+	// The donor's connection-manager answered this. That service does not
+	// exist here; the question it answered still does.
+	"com.harman.networkConfiguration",
 }
 
 type wampService struct {
@@ -513,6 +516,10 @@ func (service *wampService) handleInvocation(
 		if invocationError == nil {
 			result = []interface{}{zone}
 		}
+	case "com.harman.networkConfiguration":
+		configuration := networkConfiguration()
+		result = []interface{}{configuration["address"]}
+		resultKwargs = configuration
 	case "com.harman.reboot":
 		// Answered before acting: a caller that never gets a reply cannot tell
 		// a reboot from a service that died.
