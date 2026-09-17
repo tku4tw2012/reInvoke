@@ -71,12 +71,13 @@ type volumeSnapshot struct {
 	Muted  bool
 }
 
-// defaultVolume is where the speaker starts before anything sets a level. The
-// DSP scale is not percent. Measured on hardware through a Bluetooth stream:
-// unattenuated was "too loud", 5 was "a bit on the louder side" and 3 was
-// "soft but clearly audible". Percent is passed to the DSP unscaled, so this
-// starts at the level that was actually judged comfortable.
-const defaultVolume = 3
+// defaultVolume is the vendor's own starting level, recovered from its
+// settings store rather than guessed: caldata/FENV.bin id 0x26, named
+// current_volume in LibreEnv's table, holds 80. Earlier candidates guessed
+// here because the level was being applied to DSP gain, where the comfortable
+// point was around 3; on the softvol control this is a percentage of the
+// vendor's own scale.
+const defaultVolume = 80
 
 const (
 	// volumePushTimeout bounds one call to the DSP service.

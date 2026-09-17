@@ -19,7 +19,7 @@ func newTestVolumeController(t *testing.T) *dspVolumeController {
 	return controller
 }
 
-// The DSP powers up at its own gain, so the configured level has to be
+// The hardware powers up at its own level, so the configured one has to be
 // asserted rather than waited for. Candidate 05.8.8 only pushed on a later
 // change, so the first stream played at full output however low the configured
 // level was, and the speaker was reported as far too loud.
