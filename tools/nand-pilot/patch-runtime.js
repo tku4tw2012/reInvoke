@@ -95,8 +95,8 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
     '      pairing-agent-guard \\\n' +
     '      bluealsa-aplay bluealsa bluetoothd dbus bonefish networkd; do',
     'for service_name in mic-capture provision-windowd wifi-resume dsp-interface \\\n' +
-    '      pairing-agent bluedroid libreenv servicemanager identifiers propertyd \\\n' +
-    '      dbus bonefish networkd; do');
+    '      pairing-agent bluedroid libreenv servicemanager source-manager \\\n' +
+    '      identifiers propertyd dbus bonefish networkd; do');
   replace('  stop_service syslogd\n',
     '  wait_service_stop bluedroid\n' +
     '  stop_service persistence\n' +
@@ -291,6 +291,22 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
     '        ${BB} test "${identifiers_wait}" -lt 10; do',
     '        ${BB} sleep 1',
     '        identifiers_wait=$((identifiers_wait + 1))',
+    '      done',
+    '      # The donor arbitrated which source owned the speaker in',
+    '      # music-source-manager and routed "pause whatever is playing"',
+    '      # through audio-ui. This runtime answered three of those procedures',
+    '      # from a fixed table whose get-active returned the wrong shape, so a',
+    '      # second source could never have been arbitrated. It is seeded with',
+    '      # the donor stack, which registers itself as a source at startup.',
+    '      supervise source-manager \\',
+    '        /usr/bin/reinvoke-source-manager \\',
+    '        -router-host 127.0.0.1 -router-port 9999 \\',
+    '        -register com.harman.bluetooth',
+    '      source_manager_wait=0',
+    '      while ! ${BB} test -f /run/reinvoke/source-manager.pid &&',
+    '        ${BB} test "${source_manager_wait}" -lt 10; do',
+    '        ${BB} sleep 1',
+    '        source_manager_wait=$((source_manager_wait + 1))',
     '      done',
     '      # The donor blocks on Android ServiceManager the moment an A2DP',
     '      # stream config arrives, and retries forever if nobody answers.',

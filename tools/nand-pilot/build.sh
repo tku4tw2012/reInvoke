@@ -31,6 +31,9 @@ nice -n 10 env GOOS=linux GOARCH=arm GOARM=7 "${PILOT_GO}" build \
 nice -n 10 "${PILOT_GO}" test -p 1 ./tools/propertyd
 nice -n 10 env GOOS=linux GOARCH=arm GOARM=7 "${PILOT_GO}" build \
   -p 1 -trimpath -ldflags="-s -w -buildid=" -o "${output}/reinvoke-propertyd" ./tools/propertyd
+nice -n 10 "${PILOT_GO}" test -p 1 ./tools/source-manager
+nice -n 10 env GOOS=linux GOARCH=arm GOARM=7 "${PILOT_GO}" build \
+  -p 1 -trimpath -ldflags="-s -w -buildid=" -o "${output}/reinvoke-source-manager" ./tools/source-manager
 for build in build-a build-b; do
   mkdir "${output}/${build}"
   nice -n 10 fakeroot -s "${output}/work/${build}.fakeroot" \

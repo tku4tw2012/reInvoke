@@ -144,6 +144,10 @@ function prepare() {
   // part of the fixed 5 MiB BSL allocation.
   install(path.join(path.dirname(output), 'reinvoke-propertyd'),
     path.join(root, 'usr/bin/reinvoke-propertyd'));
+  // Runtime only, same as propertyd: it arbitrates audio sources and the
+  // bootstrap has none.
+  install(path.join(path.dirname(output), 'reinvoke-source-manager'),
+    path.join(root, 'usr/bin/reinvoke-source-manager'));
   // Preserve the independently checked soft-float adbd loader family.
   for (const name of ['ld-linux.so.3', 'libdl.so.2', 'librt.so.1',
     'libpthread.so.0', 'libm.so.6', 'libc.so.6']) {
