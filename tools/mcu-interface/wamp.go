@@ -88,6 +88,7 @@ var procedures = []string{
 	"com.harman.vui.setDeviceColor",
 	"com.harman.vui.getDeviceColor",
 	"com.harman.vui.setmcupowermode",
+	"com.harman.vui.GetHWID",
 }
 
 type wampService struct {
@@ -576,6 +577,23 @@ func (service *wampService) handleInvocation(
 		}
 		if invocationError == nil {
 			result = []interface{}{name}
+		}
+	case "com.harman.vui.GetHWID":
+		if len(args) != 0 {
+			invocationError = errors.New("invalid argument format")
+		} else if service.appearance == nil {
+			invocationError = errors.New("MCU is unavailable")
+		}
+		if invocationError == nil {
+			var identity hardwareIdentity
+			identity, invocationError = service.appearance.ReadHWID(ctx)
+			if invocationError == nil {
+				result = []interface{}{identity.Revision, identity.Version}
+				resultKwargs = map[string]interface{}{
+					"revision": identity.Revision,
+					"version":  identity.Version,
+				}
+			}
 		}
 	case "com.harman.networkConfiguration":
 		configuration := networkConfiguration()

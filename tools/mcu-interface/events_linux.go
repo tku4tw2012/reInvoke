@@ -58,6 +58,10 @@ type gpioEventSource struct {
 		ReadMCUEvent() ([6]byte, error)
 	}
 	logError func(error)
+	// frameObserver is offered every frame before it is decoded as a button.
+	// It returns true when the frame was a reply to a request this service
+	// made, which the button decoder would otherwise count as undecodable.
+	frameObserver func([6]byte) bool
 	// now is injectable so suppression expiry can be tested without waiting.
 	now func() time.Time
 }
@@ -159,6 +163,15 @@ func (source *gpioEventSource) drainPendingEvents(
 		frame, err := source.bus.ReadMCUEvent()
 		if err != nil {
 			return fmt.Errorf("drain pending MCU event: %w", err)
+		}
+		// Replies to our own requests share this channel with button
+		// presses. Offer the frame first; a reply is consumed here and is not
+		// an undecodable button.
+		if source.frameObserver != nil && source.frameObserver(frame) {
+			if !waitMCUDrain(ctx) {
+				return ctx.Err()
+			}
+			continue
 		}
 		event, decoded := decodeMCUEvent(frame)
 		if !decoded {

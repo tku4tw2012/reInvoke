@@ -12,9 +12,12 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -80,6 +83,7 @@ type deviceAppearanceController struct {
 	brightness byte
 	color      byte
 	applied    bool
+	identity   *hardwareIdentity
 }
 
 func newDeviceAppearanceController(
@@ -202,4 +206,130 @@ func appearanceSource(applied bool) string {
 		return "last-written"
 	}
 	return "assumed-default"
+}
+
+// Hardware identity, read from the microcontroller.
+//
+// GetHWID is a request-and-wait exchange, not a register read. The donor sent
+// opcode 0x07 and then polled a field that its event reader filled in, ten
+// milliseconds at a time, up to 101 times. The reply arrives on the same event
+// channel as button presses and carries the same opcode.
+//
+// Reply layout, from the donor's event dispatch at 0xd2cec:
+//
+//	byte 0  0x07
+//	byte 1  board revision: 0 is DV1, 1 is DV2, anything else is an error
+//	byte 2  version field, printed as two digits
+//	byte 3  version field, printed as two digits
+//	byte 4  version field, printed as two digits
+const (
+	// getHWIDCode requests the hardware identity. It is a read: the donor sent
+	// it on every GetHWID call and it returns data rather than changing state.
+	getHWIDCode byte = 0x07
+
+	// hwidPollInterval and hwidPollAttempts reproduce the donor's own wait,
+	// which is 101 attempts ten milliseconds apart.
+	hwidPollInterval = 10 * time.Millisecond
+	hwidPollAttempts = 101
+)
+
+// hardwareIdentity is what the MCU reports about the board it is soldered to.
+type hardwareIdentity struct {
+	Revision string
+	Version  string
+}
+
+// decodeHWIDFrame reads a reply. It reports whether the frame is one.
+//
+// A revision byte outside the two the donor accepted is refused rather than
+// guessed: the donor logged "HW ID Error!" for exactly this case, so a third
+// value means something this project has not seen and must not name.
+func decodeHWIDFrame(frame [6]byte) (hardwareIdentity, error) {
+	if frame[0] != getHWIDCode {
+		return hardwareIdentity{}, errNotHWIDFrame
+	}
+	var revision string
+	switch frame[1] {
+	case 0:
+		revision = "DV1"
+	case 1:
+		revision = "DV2"
+	default:
+		return hardwareIdentity{}, fmt.Errorf(
+			"MCU reported unknown board revision %d", frame[1])
+	}
+	return hardwareIdentity{
+		Revision: revision,
+		Version:  fmt.Sprintf("%02d%02d%02d", frame[2], frame[3], frame[4]),
+	}, nil
+}
+
+// errNotHWIDFrame marks a frame that is simply not a reply to this request,
+// which is expected: button presses share the channel.
+var errNotHWIDFrame = errors.New("not a hardware identity frame")
+
+// RequestHWID sends the request. The reply is delivered by the event reader.
+func (controller *deviceAppearanceController) RequestHWID() error {
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	frame := [6]byte{getHWIDCode, 0, 0, 0, 0, 0}
+	if err := controller.writer.WriteMCUCommand(frame); err != nil {
+		return fmt.Errorf("request hardware identity: %w", err)
+	}
+	return nil
+}
+
+// OfferFrame gives the controller a frame read from the MCU. It reports
+// whether the frame was a hardware identity reply, so the caller can go on
+// handling the frame itself if it was not.
+func (controller *deviceAppearanceController) OfferFrame(frame [6]byte) bool {
+	identity, err := decodeHWIDFrame(frame)
+	if err != nil {
+		if err != errNotHWIDFrame && controller.logf != nil {
+			controller.logf("HWID_DECODE_FAILED: %v", err)
+		}
+		return err != errNotHWIDFrame
+	}
+	controller.mu.Lock()
+	controller.identity = &identity
+	controller.mu.Unlock()
+	return true
+}
+
+// HWID reports the identity if the MCU has answered.
+func (controller *deviceAppearanceController) HWID() (hardwareIdentity, bool) {
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	if controller.identity == nil {
+		return hardwareIdentity{}, false
+	}
+	return *controller.identity, true
+}
+
+// ReadHWID requests the identity and waits for the event reader to deliver it.
+//
+// The wait reproduces the donor's: ten milliseconds at a time, up to 101
+// attempts. A cached answer is returned immediately, because the identity of
+// the board this is soldered to does not change while the service runs.
+func (controller *deviceAppearanceController) ReadHWID(
+	ctx context.Context,
+) (hardwareIdentity, error) {
+	if identity, known := controller.HWID(); known {
+		return identity, nil
+	}
+	if err := controller.RequestHWID(); err != nil {
+		return hardwareIdentity{}, err
+	}
+	for attempt := 0; attempt < hwidPollAttempts; attempt++ {
+		select {
+		case <-ctx.Done():
+			return hardwareIdentity{}, ctx.Err()
+		case <-time.After(hwidPollInterval):
+		}
+		if identity, known := controller.HWID(); known {
+			return identity, nil
+		}
+	}
+	// The donor logged "get HW ID timerout" here and returned nothing.
+	return hardwareIdentity{}, errors.New("timed out waiting for the MCU to report its hardware identity")
 }

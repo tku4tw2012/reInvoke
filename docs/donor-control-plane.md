@@ -96,7 +96,7 @@ unimplemented. Most of that number is not work outstanding. Grouped honestly:
 | Error URIs, not procedures | 5 | nothing to register |
 | Services this runtime does not have | 3 | see below |
 | Blocked on unknown MCU opcodes | 10 | see below |
-| Truncated string fragments | 6 | artefacts of the scan |
+| Namespace prefixes | 11 | not procedures; see below |
 
 Three names belong to donor services with no counterpart here:
 `ready.audio-ui`, `heartbeat.connection-manager` and
@@ -108,6 +108,24 @@ runtime, and stopping it is what `reboot` already does.
 `vui.uicommand` belongs to `visual-ui`, which is a terminal test harness that
 draws with ANSI escapes rather than the LED ring it was mistaken for. It is
 part of the excluded test line.
+
+## Namespace prefixes are not gaps
+
+Eleven of the strings this comparison used to count as unimplemented were never
+procedures. The donor builds some names at runtime by concatenating a prefix
+with a method, so `com.harman.aui.` sits in `audio-ui` as string-building
+material, directly beside `registerVoiceAgent`. Counting it as a gap created
+work that could never be completed, because there is nothing behind it.
+
+Others are namespace roots that only ever appear with something after them:
+`com.harman.music`, `com.harman.bluetooth`, `com.harman.error`. And
+`com.harman.ready.` and `com.harman.heartbeat.` are the lifecycle prefixes this
+runtime already builds the same way.
+
+`compare.sh` now recognises both shapes and reports them separately with a
+count, rather than leaving them to be hand-filtered by whoever reads the list.
+An earlier pass filtered them by hand and called them "truncated fragments",
+which described the symptom and left the tool still producing them.
 
 ## The MCU command space, recovered
 

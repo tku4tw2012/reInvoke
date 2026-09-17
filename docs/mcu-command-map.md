@@ -44,6 +44,8 @@ byte 0 is set to immediately before the call.
 | `0x0A` | `SetRGBLEDBrightness` | byte 1: 0 to 100 | disassembly |
 | `0x0B` | `setDeviceColor` | byte 1: 0 black, 1 white | disassembly |
 | `0x0C` | `getDeviceColor` | request; colour arrives on the event channel | disassembly |
+| `0x0F` | `factorytestled` | byte 1: wifi 0, power 1, bt 2, red 3, green 4, blue 5, white 6 | disassembly |
+| `0x07` | `GetHWID` request | reply carries the same opcode; see below | disassembly |
 | `0x22` | OTA flag | byte 1: 0 clear, 1 set | disassembly |
 | `0x24` | heartbeat | none | verified on hardware |
 | `0x01`, `0x23`, `0x25`, `0x26` | startup sequence | not decoded | verified on hardware |
@@ -80,6 +82,56 @@ b49b0:  bl   7dbf0           ; six bytes to 0x36
 The donor never initialises bytes 2 to 5. They are whatever the stack held, so
 the controller ignores them for this opcode. This runtime sends zeros, which is
 within what the donor itself demonstrably sends.
+
+## The ring is not an RGB device
+
+It is reasonable to read `SetRGBLEDBrightness` and `LED_RGB=000000` and expect
+three colour channels plus a level. The binary says otherwise, and it is worth
+recording why so the question does not get reopened from the names alone.
+
+Every frame is six bytes, so there is room for a triple. Across all 34 call
+sites of the MCU writer, only five set more than one value byte, and only two
+of those are LEDs:
+
+* `0x09` sets three: the donor's own comparisons name them front amber, front
+  white and back. Three LEDs, not three colour channels.
+* `0x11` sets three, in the firmware upgrade path.
+
+No opcode anywhere takes red, green and blue. Colour is chosen by name:
+`setDeviceColor` accepts black or white, and `factorytestled` accepts a
+seven-value enum that mixes LED selection with colour. "RGB" in the brightness
+procedure names the LED part, not the protocol.
+
+What `LED_RGB=000000` in the vendor settings means is unresolved. It is a
+stored setting, and nothing observed here sends it to the controller as a
+triple.
+
+## Hardware identity
+
+`GetHWID` is a request and wait, not a register read. Send `0x07` and the
+controller answers on the same event channel that carries button presses,
+using the same opcode. The donor polled for the answer ten milliseconds at a
+time, up to 101 times, then logged "get HW ID timerout".
+
+The reply, from the event dispatch at `0xd2cec`:
+
+| byte | meaning |
+| --- | --- |
+| 0 | `0x07` |
+| 1 | board revision: 0 is DV1, 1 is DV2; anything else logged "HW ID Error!" |
+| 2, 3, 4 | version fields, printed by the donor as `%02d%02d%02d` |
+
+A revision byte outside those two is refused here rather than named. This
+runtime has never seen a real reply: the decode is read out of the donor's code
+and the values on this unit are still unobserved.
+
+## The event channel has a jump table
+
+Incoming frames are dispatched on byte 0 through a table at `0xd2568`, indexed
+by opcode minus one and bounds-checked at 37. That table is the authoritative
+list of which opcodes the controller can send back. Most entries point at the
+default case. The ones that do not include `0x07` for hardware identity and
+`0x0C` for device colour, which independently confirms both request opcodes.
 
 ## Vendor defaults
 

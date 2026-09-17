@@ -31,20 +31,49 @@ for binary in "${donor}"/usr/bin/* "${donor}"/system/bin/*; do
     | while read -r procedure; do printf '%s\t%s\n' "${procedure}" "${name}"; done
 done >"${work}/donor.tsv"
 
-cut -f1 "${work}/donor.tsv" | sort -u >"${work}/donor.txt"
+# Drop namespace prefixes. The donor builds some procedure names at runtime by
+# concatenating a prefix with a method, so strings like "com.harman.aui." are
+# present in the binary as string-building material, not as procedures. Counting
+# them produced six phantom gaps that no amount of implementing could ever
+# close, because there is nothing behind them to implement.
+#
+# A prefix is a string ending in a dot, or a bare two-label namespace root that
+# also appears as the prefix of a real procedure in the same binary.
+cut -f1 "${work}/donor.tsv" | sort -u >"${work}/donor-raw.txt"
+: >"${work}/donor.txt"
+: >"${work}/prefixes.txt"
+while read -r procedure; do
+  if [[ "${procedure}" == *. ]]; then
+    printf '%s\n' "${procedure}" >>"${work}/prefixes.txt"
+    continue
+  fi
+  # A bare root with real procedures under it is a prefix, not a procedure.
+  if grep -qE "^${procedure}\.[a-zA-Z0-9_-]" "${work}/donor-raw.txt"; then
+    printf '%s\n' "${procedure}" >>"${work}/prefixes.txt"
+    continue
+  fi
+  printf '%s\n' "${procedure}" >>"${work}/donor.txt"
+done <"${work}/donor-raw.txt"
 { grep -rhoE '"com\.(harman|cortana|reinvoke)\.[a-zA-Z0-9_.-]+"' \
   "${repo}/tools" --include='*.go' 2>/dev/null || true; } \
   | tr -d '"' | sort -u >"${work}/ours.txt"
 
 printf 'donor procedures : %s\n' "$(wc -l <"${work}/donor.txt")"
 printf 'ours             : %s\n' "$(wc -l <"${work}/ours.txt")"
-printf 'unimplemented    : %s\n\n' \
+printf 'unimplemented    : %s\n' \
   "$(comm -23 "${work}/donor.txt" "${work}/ours.txt" | wc -l)"
+printf 'namespace prefixes excluded : %s\n\n' \
+  "$(sort -u "${work}/prefixes.txt" | wc -l)"
+
+printf 'excluded as namespace prefixes:\n'
+sort -u "${work}/prefixes.txt" | sed 's/^/    /'
+printf '\n'
 
 # Group the gaps by the service that owns them so triage is by subsystem.
 cut -f2 "${work}/donor.tsv" | sort -u | while read -r service; do
   gaps="$(awk -F'\t' -v s="${service}" '$2==s {print $1}' "${work}/donor.tsv" \
-    | sort -u | comm -23 - "${work}/ours.txt" || true)"
+    | sort -u | comm -12 - "${work}/donor.txt" \
+    | comm -23 - "${work}/ours.txt" || true)"
   [[ -n "${gaps}" ]] || continue
   printf '=== %s ===\n' "${service}"
   printf '%s\n' "${gaps}" | sed 's/^/    /'

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"testing"
 )
@@ -199,3 +200,111 @@ func TestFailedWriteDoesNotRecordState(t *testing.T) {
 
 // errBusRefused stands in for an I2C failure.
 var errBusRefused = fmt.Errorf("bus refused")
+
+// TestHWIDRequestFrame asserts the request opcode 0x07.
+func TestHWIDRequestFrame(t *testing.T) {
+	mcu := &recordingMCU{}
+	controller := newDeviceAppearanceController(mcu, nil)
+	if err := controller.RequestHWID(); err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	want := [6]byte{0x07, 0, 0, 0, 0, 0}
+	if len(mcu.frames) != 1 || mcu.frames[0] != want {
+		t.Fatalf("frame = %v, want %v", mcu.frames, want)
+	}
+}
+
+// TestHWIDDecodeMatchesTheDonor asserts the reply layout read out of the
+// donor's event dispatch: byte 1 selects DV1 or DV2, and bytes 2 to 4 are
+// printed as three two-digit fields.
+func TestHWIDDecodeMatchesTheDonor(t *testing.T) {
+	for _, testCase := range []struct {
+		frame        [6]byte
+		wantRevision string
+		wantVersion  string
+	}{
+		{[6]byte{0x07, 0, 1, 2, 3, 0}, "DV1", "010203"},
+		{[6]byte{0x07, 1, 12, 34, 56, 0}, "DV2", "123456"},
+		{[6]byte{0x07, 0, 0, 0, 0, 0}, "DV1", "000000"},
+	} {
+		identity, err := decodeHWIDFrame(testCase.frame)
+		if err != nil {
+			t.Fatalf("decode %v: %v", testCase.frame, err)
+		}
+		if identity.Revision != testCase.wantRevision || identity.Version != testCase.wantVersion {
+			t.Fatalf("decode %v = %q/%q, want %q/%q",
+				testCase.frame, identity.Revision, identity.Version,
+				testCase.wantRevision, testCase.wantVersion)
+		}
+	}
+}
+
+// TestHWIDRefusesUnknownRevision proves a revision byte the donor did not
+// recognise is refused rather than named. The donor logged "HW ID Error!" for
+// this case; inventing a third board name would be a fabricated reading.
+func TestHWIDRefusesUnknownRevision(t *testing.T) {
+	for _, revision := range []byte{2, 3, 0xff} {
+		if _, err := decodeHWIDFrame([6]byte{0x07, revision, 0, 0, 0, 0}); err == nil {
+			t.Fatalf("accepted revision byte %d", revision)
+		}
+	}
+}
+
+// TestHWIDIgnoresOtherFrames proves button presses sharing the event channel
+// are not mistaken for a reply, and are left for the button decoder.
+func TestHWIDIgnoresOtherFrames(t *testing.T) {
+	controller := newDeviceAppearanceController(&recordingMCU{}, nil)
+	for _, frame := range [][6]byte{
+		{0x24, 0, 0, 0, 0, 0},
+		{0x09, 1, 0, 1, 0, 0},
+		{0x00, 0, 0, 0, 0, 0},
+		{0x0C, 1, 0, 0, 0, 0},
+	} {
+		if controller.OfferFrame(frame) {
+			t.Fatalf("claimed frame %v as a hardware identity", frame)
+		}
+		if _, known := controller.HWID(); known {
+			t.Fatalf("frame %v populated the identity", frame)
+		}
+	}
+	if !controller.OfferFrame([6]byte{0x07, 1, 11, 22, 33, 0}) {
+		t.Fatal("did not claim a real reply")
+	}
+	identity, known := controller.HWID()
+	if !known || identity.Revision != "DV2" || identity.Version != "112233" {
+		t.Fatalf("identity = %+v known=%v", identity, known)
+	}
+}
+
+// TestReadHWIDReturnsCachedIdentity proves a second read does not re-request:
+// the board this is soldered to does not change while the service runs.
+func TestReadHWIDReturnsCachedIdentity(t *testing.T) {
+	mcu := &recordingMCU{}
+	controller := newDeviceAppearanceController(mcu, nil)
+	controller.OfferFrame([6]byte{0x07, 0, 1, 2, 3, 0})
+	identity, err := controller.ReadHWID(context.Background())
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if identity.Revision != "DV1" {
+		t.Fatalf("identity = %+v", identity)
+	}
+	if len(mcu.frames) != 0 {
+		t.Fatalf("a cached read still sent %v", mcu.frames)
+	}
+}
+
+// TestReadHWIDGivesUp proves an MCU that never answers produces an error
+// rather than a hang or an invented identity.
+func TestReadHWIDGivesUp(t *testing.T) {
+	mcu := &recordingMCU{}
+	controller := newDeviceAppearanceController(mcu, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := controller.ReadHWID(ctx); err == nil {
+		t.Fatal("a silent MCU produced an identity")
+	}
+	if len(mcu.frames) != 1 {
+		t.Fatalf("expected one request, got %v", mcu.frames)
+	}
+}

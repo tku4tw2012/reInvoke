@@ -171,6 +171,8 @@ func main() {
 	defer cancel()
 
 	var source eventSource
+
+	var gpioSource *gpioEventSource
 	var gpioValue *os.File
 	if *gpioRoot != "" {
 		if err := configureMCUInterruptPin(*devmemPath); err != nil {
@@ -181,13 +183,14 @@ func main() {
 			log.Fatalf("initialize rotary input: %v", err)
 		}
 		defer gpioValue.Close()
-		source = &gpioEventSource{
+		gpioSource = &gpioEventSource{
 			value: gpioValue,
 			bus:   bus,
 			logError: func(err error) {
 				log.Printf("rotary input: %v", err)
 			},
 		}
+		source = gpioSource
 	}
 
 	var inputControls inputControllerList
@@ -303,6 +306,11 @@ func main() {
 	}
 	indicatorLEDs := newIndicatorLEDController(bus)
 	appearance := newDeviceAppearanceController(bus, log.Printf)
+	if gpioSource != nil {
+		// Replies to our own requests arrive on the button channel. Without
+		// this they are counted as undecodable frames and logged as faults.
+		gpioSource.frameObserver = appearance.OfferFrame
+	}
 	// The vendor's own startup appearance, from its settings store rather than
 	// chosen here: LED_INTENSITY 50 and LED_RGB 000000.
 	appearance.ApplyDefaults()
