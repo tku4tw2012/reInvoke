@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Copyright (c) 2026 tku4tw2012
+# SPDX-License-Identifier: MIT
+#
+# Report which donor WAMP procedures this runtime does not implement.
+#
+# The donor's behaviour is expressed as a WAMP contract: every vendor service
+# registers or calls procedures under com.harman or com.cortana. Comparing that
+# contract against ours turns "what did the vendor solve that we reinvented?"
+# into a list instead of a recollection. Candidate 05.8.9 shipped a volume
+# control that slammed the DSP to each new value; the vendor had
+# VolumeManager::fade_step and restore_default_volume, which this would have
+# surfaced before the work rather than after.
+#
+# Usage: compare.sh DONOR_ROOTFS [REPO]
+set -euo pipefail
+donor="${1:?DONOR_ROOTFS}"
+repo="${2:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)}"
+[[ -d "${donor}" ]] || { echo "donor rootfs not found: ${donor}" >&2; exit 1; }
+
+work="$(mktemp -d)"
+trap 'rm -rf "${work}"' EXIT
+
+# Map every procedure to the donor services that mention it.
+for binary in "${donor}"/usr/bin/* "${donor}"/system/bin/*; do
+  [[ -f "${binary}" ]] || continue
+  file "${binary}" 2>/dev/null | grep -q ELF || continue
+  name="$(basename "${binary}")"
+  strings "${binary}" 2>/dev/null \
+    | { grep -oE "com\.(harman|cortana)\.[a-zA-Z0-9_.-]+" || true; } | sort -u \
+    | while read -r procedure; do printf '%s\t%s\n' "${procedure}" "${name}"; done
+done >"${work}/donor.tsv"
+
+cut -f1 "${work}/donor.tsv" | sort -u >"${work}/donor.txt"
+{ grep -rhoE '"com\.(harman|cortana|reinvoke)\.[a-zA-Z0-9_.-]+"' \
+  "${repo}/tools" --include='*.go' 2>/dev/null || true; } \
+  | tr -d '"' | sort -u >"${work}/ours.txt"
+
+printf 'donor procedures : %s\n' "$(wc -l <"${work}/donor.txt")"
+printf 'ours             : %s\n' "$(wc -l <"${work}/ours.txt")"
+printf 'unimplemented    : %s\n\n' \
+  "$(comm -23 "${work}/donor.txt" "${work}/ours.txt" | wc -l)"
+
+# Group the gaps by the service that owns them so triage is by subsystem.
+cut -f2 "${work}/donor.tsv" | sort -u | while read -r service; do
+  gaps="$(awk -F'\t' -v s="${service}" '$2==s {print $1}' "${work}/donor.tsv" \
+    | sort -u | comm -23 - "${work}/ours.txt" || true)"
+  [[ -n "${gaps}" ]] || continue
+  printf '=== %s ===\n' "${service}"
+  printf '%s\n' "${gaps}" | sed 's/^/    /'
+  printf '\n'
+done
