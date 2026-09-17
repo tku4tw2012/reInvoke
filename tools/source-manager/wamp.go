@@ -3,9 +3,11 @@
 
 // WAMP transport for the source manager.
 //
-// Lifted unchanged from the identifiers service rather than rewritten: both
-// speak the same RawSocket framing to the same router, and a second dialect
-// of the same protocol is a defect waiting to happen.
+// Framing and encoding follow the identifiers service, because a second
+// dialect of the same protocol against the same router is a defect waiting to
+// happen. The session handling deliberately differs: identifiers only answers
+// calls, while this service also makes them, and that changes the threading
+// rules. See callProcedure.
 
 package main
 
@@ -14,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -36,9 +39,70 @@ func unsigned(value interface{}) (uint64, bool) {
 type connection struct {
 	socket net.Conn
 	next   uint64
+
+	// writeMu serialises frame writes. A frame is a header write followed by a
+	// payload write, and the heartbeat ticker runs on a different goroutine
+	// from the one answering invocations, so unsynchronised writes interleave
+	// two frames and desynchronise the stream for good.
+	writeMu sync.Mutex
+
+	// pending routes call replies back to the caller. Only the reader
+	// goroutine reads the socket; a second read loop inside a call would steal
+	// and discard invocations that arrived while it waited.
+	pendingMu sync.Mutex
+	pending   map[uint64]chan []interface{}
+}
+
+func newConnection(socket net.Conn) *connection {
+	return &connection{socket: socket, pending: map[uint64]chan []interface{}{}}
+}
+
+// deliver hands a call reply to the waiting caller. It reports whether the
+// message was a reply, so the reader can fall through to invocations.
+func (c *connection) deliver(message []interface{}) bool {
+	var id uint64
+	switch messageType(message) {
+	case wampResult:
+		if len(message) < 2 {
+			return false
+		}
+		value, ok := unsigned(message[1])
+		if !ok {
+			return false
+		}
+		id = value
+	case wampError:
+		if len(message) < 3 {
+			return false
+		}
+		original, _ := unsigned(message[1])
+		if original != wampCall {
+			return false
+		}
+		value, ok := unsigned(message[2])
+		if !ok {
+			return false
+		}
+		id = value
+	default:
+		return false
+	}
+	c.pendingMu.Lock()
+	waiter, waiting := c.pending[id]
+	if waiting {
+		delete(c.pending, id)
+	}
+	c.pendingMu.Unlock()
+	if !waiting {
+		return true
+	}
+	waiter <- message
+	return true
 }
 
 func (c *connection) writeFrame(message []interface{}) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	payload, err := encodeMessagePack(message)
 	if err != nil {
 		return err
@@ -157,42 +221,46 @@ func (c *connection) register(procedure string) (uint64, error) {
 	}
 }
 
+// callProcedure invokes a remote procedure and waits for its reply. It never
+// reads the socket itself: the reader goroutine owns reads and hands the reply
+// over. The earlier version looped on readFrame here, which both discarded
+// invocations that arrived while it waited and left a socket deadline set that
+// later killed the reader.
 func (c *connection) callProcedure(procedure string, arguments []interface{}, timeout time.Duration) ([]interface{}, error) {
 	if timeout <= 0 {
 		return nil, errors.New("call timeout must be positive")
 	}
-	if err := c.socket.SetDeadline(time.Now().Add(timeout)); err != nil {
-		return nil, err
-	}
+	c.pendingMu.Lock()
 	c.next++
 	request := c.next
+	waiter := make(chan []interface{}, 1)
+	c.pending[request] = waiter
+	c.pendingMu.Unlock()
+	abandon := func() {
+		c.pendingMu.Lock()
+		delete(c.pending, request)
+		c.pendingMu.Unlock()
+	}
 	if err := c.writeFrame([]interface{}{
 		wampCall, request, map[string]interface{}{}, procedure, arguments,
 	}); err != nil {
+		abandon()
 		return nil, fmt.Errorf("send call: %w", err)
 	}
-	for {
-		message, err := c.readFrame()
-		if err != nil {
-			return nil, fmt.Errorf("read call reply: %w", err)
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case message := <-waiter:
+		if messageType(message) == wampError {
+			return nil, fmt.Errorf("call rejected: %v", message[4:])
 		}
-		switch messageType(message) {
-		case wampResult:
-			if len(message) < 3 {
-				return nil, errors.New("malformed call result")
-			}
-			if id, ok := unsigned(message[1]); ok && id == request {
-				return message, nil
-			}
-		case 8:
-			if len(message) < 5 {
-				return nil, errors.New("malformed call error")
-			}
-			original, _ := unsigned(message[1])
-			if id, ok := unsigned(message[2]); original == wampCall && ok && id == request {
-				return nil, fmt.Errorf("call rejected: %v", message[4:])
-			}
+		if len(message) < 3 {
+			return nil, errors.New("malformed call result")
 		}
+		return message, nil
+	case <-timer.C:
+		abandon()
+		return nil, fmt.Errorf("call %s timed out", procedure)
 	}
 }
 

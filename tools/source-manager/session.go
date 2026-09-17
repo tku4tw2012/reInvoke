@@ -45,7 +45,7 @@ func (s *service) run(ctx context.Context, address, realm, name string) error {
 		return fmt.Errorf("dial router: %w", err)
 	}
 	defer raw.Close()
-	conn := &connection{socket: raw}
+	conn := newConnection(raw)
 	if err := conn.negotiate(realm); err != nil {
 		return fmt.Errorf("negotiate: %w", err)
 	}
@@ -87,6 +87,11 @@ func (s *service) run(ctx context.Context, address, realm, name string) error {
 			if err != nil {
 				errs <- err
 				return
+			}
+			// Call replies belong to whoever is waiting for them; only
+			// what is left is an invocation for this service to answer.
+			if conn.deliver(message) {
+				continue
 			}
 			if err := s.dispatch(conn, registrations, message); err != nil {
 				errs <- err

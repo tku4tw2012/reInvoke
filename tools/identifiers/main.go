@@ -23,6 +23,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -65,9 +66,18 @@ func unsigned(value interface{}) (uint64, bool) {
 type connection struct {
 	socket net.Conn
 	next   uint64
+
+	// writeMu serialises frame writes. A frame is a header write followed by a
+	// payload write, so the heartbeat goroutine and the goroutine answering
+	// invocations can otherwise interleave two frames and desynchronise the
+	// router's view of this connection. The donor exits when identifiersGet
+	// fails, so a corrupted reply here stops Bluetooth altogether.
+	writeMu sync.Mutex
 }
 
 func (c *connection) writeFrame(message []interface{}) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	payload, err := encodeMessagePack(message)
 	if err != nil {
 		return err

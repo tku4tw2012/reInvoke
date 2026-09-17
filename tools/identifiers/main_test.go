@@ -6,12 +6,17 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"math"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // TestRegisteredProceduresDisjointFromMCU guards a defect observed on
@@ -146,5 +151,85 @@ func TestCallArgumentsSurviveJSONDecoding(t *testing.T) {
 	// Negative whole numbers still have to encode.
 	if _, err := encodeMessagePack([]interface{}{-5.0}); err != nil {
 		t.Errorf("encode negative whole number: %v", err)
+	}
+}
+
+// yieldingRecorder records writes and yields inside each one, so two goroutines
+// writing an unsynchronised frame always interleave rather than usually
+// getting away with it.
+type yieldingRecorder struct {
+	mu      sync.Mutex
+	written []byte
+}
+
+func (c *yieldingRecorder) Write(payload []byte) (int, error) {
+	runtime.Gosched()
+	c.mu.Lock()
+	c.written = append(c.written, payload...)
+	c.mu.Unlock()
+	runtime.Gosched()
+	return len(payload), nil
+}
+func (c *yieldingRecorder) Read([]byte) (int, error)         { return 0, io.EOF }
+func (c *yieldingRecorder) Close() error                     { return nil }
+func (c *yieldingRecorder) LocalAddr() net.Addr              { return nil }
+func (c *yieldingRecorder) RemoteAddr() net.Addr             { return nil }
+func (c *yieldingRecorder) SetDeadline(time.Time) error      { return nil }
+func (c *yieldingRecorder) SetReadDeadline(time.Time) error  { return nil }
+func (c *yieldingRecorder) SetWriteDeadline(time.Time) error { return nil }
+
+// TestHeartbeatDoesNotCorruptReplies fails without the write mutex. The
+// heartbeat ticker publishes from its own goroutine while the main loop yields
+// invocation results, and the donor exits if identifiersGet does not answer.
+func TestHeartbeatDoesNotCorruptReplies(t *testing.T) {
+	socket := &yieldingRecorder{}
+	client := &connection{socket: socket}
+
+	payload := make([]byte, 48)
+	for index := range payload {
+		payload[index] = 'y'
+	}
+
+	var group sync.WaitGroup
+	for writer := 0; writer < 8; writer++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			for index := 0; index < 12; index++ {
+				_ = client.writeFrame([]interface{}{
+					wampPublish, uint64(1), map[string]interface{}{},
+					string(payload), []interface{}{},
+				})
+			}
+		}()
+	}
+	group.Wait()
+
+	stream := socket.written
+	frames := 0
+	for len(stream) > 0 {
+		if len(stream) < 4 {
+			t.Fatalf("stream ends mid-header after %d frames", frames)
+		}
+		length := int(stream[1])<<16 | int(stream[2])<<8 | int(stream[3])
+		if len(stream) < 4+length {
+			t.Fatalf("stream ends mid-payload after %d frames", frames)
+		}
+		decoded, err := decodeMessagePack(stream[4 : 4+length])
+		if err != nil {
+			t.Fatalf("frame %d did not decode: %v", frames, err)
+		}
+		message, ok := decoded.([]interface{})
+		if !ok || len(message) != 5 {
+			t.Fatalf("frame %d has the wrong shape", frames)
+		}
+		if topic, ok := message[3].(string); !ok || len(topic) != 48 {
+			t.Fatalf("frame %d lost its payload", frames)
+		}
+		stream = stream[4+length:]
+		frames++
+	}
+	if frames != 96 {
+		t.Fatalf("recovered %d frames, expected 96", frames)
 	}
 }
