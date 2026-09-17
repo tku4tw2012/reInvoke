@@ -591,7 +591,11 @@ func (service *wampService) handleInvocation(
 				result = []interface{}{identity.Revision, identity.Version}
 				resultKwargs = map[string]interface{}{
 					"revision": identity.Revision,
-					"version":  identity.Version,
+					// The revision reproduces across boots on this unit; the
+					// version bytes do not, so they are labelled rather than
+					// presented as a settled reading.
+					"bootloader-version-unverified": identity.Version,
+					"raw":                           identity.Raw,
 				}
 			}
 		}

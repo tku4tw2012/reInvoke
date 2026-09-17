@@ -237,6 +237,9 @@ const (
 type hardwareIdentity struct {
 	Revision string
 	Version  string
+	// Raw carries bytes 2 to 4 of the reply verbatim. Version is a reading of
+	// those same bytes that has not reproduced across boots.
+	Raw string
 }
 
 // decodeHWIDFrame reads a reply. It reports whether the frame is one.
@@ -258,9 +261,16 @@ func decodeHWIDFrame(frame [6]byte) (hardwareIdentity, error) {
 		return hardwareIdentity{}, fmt.Errorf(
 			"MCU reported unknown board revision %d", frame[1])
 	}
+	// Bytes 2 to 4 sit beside "MCU bootloader " in the donor's handler and are
+	// formatted there with %02d%02d%02d. The same formatting is reproduced, but
+	// it is reported as unverified: the revision byte gave DV2 on two separate
+	// boots of this unit while these three bytes gave different values each
+	// time, and a bootloader version does not change across a power cycle. The
+	// raw bytes are carried so a later capture can settle what they are.
 	return hardwareIdentity{
 		Revision: revision,
 		Version:  fmt.Sprintf("%02d%02d%02d", frame[2], frame[3], frame[4]),
+		Raw:      fmt.Sprintf("%02x%02x%02x", frame[2], frame[3], frame[4]),
 	}, nil
 }
 

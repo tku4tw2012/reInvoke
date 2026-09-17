@@ -99,7 +99,7 @@ try {
   const patchedFile = path.join(fixture, 'init');
   fs.writeFileSync(patchedFile, patched);
   for (const file of ['bootstrap.sh', 'bsl-init.sh', 'common.sh', 'kernel.sh',
-    'ssh-start.sh', 'adb-network-start.sh', 'persistence-start.sh'])
+    'ssh-start.sh', 'usb-adb-start.sh', 'persistence-start.sh'])
     check(cp.spawnSync(qemu, [bb, 'sh', '-n', path.join(__dirname, file)], { encoding: 'utf8' }));
   check(cp.spawnSync(qemu, [bb, 'sh', '-n', patchedFile], { encoding: 'utf8' }));
   for (const release of ['3.8.13-yocto-standard', '3.8.13-reinvoke-audio-sd8887'])
@@ -146,11 +146,15 @@ try {
     .test(bootstrap + bsl + patched + fs.readFileSync(common)));
   assert(!fs.readFileSync(kernel, 'utf8').includes('mac_addr=02:'), 'no hardcoded fleet MAC');
   assert(patched.includes('pilot_ssh_start'));
-  assert(patched.includes('pilot_adb_network_start'));
+  assert(patched.includes('pilot_usb_adb_up'));
+  // Teardown must be on the shutdown path. Leaving adbd asleep inside the
+  // gadget driver and the driver holding the USB controller stopped this unit
+  // completing a soft reboot; it had to be power cycled.
+  assert(patched.includes('pilot_usb_adb_down'));
   assert(patched.includes('pilot_persistence_start'));
   assert(patched.includes('supervise provision-windowd pilot_resume_then_exec'));
   assert(patched.includes('--music-volume-state /run/reinvoke/music-volume'));
-  assert(patched.indexOf('pilot_persistence_start ||') < patched.indexOf('pilot_adb_network_start ||'));
+  assert(patched.indexOf('pilot_persistence_start ||') < patched.indexOf('pilot_usb_adb_up ||'));
   assert(patched.indexOf('pilot_persistence_start ||') < patched.indexOf('supervise mcu-interface'));
   assert(patched.indexOf('wait_service_stop bluetoothd') < patched.indexOf('stop_service persistence'));
   const data = path.join(fixture, 'bytes');

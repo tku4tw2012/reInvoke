@@ -12,7 +12,7 @@ function patchRuntime(source) {
     if (text.split(old).length !== 2) throw new Error('ambiguous/missing RC12 patch context');
     text = text.replace(old, value);
   }
-  replace('export PATH\n', 'export PATH\n. /usr/libexec/nand-pilot/common.sh\n. /usr/libexec/nand-pilot/kernel.sh\n. /usr/libexec/nand-pilot/ssh-start.sh\n. /usr/libexec/nand-pilot/adb-network-start.sh\n. /usr/libexec/nand-pilot/persistence-start.sh\n');
+  replace('export PATH\n', 'export PATH\n. /usr/libexec/nand-pilot/common.sh\n. /usr/libexec/nand-pilot/kernel.sh\n. /usr/libexec/nand-pilot/ssh-start.sh\n. /usr/libexec/nand-pilot/usb-adb-start.sh\n. /usr/libexec/nand-pilot/persistence-start.sh\n');
   replace('  echo "reInvoke: $*" > /dev/kmsg', `  pilot_log "runtime: $*"
   case "$*" in
     *failed*|*incomplete*|*invalid*|*missing*|*unavailable*|*"not initialized"*)
@@ -67,7 +67,7 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
     '  . "${runtime_root}/etc/runtime.conf"\n' +
     '  pilot_ssh_start || log "SSH fallback unavailable; runtime continuing"\n' +
     '  pilot_persistence_start || log "Persistent settings unavailable; runtime continuing"\n' +
-    '  pilot_adb_network_start || log "Network ADB unavailable; runtime continuing"\n');
+    '  pilot_usb_adb_up || log "USB ADB unavailable; runtime continuing"\n');
   replace('      supervise provision-windowd \\\n        /usr/sbin/reinvoke-provision-windowd',
     '      supervise provision-windowd pilot_resume_then_exec \\\n        /usr/sbin/reinvoke-provision-windowd');
   replace('      log "provisioning window requires reinvoke.wifi_mode=sta-uap"',
@@ -101,6 +101,12 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
     '  wait_service_stop bluedroid\n' +
     '  stop_service persistence\n' +
     '  wait_service_stop persistence\n' +
+    // USB ADB is torn down before the rest of shutdown. adbd sleeps inside the
+    // gadget driver and the driver holds the USB controller; leaving both in
+    // place through shutdown left this unit unable to complete a soft reboot
+    // and it had to be power cycled. Teardown is best effort: a speaker that
+    // cannot stop its debug channel must still be able to reboot.
+    '  pilot_usb_adb_down || log "USB ADB teardown reported a problem; continuing"\n' +
     '  stop_service syslogd\n');
   replace('log "native RAM environment is running"', `pilot_phase runtime-dispatched
 log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence, not this message"`);

@@ -6,7 +6,7 @@ const path = require('path');
 const zlib = require('zlib');
 const { patchRuntime } = require('./patch-runtime');
 const { readConfig, installConfig } = require('./private-config');
-const { validateAdbNetwork, installAdbNetwork } = require('./adb-network-config');
+const { validateUsbAdb, installUsbAdb } = require('./usb-adb-config');
 const { readPersistenceConfig, installPersistence } = require('./persistence-config');
 const { readBluedroidConfig, installBluedroid } = require('./bluedroid-config');
 const lib = require('./build-lib');
@@ -40,7 +40,7 @@ function cpioPack(root, out) {
 }
 function prepare() {
   const privateConfig = readConfig(process.env.PILOT_PRIVATE_CONFIG);
-  validateAdbNetwork(privateConfig.adbNetwork);
+  validateUsbAdb(privateConfig.usbAdb);
   const persistenceConfig = readPersistenceConfig(process.env.PILOT_PERSISTENCE_CONFIG);
   const bluedroidConfig = readBluedroidConfig(process.env.PILOT_BLUEDROID_CONFIG);
   for (const key of Object.keys(pins)) verify(input(key), pins[key]);
@@ -78,14 +78,16 @@ function prepare() {
   write(path.join(root, 'etc/profile'), 'export PATH=/sbin:/bin:/usr/sbin:/usr/bin\nexport HOME=/root\numask 022\n');
   installConfig(privateConfig, root);
   json(path.join(output, 'persistence-manifest.json'), installPersistence(persistenceConfig, root));
-  installAdbNetwork(privateConfig, root);
   if (bluedroidConfig)
     json(path.join(output, 'bluedroid-manifest.json'),
       installBluedroid(bluedroidConfig, root,
         path.join(here, '../bluedroid/bluedroid-start.sh')));
-  for (const script of ['adb-network-start.sh', 'persistence-start.sh'])
+  for (const script of ['usb-adb-start.sh', 'persistence-start.sh'])
     install(path.join(here, script), path.join(root, 'usr/libexec/nand-pilot', script), '0644');
   fs.rmSync(path.join(root, 'lib/modules'), { recursive: true });
+  // Installed after the vendor module tree is replaced so the gadget payload
+  // is not swept away with it.
+  installUsbAdb(privateConfig, root, here);
   const modules = [];
   const suffixes = ['wlan_sd8887/mlan.ko', 'wlan_sd8887/sd8xxx.ko', 'bt_sd8887/bt8xxx.ko'];
   for (const [release, source] of [['3.8.13-yocto-standard', stock], ['3.8.13-reinvoke-audio-sd8887', original]]) {

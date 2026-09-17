@@ -231,6 +231,9 @@ func TestHWIDDecodeMatchesTheDonor(t *testing.T) {
 		if err != nil {
 			t.Fatalf("decode %v: %v", testCase.frame, err)
 		}
+		if identity.Raw == "" {
+			t.Fatalf("decode %v dropped the raw bytes", testCase.frame)
+		}
 		if identity.Revision != testCase.wantRevision || identity.Version != testCase.wantVersion {
 			t.Fatalf("decode %v = %q/%q, want %q/%q",
 				testCase.frame, identity.Revision, identity.Version,
