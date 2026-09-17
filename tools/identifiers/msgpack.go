@@ -41,6 +41,19 @@ func writeMessagePack(writer *bytes.Buffer, value interface{}) error {
 		return writeInteger(writer, item)
 	case uint64:
 		return writeUnsigned(writer, item)
+	// JSON has one number type, so encoding/json hands every numeric argument
+	// back as a float64. The procedures reached this way take whole numbers,
+	// and refusing them here meant every rotary volume change and the startup
+	// level were dropped with "unsupported MessagePack type float64" while the
+	// DSP stayed at whatever gain it booted with.
+	case float64:
+		if item != math.Trunc(item) || math.IsInf(item, 0) || math.IsNaN(item) {
+			return fmt.Errorf("MessagePack argument %v is not a whole number", item)
+		}
+		if item < math.MinInt64 || item > math.MaxInt64 {
+			return fmt.Errorf("MessagePack argument %v is out of range", item)
+		}
+		return writeInteger(writer, int64(item))
 	case string:
 		return writeString(writer, item)
 	case []interface{}:

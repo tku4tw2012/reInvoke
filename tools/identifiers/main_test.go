@@ -4,6 +4,9 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -100,5 +103,34 @@ func TestAnswersDonorOOBEQuery(t *testing.T) {
 	// [YIELD, id, {}, [], {...}] with empty positional args.
 	if !strings.Contains(text, "[]interface{}{}, result,") {
 		t.Fatal("the yield must place the result in kwargs with empty args")
+	}
+}
+
+// Numeric call arguments arrive through encoding/json, which has one number
+// type and hands back float64. Rejecting that dropped every rotary volume
+// change and the startup level, with the DSP left at its power-on gain, so
+// this asserts the whole-number path and the guard around it.
+func TestCallArgumentsSurviveJSONDecoding(t *testing.T) {
+	var arguments []interface{}
+	if err := json.Unmarshal([]byte("[5]"), &arguments); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := arguments[0].(float64); !ok {
+		t.Fatalf("expected encoding/json to yield float64, got %T", arguments[0])
+	}
+
+	encoded, err := encodeMessagePack(arguments)
+	if err != nil {
+		t.Fatalf("encode whole number: %v", err)
+	}
+	// One-element array holding a positive fixint.
+	if want := []byte{0x91, 0x05}; !bytes.Equal(encoded, want) {
+		t.Errorf("encoded = % x, want % x", encoded, want)
+	}
+
+	for _, bad := range []interface{}{2.5, math.Inf(1), math.NaN()} {
+		if _, err := encodeMessagePack([]interface{}{bad}); err == nil {
+			t.Errorf("expected %v to be rejected", bad)
+		}
 	}
 }

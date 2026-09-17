@@ -90,7 +90,95 @@ type link struct {
 	pending []frame
 	stats   linkStats
 
+	// The DSP can leave its busy line asserted, and the transmit path then
+	// requeues every message forever. Candidate 05.8.6 hit exactly that: the
+	// link answered getVer and volumeSet, then stalled with gpio15 high for
+	// the rest of the boot while each request timed out with nothing logged
+	// to say why. Track the stall so it is reported once and recovery is
+	// attempted rather than retried silently.
+	busyStallSince    time.Time
+	busyStallReported bool
+	busyRecoveries    int
+	logf              func(string, ...interface{})
+	now               func() time.Time
+
 	booted bool
+}
+
+// busyStallReportAfter is how long the busy line may stay asserted with work
+// queued before the stall is reported and recovery attempted. The donor's own
+// ready-line tolerance is six misses of 500 ms, so a stall well past that is
+// not normal pacing.
+const busyStallReportAfter = 4 * time.Second
+
+// maxBusyRecoveries bounds recovery so a genuinely wedged DSP does not turn
+// into an endless strobe loop.
+const maxBusyRecoveries = 3
+
+func (l *link) currentTime() time.Time {
+	if l.now != nil {
+		return l.now()
+	}
+	return time.Now()
+}
+
+func (l *link) report(format string, args ...interface{}) {
+	if l.logf != nil {
+		l.logf(format, args...)
+	}
+}
+
+// noteBusyStall records that the busy line refused a queued transfer, and
+// once the stall is clearly not pacing, reports it and tries to release the
+// line the way the donor opens every transfer.
+func (l *link) noteBusyStall() {
+	now := l.currentTime()
+	if l.busyStallSince.IsZero() {
+		l.busyStallSince = now
+		return
+	}
+	if now.Sub(l.busyStallSince) < busyStallReportAfter {
+		return
+	}
+	if !l.busyStallReported {
+		l.busyStallReported = true
+		l.report(
+			"DSP busy line asserted for %s with work queued; "+
+				"messages cannot be sent",
+			now.Sub(l.busyStallSince).Round(time.Second),
+		)
+	}
+	if l.busyRecoveries >= maxBusyRecoveries {
+		return
+	}
+	l.busyRecoveries++
+	// Lower the transfer line and pulse the strobe: step one of the donor's
+	// handshake, which is what it does before deciding the link is idle.
+	if err := l.gpio.Write(l.pins.Active, false); err != nil {
+		l.report("DSP busy recovery: lower transfer line: %v", err)
+		return
+	}
+	if err := l.strobe(); err != nil {
+		l.report("DSP busy recovery: strobe: %v", err)
+		return
+	}
+	if err := l.gpio.Write(l.pins.Active, false); err != nil {
+		l.report("DSP busy recovery: release transfer line: %v", err)
+		return
+	}
+	l.report("DSP busy recovery attempt %d of %d",
+		l.busyRecoveries, maxBusyRecoveries)
+}
+
+// clearBusyStall forgets a stall once a transfer is accepted again.
+func (l *link) clearBusyStall() {
+	if l.busyStallReported {
+		l.report("DSP busy line released after %s",
+			l.currentTime().Sub(l.busyStallSince).Round(time.Second))
+	}
+	l.busyStallSince = time.Time{}
+	l.busyStallReported = false
+	l.busyRecoveries = 0
 }
 
 type queuedMessage struct {
@@ -103,6 +191,7 @@ type linkOptions struct {
 	Pins         pinout
 	Sleep        func(time.Duration)
 	ReadyTimeout time.Duration
+	Logf         func(string, ...interface{})
 }
 
 func newLink(spi spiBus, gpio gpioLines, i2c i2cBus, options linkOptions) *link {
@@ -122,6 +211,7 @@ func newLink(spi spiBus, gpio gpioLines, i2c i2cBus, options linkOptions) *link 
 		pins:         options.Pins,
 		sleep:        sleep,
 		readyTimeout: timeout,
+		logf:         options.Logf,
 	}
 }
 
@@ -420,8 +510,10 @@ func (l *link) Poll() (*frame, bool, error) {
 		}
 		if busy {
 			l.requeue(message)
+			l.noteBusyStall()
 			return nil, false, nil
 		}
+		l.clearBusyStall()
 		received, err := l.transmit(message.frame)
 		message.complete(err)
 		if err != nil {

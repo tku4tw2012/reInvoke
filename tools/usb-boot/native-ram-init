@@ -77,7 +77,7 @@ start_runtime_logger() {
       /opt/bluedroid/lib/ld-linux-armhf.so.3 --library-path \
         /system/lib:/system/lib/hw:/opt/bluedroid/usr/lib:/opt/bluedroid/lib \
         /system/bin/logcat -v threadtime \
-        -f /run/reinvoke/logs/android.log -r 256 -n 2 &
+        -f /run/reinvoke/logs/android.log -r256 -n 4 &
       runtime_logger_pid="$!"
       echo "${runtime_logger_pid}" >/run/reinvoke/syslogd.pid
       if ${BB} test -e /run/reinvoke/shutdown; then

@@ -64,9 +64,11 @@ type volumeSnapshot struct {
 }
 
 // defaultVolume is where the speaker starts before anything sets a level. The
-// retail unit is loud: an unattenuated playback was reported as "very loud" on
-// hardware, so this starts low deliberately.
-const defaultVolume = 12
+// DSP scale is not percent. Measured on hardware through a Bluetooth stream:
+// unattenuated was "too loud", 5 was "a bit on the louder side" and 3 was
+// "soft but clearly audible". Percent is passed to the DSP unscaled, so this
+// starts at the level that was actually judged comfortable.
+const defaultVolume = 3
 
 func newDSPVolumeController(socket string) (*dspVolumeController, error) {
 	if socket == "" {
