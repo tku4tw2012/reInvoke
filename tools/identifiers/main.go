@@ -12,6 +12,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -233,6 +234,10 @@ func main() {
 	identityFile := flag.String("identity-file", "", "path to a file holding the identity hex; wins over -identity-hex when set")
 	deviceName := flag.String("device-name", "reInvoke", "name reported to the donor service")
 	deviceNameFile := flag.String("device-name-file", "", "path to a file holding the device name; wins over -device-name when set")
+	serviceName := flag.String("service-name", "identifiers",
+		"name used for the ready and heartbeat topics")
+	buildIdentityFile := flag.String("build-identity-file", "/etc/nand-pilot/build-id",
+		"file whose contents answer com.harman.firmwareVersion")
 	call := flag.String("call", "", "diagnostic: invoke this procedure and exit")
 	callArgs := flag.String("call-args", "", "diagnostic: JSON array of positional arguments")
 	flag.Parse()
@@ -316,6 +321,10 @@ func main() {
 	// succeeded immediately once this service released the name. Nothing
 	// here may claim a procedure mcu-interface owns (tools/mcu-interface/
 	// wamp.go's `procedures`).
+	buildIdentity := "unknown"
+	if content, err := os.ReadFile(*buildIdentityFile); err == nil {
+		buildIdentity = strings.TrimSpace(string(content))
+	}
 	responses := map[string]map[string]interface{}{
 		procedure: identityResult,
 		// The donor CALLS this at startup and gates its entire radio-enable
@@ -329,8 +338,19 @@ func main() {
 		// adapter is never enabled and hci0 stays 00:00:00:00:00:00.
 		stateProcedure:                 {"system": map[string]interface{}{"state": "normal"}},
 		"com.harman.deviceNameGet":     {"name": *deviceName, "device-name": *deviceName},
-		"com.harman.source.register":   {},
-		"com.harman.source.get-active": {"source": "bluetooth"},
+		// The source registry moved to the source manager, which implements the
+		// donor's contract rather than a fixed answer. These two were stubs: the
+		// registry never recorded anything and get-active replied with a keyword
+		// map where the donor replies with a positional URI, so a second source
+		// could never have been arbitrated.
+		//
+		// The donor's system-manager answered a version query by reading
+		// /etc/distro_version and folding in the DSP and MCU versions. This
+		// runtime has its own build identity in the same role.
+		"com.harman.firmwareVersion": {
+			"version":  buildIdentity,
+			"firmware": buildIdentity,
+		},
 	}
 	names := make(map[uint64]string, len(responses))
 	for name := range responses {
@@ -348,6 +368,18 @@ func main() {
 		names[registration] = name
 	}
 	log.Printf("IDENTIFIERS_READY %d procedures", len(responses))
+	// Readiness is published only now, after every registration succeeded, so
+	// a dependant that waits on it is waiting for a service that can answer.
+	if err := announceReady(client, *serviceName); err != nil {
+		log.Printf("IDENTIFIERS_READY_PUBLISH_FAILED: %v", err)
+	}
+	heartbeatCtx, stopHeartbeat := context.WithCancel(context.Background())
+	defer stopHeartbeat()
+	go func() {
+		if err := runHeartbeat(heartbeatCtx, client, *serviceName, 0); err != nil {
+			log.Printf("IDENTIFIERS_HEARTBEAT_FAILED: %v", err)
+		}
+	}()
 
 	for {
 		message, err := client.readFrame()

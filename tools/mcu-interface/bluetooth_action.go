@@ -55,7 +55,10 @@ func (controller *mediaActionController) pause(ctx context.Context) error {
 	if !playbackRunning(controller.playbackStatus, controller.readFile) {
 		return errors.New("playback is no longer running")
 	}
-	const procedure = "com.harman.bluetooth.pause"
+	// Source agnostic on purpose: the button means "pause whatever is
+	// playing", which is how the donor routed it through audio-ui. Naming the
+	// Bluetooth transport here worked only while it was the sole source.
+	const procedure = "com.harman.music.pause"
 	if controller.call != nil {
 		return controller.call(ctx, procedure)
 	}
