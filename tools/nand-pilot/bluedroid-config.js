@@ -225,6 +225,26 @@ function installBluedroid(config, root, launcher) {
     fs.chmodSync(target, 0o644);
   }
 
+  // LibreEnv publishes the binder service libre.EnvItems from this store and
+  // dies immediately without it. The stack's EnvHelper blocks on that service
+  // while saving the last connected address, inside the A2DP connection
+  // callback, so an absent store stops audio: traced on 05.8.7 as
+  // "EnvHelper: Env : EnvItems not published, waiting..." repeating forever on
+  // the bt_jni_workqueue thread while the state machine stayed in "opening"
+  // and every decoded packet was discarded. The donor keeps a second copy at
+  // /lsync and reads whichever it finds.
+  const envStore = path.join(stackRoot, 'caldata/FENV.bin');
+  if (!fs.existsSync(envStore))
+    throw new Error('donor payload has no caldata/FENV.bin; LibreEnv would die at startup');
+  for (const dir of ['caldata', 'lsync']) {
+    const target = path.join(absoluteRoot, dir, 'FENV.bin');
+    fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o755 });
+    if (fs.existsSync(target))
+      throw new Error(`${dir}/FENV.bin already exists; refusing to overwrite`);
+    fs.copyFileSync(envStore, target);
+    fs.chmodSync(target, 0o644);
+  }
+
   // ALSA routing. The donor renders A2DP in-process and opens a named device,
   // "music", through its own libasound. That name is defined by the stock
   // asound-product.conf, which asound.conf loads and which the base

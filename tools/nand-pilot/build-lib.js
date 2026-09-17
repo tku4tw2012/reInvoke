@@ -14,8 +14,8 @@ const pins = {
   capture: { path: 'evidence/nand-restored-ram-inspection-20260909/restored-main-256MiB.bin', bytes: 268435456,
     sha256: '2fac4159fe23aa25581c29f6c90033af3a1126a02593db0bd47e2c10d2c09f19' },
 };
-const CANDIDATE = '05.8.7';
-const BUILD_ID = `reInvoke-NAND-${CANDIDATE}-20260916`;
+const CANDIDATE = '05.8.8';
+const BUILD_ID = `reInvoke-NAND-${CANDIDATE}-20260917`;
 const BLUETOOTH_NAME = `reInvoke-NAND-${CANDIDATE}`;
 const BUNDLE_NAME = `83_IMAGE.reinvoke-${CANDIDATE}`;
 const BB_SHA256 = '5fc83ab6cd37841b8d73e07bf3cd8af47ae5af56c93fe085b2db91e0d1f4207b';
@@ -114,8 +114,12 @@ function elfClosure(root) {
     // own glibc stays private because it collides with the runtime's. These
     // are the same directories its launcher puts on LD_LIBRARY_PATH, so the
     // build verifies the closure the runtime will actually resolve.
+    // system/bin holds donor executables (logcat, servicemanager, LibreEnv)
+    // which the runtime starts through the donor loader with that same path,
+    // so they resolve as donor objects rather than against the host /lib.
     const donorRadio = item.path.startsWith('opt/bluedroid/') ||
-      item.path.startsWith('system/lib/');
+      item.path.startsWith('system/lib/') ||
+      item.path.startsWith('system/bin/');
     let dirs = ['/lib', '/usr/lib'];
     if (modern) {
       dirs = ['/opt/reinvoke/lib/hostapd', '/opt/reinvoke/lib', '/lib', '/usr/lib'];
