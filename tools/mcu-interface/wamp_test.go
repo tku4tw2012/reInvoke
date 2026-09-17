@@ -74,6 +74,7 @@ func TestMinimumWAMPSurface(t *testing.T) {
 		"com.harman.vui.setDeviceColor",
 		"com.harman.vui.getDeviceColor",
 		"com.harman.vui.setmcupowermode",
+		"com.harman.vui.GetHWID",
 	}
 	if !reflect.DeepEqual(procedures, expected) {
 		t.Fatalf("procedures = %#v, want %#v", procedures, expected)
