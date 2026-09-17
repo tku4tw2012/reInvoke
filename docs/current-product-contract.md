@@ -77,11 +77,24 @@ Rotary control changes media volume. See [speaker control](emulation/owned-speak
 
 Candidate 05.8.6 and earlier recorded the level without applying it, so the
 speaker played at whatever gain the DSP booted with and the rotary control
-moved a number that reached no hardware. Candidate 05.8.7 pushes the level to
-`com.harman.dsp.volumeSet`, which was confirmed audibly on hardware by stepping
-a looped playback through 10, 90 and 5. That scale is not established as
-linear; 5 and 10 were reported comfortable against 90 loud, so percent is
-passed through unscaled and the startup default is twelve.
+moved a number that reached no hardware. Candidate 05.8.7 pushed the level to
+`com.harman.dsp.volumeSet` instead, which was audible but wrong: the donor
+carried the user's volume on the ALSA softvol control, not on DSP gain.
+
+The donor's `aui::VolumeManager` calls `add_softvol` and steps it from
+`softvol_fading_tick`, and the vendor settings database records
+`current_volume=80`. Candidate 05.8.10 moves the user volume onto the softvol
+control `music` on card 0, range 0-255, and keeps DSP gain as the fixed
+amplifier trim it is. That control sat at 255 on every earlier candidate, which
+is why playback was reported as far too loud and why a DSP gain near 3 was
+needed to compensate. Stepping it down through 160, 90 and 30 was confirmed
+audibly on hardware.
+
+The control is created lazily when the donor stack first opens `pcm.music`, so
+it is addressed by name rather than by `numid`. Writes are single ioctls, which
+makes fading free; the rotary control fades in steps of 6 every 20 ms instead of
+forking a process per detent. Fourteen detents in seven seconds previously
+forked fourteen processes and twice drove the level to zero.
 
 ### Bluetooth audio rendering
 

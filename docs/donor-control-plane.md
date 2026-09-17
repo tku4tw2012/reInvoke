@@ -24,13 +24,16 @@ unanswered on purpose.
 | `bluetoothPairing` | donor itself | registered, driven by the pairing agent |
 | `bluetooth.{next,prev,pause,resume,stop,skipTo,shuffle,repeat}` | donor itself | full media surface |
 | `volumeGet`, `volumeSet`, `volumeChanged` | mcu-interface | reaches the amplifier through the DSP |
-| `source.register` | identifiers | stub returning `{}` |
-| `source.get-active` | identifiers | stub returning `bluetooth` |
-| `source.start` | nobody | never observed being called |
-| `source.nowPlayingUpdate` | nobody | called during playback; 33 refusals in one A2DP session |
-| `extStateUpdate` | nobody | two calls observed |
-| `music.stateChanged` | nobody | two calls observed |
-| `error` | nobody | |
+| `source.register` | source-manager | records the source and its capabilities |
+| `source.get-active` | source-manager | returns the source holding the speaker |
+| `source.get-registered` | source-manager | returns every admitted source |
+| `source.start` | source-manager | hands the speaker to a source, stopping the incumbent |
+| `source.flush` | source-manager | drops registrations |
+| `music.{pause,resume,stop,cmdPlayPause}` | source-manager | routed to whichever source is active |
+| `source.nowPlayingUpdate` | mcu-interface | called during playback; 33 refusals in one A2DP session |
+| `extStateUpdate` | mcu-interface | two calls observed |
+| `music.stateChanged` | source-manager | published when the active source changes |
+| `error` | source-manager | logged |
 
 ## The source family
 
@@ -42,17 +45,31 @@ answers and the companion application.
 `nowPlayingUpdate` carries the AVRCP payload: album, artist, track, and cover
 art URLs. The donor pushes it whenever the connected phone changes track.
 
-## Why it is not implemented
+## What is implemented
 
-Nothing on this unit consumes it. There is no screen and no companion
-application, so an implementation would write track names into a log that
-nothing reads. It is recorded here rather than built.
+Candidate 05.8.10 implements the framework in `reinvoke-source-manager`. Two
+earlier stubs in the identifiers service answered `register` and `get-active`
+from a fixed table, and `get-active` returned the wrong shape, so a second
+source could never have taken the speaker. The service now keeps real
+registrations, arbitrates which source holds the speaker, and routes the
+source-agnostic `music.*` verbs to whichever source is active.
 
-It becomes worth building if any of these appear:
+The semantics follow Harman's own `MusicSourceStart.pm`: starting a source
+stops the incumbent first, and the change is published on `music.stateChanged`.
+The donor stack is admitted at startup so it can claim the speaker as it always
+did.
 
-* a display or LED behaviour that should reflect what is playing
-* a local web or API surface for the speaker
-* voice interaction that needs to answer "what is playing"
+`nowPlayingUpdate` carries the AVRCP payload. Nothing on this unit displays it,
+so mcu-interface accepts and logs it rather than refusing it. Refusing it was
+the previous behaviour and produced 33 errors in a single listening session.
+
+## Transport controls are passthrough, not local
+
+`bluetooth.{next,prev,pause,resume}` are AVRCP passthrough to the phone:
+`send_pass_through_cmd` with, for example, key id 68 for PLAY, pressed and
+released. The phone stops sending audio; nothing local is paused. A local test
+player ignores AVRCP entirely and keeps running, which is exactly what was
+observed and briefly misread as the command failing.
 
 ## A correction worth keeping
 
@@ -64,3 +81,30 @@ The donor calls `get-active`, which is what is implemented.
 That is the second time in this work a malformed pattern produced a confident
 and wrong conclusion about the donor. Read the donor's strings with a pattern
 that includes hyphens and dots, and confirm against a live log before acting.
+
+## Deliberately deferred: the MCU command space
+
+Four groups of donor procedures remain unimplemented because the MCU opcodes
+they need could not be recovered:
+
+* `SetRGBLEDBrightness`, which the donor validates as 0-100
+* `setDeviceColor` and `getDeviceColor`
+* `setmcupowermode` and `powerdspcontrol`
+* `mcustatus`, `restart` and `terminate`
+
+The vendor defaults for the LED group are known from the settings database:
+`LED_INTENSITY=50`, `LED_WHITE=50`, `LED_RGB=000000`, `LED_FLASHING=OFF`.
+The vocabulary is known too, because the donor binary spells it out: black,
+colour, front, amber, back, standby mode, operational mode. What is missing is
+the single byte that selects each command.
+
+This runtime already drives the indicator LEDs with opcode `0x09` and the
+frame `[0x09, amber, white, back, 0, 0]`, where each colour byte is a mode
+rather than a level: off, on, dim, slow blink, fast blink. Brightness is a
+different command, and its opcode is unknown.
+
+Guessing is not acceptable here. MCU frames are six bytes with the opcode in
+byte 0, and the same command space contains `startmcuupgrade`. An opcode that
+is wrong by one could put the microcontroller that owns power, the buttons and
+its own firmware into a state this project cannot recover from. These stay
+deferred until an opcode is established by observation rather than by guess.
