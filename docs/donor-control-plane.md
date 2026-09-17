@@ -109,16 +109,21 @@ runtime, and stopping it is what `reboot` already does.
 draws with ANSI escapes rather than the LED ring it was mistaken for. It is
 part of the excluded test line.
 
-## Deliberately deferred: the MCU command space
+## The MCU command space, recovered
 
-These remain unimplemented because the MCU opcodes they need could not be
-recovered:
+An earlier pass deferred this group on the grounds that the opcodes were
+unknown. They were not unknowable: disassembling the donor's `mcu-interface`
+yields each one. `SetRGBLEDBrightness`, `setDeviceColor`, `getDeviceColor` and
+`setmcupowermode` are implemented, and [the command map](mcu-command-map.md)
+records the opcodes, the payloads and the method.
 
-* `SetRGBLEDBrightness`, which the donor validates as 0-100
-* `setDeviceColor` and `getDeviceColor`
-* `setmcupowermode` and `powerdspcontrol`
-* `mcustatus`, `restart` and `terminate`
-* `GetHWID` and `SetHWID`
+The same reading corrected three assumptions. `powerdspcontrol` is not an MCU
+command at all, `restart` shells out through `system()`, and `terminate` never
+writes a frame. Implementing those three as MCU frames, which is what the
+earlier grouping implied, would have put invented bytes on the bus.
+
+Still unimplemented: `GetHWID` and `SetHWID`, and the firmware upgrade family,
+which is out of scope by decision rather than difficulty.
 
 The vendor defaults for the LED group are known from the settings database:
 `LED_INTENSITY=50`, `LED_WHITE=50`, `LED_RGB=000000`, `LED_FLASHING=OFF`.

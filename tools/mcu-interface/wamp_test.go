@@ -70,6 +70,10 @@ func TestMinimumWAMPSurface(t *testing.T) {
 		"com.harman.reboot",
 		"com.harman.timezoneSet",
 		"com.harman.networkConfiguration",
+		"com.harman.vui.SetRGBLEDBrightness",
+		"com.harman.vui.setDeviceColor",
+		"com.harman.vui.getDeviceColor",
+		"com.harman.vui.setmcupowermode",
 	}
 	if !reflect.DeepEqual(procedures, expected) {
 		t.Fatalf("procedures = %#v, want %#v", procedures, expected)

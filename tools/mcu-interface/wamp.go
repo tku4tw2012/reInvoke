@@ -82,6 +82,12 @@ var procedures = []string{
 	// The donor's connection-manager answered this. That service does not
 	// exist here; the question it answered still does.
 	"com.harman.networkConfiguration",
+	// Recovered from the donor binary by disassembly, not guessed. See
+	// docs/mcu-command-map.md for the opcodes and how they were established.
+	"com.harman.vui.SetRGBLEDBrightness",
+	"com.harman.vui.setDeviceColor",
+	"com.harman.vui.getDeviceColor",
+	"com.harman.vui.setmcupowermode",
 }
 
 type wampService struct {
@@ -95,6 +101,7 @@ type wampService struct {
 	version        string
 	flushEvents    bool
 	privacy        *microphonePrivacyController
+	appearance     *deviceAppearanceController
 	bluetoothState string
 	playbackStatus string
 	logf           func(string, ...interface{})
@@ -515,6 +522,60 @@ func (service *wampService) handleInvocation(
 		}
 		if invocationError == nil {
 			result = []interface{}{zone}
+		}
+	case "com.harman.vui.SetRGBLEDBrightness":
+		var level int
+		level, invocationError = mediaIntegerArgument(args, false)
+		if invocationError == nil && service.appearance == nil {
+			invocationError = errors.New("MCU is unavailable")
+		}
+		if invocationError == nil {
+			invocationError = service.appearance.SetBrightness(level)
+		}
+		if invocationError == nil {
+			result = []interface{}{uint64(level)}
+		}
+	case "com.harman.vui.setDeviceColor":
+		var name string
+		name, invocationError = firstStringArgument(args)
+		if invocationError == nil && service.appearance == nil {
+			invocationError = errors.New("MCU is unavailable")
+		}
+		if invocationError == nil {
+			invocationError = service.appearance.SetColor(name)
+		}
+		if invocationError == nil {
+			result = []interface{}{name}
+		}
+	case "com.harman.vui.getDeviceColor":
+		if len(args) != 0 {
+			invocationError = errors.New("invalid argument format")
+		} else if service.appearance == nil {
+			invocationError = errors.New("MCU is unavailable")
+		}
+		if invocationError == nil {
+			colour, applied := service.appearance.Color()
+			result = []interface{}{colour}
+			// The donor answered this from an event the MCU sends back.
+			// Nothing here consumes that event, so a caller is told plainly
+			// whether this is a reading or just the last value written.
+			resultKwargs = map[string]interface{}{
+				"color":      colour,
+				"brightness": uint64(service.appearance.Brightness()),
+				"source":     appearanceSource(applied),
+			}
+		}
+	case "com.harman.vui.setmcupowermode":
+		var name string
+		name, invocationError = firstStringArgument(args)
+		if invocationError == nil && service.appearance == nil {
+			invocationError = errors.New("MCU is unavailable")
+		}
+		if invocationError == nil {
+			invocationError = service.appearance.SetPowerMode(name)
+		}
+		if invocationError == nil {
+			result = []interface{}{name}
 		}
 	case "com.harman.networkConfiguration":
 		configuration := networkConfiguration()

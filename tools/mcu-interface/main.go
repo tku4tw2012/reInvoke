@@ -302,6 +302,10 @@ func main() {
 		privacy.RequestReconcile()
 	}
 	indicatorLEDs := newIndicatorLEDController(bus)
+	appearance := newDeviceAppearanceController(bus, log.Printf)
+	// The vendor's own startup appearance, from its settings store rather than
+	// chosen here: LED_INTENSITY 50 and LED_RGB 000000.
+	appearance.ApplyDefaults()
 	bluetoothDone := make(chan error, 1)
 	if *bluetoothState != "" {
 		if err := ensureBluetoothStateDirectory(*bluetoothState); err != nil {
@@ -350,6 +354,7 @@ func main() {
 		events:         source,
 		version:        recoveredMCUVersion,
 		privacy:        privacy,
+		appearance:     appearance,
 		bluetoothState: *bluetoothState,
 		playbackStatus: *playbackStatus,
 		logf:           log.Printf,
