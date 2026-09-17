@@ -310,6 +310,12 @@ func main() {
 	}
 	indicatorLEDs := newIndicatorLEDController(bus)
 	appearance := newDeviceAppearanceController(bus, log.Printf)
+	if media != nil {
+		// The ring arc is drawn by the microcontroller from the level, which
+		// is why no volume animation exists in the lights directory while
+		// every other cue does. Without this the dial moves silently.
+		media.ring = appearance
+	}
 	if gpioSource != nil {
 		// Replies to our own requests arrive on the button channel. Without
 		// this they are counted as undecodable frames and logged as faults.
@@ -339,6 +345,11 @@ func main() {
 			indicator: indicatorLEDs,
 			logf:      log.Printf,
 		}
+		// The front lamp reports network state, which the donor drove from
+		// audio-ui. Nothing drove it here, so it sat at whatever the
+		// microcontroller lit at power-up and read as online regardless.
+		frontWatcher := newNetworkStateWatcher(indicatorLEDs, log.Printf)
+		go frontWatcher.Run(ctx)
 		go func() {
 			err := watcher.Run(ctx)
 			if err != nil {

@@ -308,3 +308,23 @@ func TestReadHWIDGivesUp(t *testing.T) {
 		t.Fatalf("expected one request, got %v", mcu.frames)
 	}
 }
+
+// TestBrightnessTakesABareInteger pins the argument shape. Brightness was
+// wired to the volume reader, which demands [value, "music"], so every
+// well-formed call was refused on hardware until this was corrected.
+func TestBrightnessTakesABareInteger(t *testing.T) {
+	level, err := singleIntegerArgument([]interface{}{uint64(50)})
+	if err != nil || level != 50 {
+		t.Fatalf("bare integer gave %d, %v", level, err)
+	}
+	for _, args := range [][]interface{}{
+		{},
+		{uint64(50), "music"},
+		{"50"},
+		{uint64(1), uint64(2)},
+	} {
+		if _, err := singleIntegerArgument(args); err == nil {
+			t.Fatalf("accepted %v", args)
+		}
+	}
+}

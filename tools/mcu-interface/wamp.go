@@ -526,7 +526,7 @@ func (service *wampService) handleInvocation(
 		}
 	case "com.harman.vui.SetRGBLEDBrightness":
 		var level int
-		level, invocationError = mediaIntegerArgument(args, false)
+		level, invocationError = singleIntegerArgument(args)
 		if invocationError == nil && service.appearance == nil {
 			invocationError = errors.New("MCU is unavailable")
 		}
@@ -1170,4 +1170,28 @@ func firstStringArgument(args []interface{}) (string, error) {
 		return "", errors.New("expected a non-empty string")
 	}
 	return strings.TrimSpace(value), nil
+}
+
+// singleIntegerArgument reads a one-value integer payload.
+//
+// The volume procedures take [value, "music"] because the donor's own callers
+// instantiate call<tuple<int, string>>. Brightness is not a volume: the donor
+// validated a bare integer against 100 and sent it. Reusing the volume reader
+// here made the procedure demand a nonsense "music" argument and refuse every
+// well-formed call.
+func singleIntegerArgument(args []interface{}) (int, error) {
+	if len(args) != 1 {
+		return 0, errors.New("invalid argument format")
+	}
+	switch value := args[0].(type) {
+	case uint64:
+		if value <= uint64(^uint(0)>>1) {
+			return int(value), nil
+		}
+	case int64:
+		return int(value), nil
+	case int:
+		return value, nil
+	}
+	return 0, errors.New("invalid argument format")
 }

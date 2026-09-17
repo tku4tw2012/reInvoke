@@ -333,3 +333,36 @@ func (controller *deviceAppearanceController) ReadHWID(
 	// The donor logged "get HW ID timerout" here and returned nothing.
 	return hardwareIdentity{}, errors.New("timed out waiting for the MCU to report its hardware identity")
 }
+
+// Volume display on the LED ring.
+//
+// The ring is not driven by an animation asset for volume. The donor sent the
+// level to the microcontroller and the microcontroller drew the arc in its own
+// firmware, which is why no volume animation exists in the lights directory
+// while every other cue does.
+//
+// From the donor's com.harman.volumeChanged handler at 0xb4750:
+//
+//	b47a0:  cmp  r0, #100        validate 0 to 100
+//	b47e8:  strb r4, [sp, #57]   byte 1 is the level
+//	b47ec:  mov  r3, #3          opcode
+//	b47f0:  strb r3, [sp, #56]
+//	b47fc:  bl   7dbf0           six bytes to 0x36
+const showVolumeCode byte = 0x03
+
+// ShowVolume tells the microcontroller what to draw on the ring.
+//
+// The range is rejected here as the donor rejected it. A level outside 0 to
+// 100 has never been sent to this controller and its behaviour is unknown.
+func (controller *deviceAppearanceController) ShowVolume(level int) error {
+	if level < 0 || level > 100 {
+		return fmt.Errorf("volume %d is outside 0 to 100", level)
+	}
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	frame := [6]byte{showVolumeCode, byte(level), 0, 0, 0, 0}
+	if err := controller.writer.WriteMCUCommand(frame); err != nil {
+		return fmt.Errorf("show volume on ring: %w", err)
+	}
+	return nil
+}

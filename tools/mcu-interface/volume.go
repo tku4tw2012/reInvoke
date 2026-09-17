@@ -52,6 +52,10 @@ type dspVolumeController struct {
 	// nil and the subprocess caller is used.
 	push func(context.Context, int) error
 
+	// ring draws the volume arc on the LED ring. The microcontroller renders
+	// it from the level; nothing here draws segments.
+	ring interface{ ShowVolume(int) error }
+
 	// softvol is the ALSA control that actually carries the user volume. The
 	// DSP keeps whatever gain it booted with; attenuating there instead cost a
 	// forked process per rotary detent and stuttered during playback.
@@ -225,6 +229,17 @@ func (controller *dspVolumeController) effectiveLevel() int {
 	return controller.effectiveLevelLocked()
 }
 
+// displayLevel is what the ring should show: the chosen level, or nothing when
+// muted. It deliberately ignores ducking.
+func (controller *dspVolumeController) displayLevel() int {
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	if controller.muted {
+		return 0
+	}
+	return controller.volume
+}
+
 func (controller *dspVolumeController) effectiveLevelLocked() int {
 	if controller.muted {
 		return 0
@@ -315,6 +330,22 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 		request, cancel := context.WithTimeout(ctx, volumePushTimeout)
 		err := send(request, level)
 		cancel()
+		// The ring is written only after the DSP call returns. Both devices
+		// sit on one I2C bus, and writing while the DSP transaction this call
+		// triggered is still in flight cost arbitration losses that the retry
+		// loop then had to absorb. Observed on hardware as "lost arbitration"
+		// bursts during a volume sweep.
+		//
+		// The arc shows the level the listener chose, not the ducked one: a
+		// duck is a transient from a prompt speaking over music, and redrawing
+		// for it would make the ring flicker on every notification.
+		if controller.ring != nil {
+			if ringErr := controller.ring.ShowVolume(
+				controller.displayLevel(),
+			); ringErr != nil && controller.logf != nil {
+				controller.logf("show volume on ring: %v", ringErr)
+			}
+		}
 		if err == nil {
 			continue
 		}

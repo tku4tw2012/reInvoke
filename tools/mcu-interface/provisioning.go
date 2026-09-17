@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -66,6 +68,14 @@ func (controller provisioningController) Apply(
 	if !response.Accepted {
 		return errors.New("provisioning window request was rejected")
 	}
+	// The front lamp shows wifi-setup while the window is open. The watcher
+	// reads this marker rather than guessing from connectivity, because the
+	// setup access point gives the speaker an address and would otherwise
+	// read as online.
+	if err := os.MkdirAll(filepath.Dir(provisioningMarkerPath), 0o755); err == nil {
+		_ = os.WriteFile(provisioningMarkerPath, []byte("open\n"), 0o644)
+	}
+	defer os.Remove(provisioningMarkerPath)
 	if controller.lights != nil {
 		_ = controller.lights.Start(ctx, "L_302_d_wifisetup", false)
 	}
