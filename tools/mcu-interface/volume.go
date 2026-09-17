@@ -42,11 +42,14 @@ type dspVolumeController struct {
 	caller, host, realm, dspProcedure string
 	port                              int
 
-	// pushes carries the latest level to the worker. It holds one entry so a
-	// fast rotary sweep collapses to the most recent value instead of queuing
-	// a process per detent.
-	pushes chan int
+	// notify wakes the worker. It holds one entry, so a fast rotary sweep
+	// collapses to a single push of wherever the dial stopped instead of one
+	// subprocess per detent.
+	notify chan struct{}
 	logf   func(string, ...interface{})
+	// push sends one level to the DSP. Tests replace it; production leaves it
+	// nil and the subprocess caller is used.
+	push func(context.Context, int) error
 
 	mu     sync.Mutex
 	volume int
@@ -70,6 +73,13 @@ type volumeSnapshot struct {
 // starts at the level that was actually judged comfortable.
 const defaultVolume = 3
 
+const (
+	// volumePushTimeout bounds one call to the DSP service.
+	volumePushTimeout = 3 * time.Second
+	// volumeRetryDelay spaces retries while the DSP service is still coming up.
+	volumeRetryDelay = 5 * time.Second
+)
+
 func newDSPVolumeController(socket string) (*dspVolumeController, error) {
 	if socket == "" {
 		return nil, errors.New("DSP control socket is required for volume")
@@ -77,7 +87,7 @@ func newDSPVolumeController(socket string) (*dspVolumeController, error) {
 	return &dspVolumeController{
 		socket: socket,
 		volume: defaultVolume,
-		pushes: make(chan int, 1),
+		notify: make(chan struct{}, 1),
 	}, nil
 }
 
@@ -119,51 +129,86 @@ func (controller *dspVolumeController) applyLocked(ctx context.Context) error {
 	return err
 }
 
-// requestPushLocked queues the effective level. The channel holds one entry and
-// the oldest is dropped, so a fast sweep of the rotary control settles on the
-// level the user stopped at rather than replaying every step.
+// requestPushLocked wakes the worker. The channel carries a bare notification
+// rather than a level, so a pending wake always means "state changed" and the
+// worker reads whatever the level is when it gets there. An earlier version
+// queued the level itself and could strand the newest one: a send that found
+// the channel full, then lost the drain race to the worker, returned without
+// queueing anything and left the DSP on the previous value, including a
+// stranded unmute that would have held it at zero.
 func (controller *dspVolumeController) requestPushLocked() {
-	if controller.pushes == nil {
+	if controller.notify == nil {
 		return
 	}
-	level := controller.volume
-	if controller.muted {
-		level = 0
-	}
-	for {
-		select {
-		case controller.pushes <- level:
-			return
-		default:
-		}
-		select {
-		case <-controller.pushes:
-		default:
-			return
-		}
+	select {
+	case controller.notify <- struct{}{}:
+	default:
 	}
 }
 
-// Run applies queued levels to the DSP until the context is cancelled.
+// RequestPush asks the worker to reassert the current level.
+func (controller *dspVolumeController) RequestPush() {
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	controller.requestPushLocked()
+}
+
+// effectiveLevel is what the DSP should be playing at right now.
+func (controller *dspVolumeController) effectiveLevel() int {
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	if controller.muted {
+		return 0
+	}
+	return controller.volume
+}
+
+// Run keeps the DSP at the level this controller holds, until the context is
+// cancelled.
 func (controller *dspVolumeController) Run(ctx context.Context) {
-	if controller.pushes == nil {
+	if controller.notify == nil {
 		return
 	}
+	// The DSP powers up at its own gain and nothing else corrects it, so the
+	// restored or default level has to be asserted rather than waited for.
+	// Without this the speaker played its first stream at full output however
+	// low the configured level was.
+	controller.RequestPush()
+
+	var retry <-chan time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case level := <-controller.pushes:
-			if ctx.Err() != nil {
-				return
-			}
-			request, cancel := context.WithTimeout(ctx, 3*time.Second)
-			err := controller.pushVolume(request, level)
-			cancel()
-			if err != nil && ctx.Err() == nil && controller.logf != nil {
-				controller.logf("apply DSP volume %d: %v", level, err)
-			}
+		case <-controller.notify:
+		case <-retry:
 		}
+		if ctx.Err() != nil {
+			return
+		}
+		retry = nil
+
+		level := controller.effectiveLevel()
+		send := controller.push
+		if send == nil {
+			send = controller.pushVolume
+		}
+		request, cancel := context.WithTimeout(ctx, volumePushTimeout)
+		err := send(request, level)
+		cancel()
+		if err == nil {
+			continue
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		if controller.logf != nil {
+			controller.logf("apply DSP volume %d: %v", level, err)
+		}
+		// The DSP service registers its procedures after this one starts, so
+		// the first assertion can lose a race nobody can hear. Keep trying;
+		// each attempt re-reads the level, so a retry cannot apply a stale one.
+		retry = time.After(volumeRetryDelay)
 	}
 }
 

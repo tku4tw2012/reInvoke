@@ -128,9 +128,23 @@ func TestCallArgumentsSurviveJSONDecoding(t *testing.T) {
 		t.Errorf("encoded = % x, want % x", encoded, want)
 	}
 
-	for _, bad := range []interface{}{2.5, math.Inf(1), math.NaN()} {
+	// Fractions, non-finite values and anything encoding/json has already
+	// rounded must be refused rather than encoded as a different number.
+	for _, bad := range []interface{}{
+		2.5,
+		math.Inf(1),
+		math.Inf(-1),
+		math.NaN(),
+		float64(1 << 53 + 2),
+		-float64(1 << 53 + 2),
+	} {
 		if _, err := encodeMessagePack([]interface{}{bad}); err == nil {
 			t.Errorf("expected %v to be rejected", bad)
 		}
+	}
+
+	// Negative whole numbers still have to encode.
+	if _, err := encodeMessagePack([]interface{}{-5.0}); err != nil {
+		t.Errorf("encode negative whole number: %v", err)
 	}
 }

@@ -42,7 +42,7 @@ func donorFind(area []byte, name string) (string, bool) {
 
 func newTestArea(t *testing.T) *area {
 	t.Helper()
-	store, err := createArea(filepath.Join(t.TempDir(), "__properties__"))
+	store, _, err := createArea(filepath.Join(t.TempDir(), "__properties__"))
 	if err != nil {
 		t.Fatalf("createArea: %v", err)
 	}
@@ -154,5 +154,70 @@ func TestSetMessageLayoutMatchesDonorSetter(t *testing.T) {
 	}
 	if value := trimNUL(message[4+nameMax:]); value != "1" {
 		t.Errorf("decoded value = %q", value)
+	}
+}
+
+// A supervised restart of this daemon must not erase the live table. The
+// consumers keep their own mapping of the same pages and are not restarted
+// with it, so wiping service.servicemanager here would block the donor stack
+// exactly as a missing property service did.
+func TestRestartAdoptsTheExistingTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "__properties__")
+
+	first, adopted, err := createArea(path)
+	if err != nil {
+		t.Fatalf("createArea: %v", err)
+	}
+	if adopted {
+		t.Error("a fresh area should not report an adopted table")
+	}
+	if err := first.Set("service.servicemanager", "1"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	second, adopted, err := createArea(path)
+	if err != nil {
+		t.Fatalf("createArea after restart: %v", err)
+	}
+	defer second.Close()
+	if !adopted {
+		t.Fatal("restart did not adopt the existing table")
+	}
+	if got, ok := donorFind(second.data, "service.servicemanager"); !ok || got != "1" {
+		t.Errorf("after restart got %q (found=%v), want \"1\"", got, ok)
+	}
+}
+
+// Two updates of the same length must not leave identical clean serials, or a
+// reader that samples, copies and re-samples can accept a torn value.
+func TestSameLengthUpdatesAdvanceTheSerial(t *testing.T) {
+	store := newTestArea(t)
+	if err := store.Set("ro.build.id", "aaa"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	offset, ok := store.find("ro.build.id")
+	if !ok {
+		t.Fatal("property missing")
+	}
+	before := binary.LittleEndian.Uint32(store.data[offset+recordSerialOffset:])
+	if before&1 != 0 {
+		t.Error("a settled serial must be clean")
+	}
+
+	if err := store.Set("ro.build.id", "bbb"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	after := binary.LittleEndian.Uint32(store.data[offset+recordSerialOffset:])
+	if after&1 != 0 {
+		t.Error("a settled serial must be clean")
+	}
+	if after == before {
+		t.Errorf("serial unchanged across a same-length update: %#x", after)
+	}
+	if got, ok := donorFind(store.data, "ro.build.id"); !ok || got != "bbb" {
+		t.Errorf("got %q (found=%v), want \"bbb\"", got, ok)
 	}
 }

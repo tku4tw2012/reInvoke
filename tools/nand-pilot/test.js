@@ -31,6 +31,20 @@ try {
   const kernel = path.join(__dirname, 'kernel.sh');
   const init = fs.readFileSync(path.join(source, 'init'));
   const patched = patchRuntime(init);
+
+  // A comment placed inside a backslash continuation silently truncates the
+  // command: the shell removes the backslash-newline, the comment then runs to
+  // end of line, and every argument on the following lines is lost. That is
+  // how a logcat invocation lost -f, -r256 and -n and stopped writing a log
+  // while still passing `sh -n`, which cannot see it.
+  {
+    const lines = patched.toString().split('\n');
+    for (let i = 0; i < lines.length - 1; i += 1) {
+      if (!/\\$/.test(lines[i])) continue;
+      assert.ok(!/^\s*#/.test(lines[i + 1]),
+        `continuation at line ${i + 1} is followed by a comment: ${lines[i + 1].trim()}`);
+    }
+  }
   // Candidate 4.1 behavioural changes must survive into the patched RC12 init;
   // editing tools/usb-boot/native-ram-init alone does not reach this image.
   for (const marker of [

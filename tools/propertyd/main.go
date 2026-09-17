@@ -35,6 +35,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 const (
@@ -67,6 +68,13 @@ const (
 
 	maxRecords = (areaSize - infoStart) / infoSize
 
+	// generationMask is the low half of a record serial; the top byte is the
+	// value length and bit 0 marks a write in progress.
+	generationMask = 0x00FFFFFF
+	// futexWake is FUTEX_WAKE; the area is shared, so the private variant
+	// would not reach the donor's readers.
+	futexWake = 1
+
 	// setCommand is the only message the donor's __system_property_set sends.
 	setCommand  = 1
 	messageSize = 4 + nameMax + valueMax
@@ -78,17 +86,19 @@ type area struct {
 	file *os.File
 }
 
-func createArea(path string) (*area, error) {
+// createArea maps the property area, reporting whether an existing table was
+// adopted rather than written fresh.
+func createArea(path string) (*area, bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, fmt.Errorf("create area directory: %w", err)
+		return nil, false, fmt.Errorf("create area directory: %w", err)
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("open property area: %w", err)
+		return nil, false, fmt.Errorf("open property area: %w", err)
 	}
 	if err := file.Truncate(areaSize); err != nil {
 		file.Close()
-		return nil, fmt.Errorf("size property area: %w", err)
+		return nil, false, fmt.Errorf("size property area: %w", err)
 	}
 	data, err := syscall.Mmap(
 		int(file.Fd()),
@@ -99,11 +109,43 @@ func createArea(path string) (*area, error) {
 	)
 	if err != nil {
 		file.Close()
-		return nil, fmt.Errorf("map property area: %w", err)
+		return nil, false, fmt.Errorf("map property area: %w", err)
 	}
 	a := &area{data: data, file: file}
+	// Only format a area that is not already a good one. Reformatting on every
+	// start meant a supervised restart of this daemon erased the live table,
+	// including service.servicemanager. The consumers keep their own mapping
+	// of the same pages and are not restarted with it, so they would have gone
+	// on reading an empty table and blocked exactly as they did before any of
+	// this existed.
+	if a.valid() {
+		return a, true, nil
+	}
 	a.format()
-	return a, nil
+	return a, false, nil
+}
+
+// valid reports whether the mapping already holds a table this build wrote.
+func (a *area) valid() bool {
+	if binary.LittleEndian.Uint32(a.data[magicOffset:]) != areaMagic {
+		return false
+	}
+	if binary.LittleEndian.Uint32(a.data[versionOffset:]) != areaVersion {
+		return false
+	}
+	count := binary.LittleEndian.Uint32(a.data[countOffset:])
+	if count > maxRecords {
+		return false
+	}
+	// Every advertised record must sit inside the mapping, or a later walk
+	// would index past the end of it.
+	for i := uint32(0); i < count; i++ {
+		offset := a.recordOffset(i)
+		if offset < infoStart || offset+infoSize > areaSize {
+			return false
+		}
+	}
+	return true
 }
 
 // format rewrites the header. Readers validate magic and version before they
@@ -149,10 +191,22 @@ func (a *area) find(name string) (uint32, bool) {
 
 // writeValue publishes a value with the dirty flag raised across the copy so a
 // concurrent reader can detect the tear and retry, which is what the donor's
-// __system_property_read does with the same field.
+// __system_property_read does with the same field: it samples the serial, then
+// copies, then samples again and retries if the value changed.
+//
+// The generation in the low bits must advance on every update. Writing only
+// the length back left two same-length updates with identical clean serials,
+// so that reader could sample, copy while the value was half rewritten, sample
+// the same serial again and accept the tear as good. Clean serials are even
+// and dirty ones odd, matching the flag the reader tests.
+//
+// The donor waits on this word when it finds the dirty bit, so clearing it has
+// to be followed by a wake or that reader can sleep through the update.
 func (a *area) writeValue(offset uint32, value string) {
 	record := a.data[offset : offset+infoSize]
 	serial := binary.LittleEndian.Uint32(record[recordSerialOffset:])
+	generation := serial & generationMask
+
 	binary.LittleEndian.PutUint32(record[recordSerialOffset:], serial|1)
 
 	for i := 0; i < valueMax; i++ {
@@ -162,11 +216,25 @@ func (a *area) writeValue(offset uint32, value string) {
 
 	binary.LittleEndian.PutUint32(
 		record[recordSerialOffset:],
-		uint32(len(value))<<24,
+		uint32(len(value))<<24|((generation+2)&generationMask),
 	)
+	a.wake(offset + recordSerialOffset)
+
 	binary.LittleEndian.PutUint32(
 		a.data[serialOffset:],
 		binary.LittleEndian.Uint32(a.data[serialOffset:])+1,
+	)
+	a.wake(serialOffset)
+}
+
+// wake releases any donor reader parked on a serial word.
+func (a *area) wake(offset uint32) {
+	_, _, _ = syscall.Syscall6(
+		syscall.SYS_FUTEX,
+		uintptr(unsafe.Pointer(&a.data[offset])),
+		uintptr(futexWake),
+		uintptr(^uint32(0)>>1),
+		0, 0, 0,
 	)
 }
 
@@ -296,7 +364,7 @@ func main() {
 	log.SetFlags(0)
 	log.SetPrefix("propertyd: ")
 
-	store, err := createArea(*areaPath)
+	store, adopted, err := createArea(*areaPath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -313,7 +381,11 @@ func main() {
 			log.Fatalf("publish ready file: %v", err)
 		}
 	}
-	log.Printf("area %s size %d socket %s", *areaPath, areaSize, *socketPath)
+	origin := "formatted"
+	if adopted {
+		origin = fmt.Sprintf("adopted %d existing properties from", store.count())
+	}
+	log.Printf("area %s %s size %d socket %s", origin, *areaPath, areaSize, *socketPath)
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)

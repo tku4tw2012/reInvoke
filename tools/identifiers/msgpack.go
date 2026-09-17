@@ -46,12 +46,20 @@ func writeMessagePack(writer *bytes.Buffer, value interface{}) error {
 	// and refusing them here meant every rotary volume change and the startup
 	// level were dropped with "unsupported MessagePack type float64" while the
 	// DSP stayed at whatever gain it booted with.
+	//
+	// The range is limited to what a float64 can hold exactly. Beyond 2^53
+	// encoding/json has already rounded the value, so a larger number would be
+	// encoded accurately as the wrong one; refusing is the honest answer.
 	case float64:
 		if item != math.Trunc(item) || math.IsInf(item, 0) || math.IsNaN(item) {
 			return fmt.Errorf("MessagePack argument %v is not a whole number", item)
 		}
-		if item < math.MinInt64 || item > math.MaxInt64 {
-			return fmt.Errorf("MessagePack argument %v is out of range", item)
+		const exactIntegerLimit = 1 << 53
+		if item < -exactIntegerLimit || item > exactIntegerLimit {
+			return fmt.Errorf(
+				"MessagePack argument %v is outside the exactly representable range",
+				item,
+			)
 		}
 		return writeInteger(writer, int64(item))
 	case string:

@@ -154,7 +154,6 @@ func main() {
 	dsp := newLink(spi, gpio, i2c, linkOptions{
 		Pins:         defaultPinout(),
 		ReadyTimeout: *readyTimeout,
-		Logf:         log.Printf,
 	})
 	if !*dryRun {
 		if _, err := configureDSPPinmux(
