@@ -27,6 +27,10 @@ func main() {
 		"GPIO sysfs root; empty disables rotary input",
 	)
 	gpioNumber := flag.Int("gpio", 3, "MCU interrupt GPIO")
+	applyAppearanceDefaults := flag.Bool(
+		"apply-appearance-defaults", false,
+		"send the vendor LED brightness and colour at startup; off until the "+
+			"opcodes have been observed working on this unit")
 	devmemPath := flag.String(
 		"devmem",
 		"/dev/mem",
@@ -311,9 +315,20 @@ func main() {
 		// this they are counted as undecodable frames and logged as faults.
 		gpioSource.frameObserver = appearance.OfferFrame
 	}
-	// The vendor's own startup appearance, from its settings store rather than
-	// chosen here: LED_INTENSITY 50 and LED_RGB 000000.
-	appearance.ApplyDefaults()
+	// The vendor's own startup appearance is LED_INTENSITY 50 and LED_RGB
+	// 000000, and this sends it. It is off by default.
+	//
+	// The opcodes were read out of the donor binary rather than guessed, but no
+	// frame carrying them has ever reached this unit's microcontroller, and
+	// there is no evidence here of what that controller does with a command it
+	// does not recognise. Applying them at boot would put an unobserved write
+	// on the bus before anything could watch it, on every boot, with no chance
+	// to intervene. Left off, the same procedures stay reachable over WAMP, so
+	// the first write can be made deliberately and the result observed. Turn
+	// this on once that has happened.
+	if *applyAppearanceDefaults {
+		appearance.ApplyDefaults()
+	}
 	bluetoothDone := make(chan error, 1)
 	if *bluetoothState != "" {
 		if err := ensureBluetoothStateDirectory(*bluetoothState); err != nil {
