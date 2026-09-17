@@ -171,12 +171,40 @@ $ adb devices -l
 Verified from a cold boot with no physical interaction: `adb shell` runs
 commands and `adb push` round-trips a file unchanged.
 
-## Not yet done
+## How it is shipped
 
-This has not been folded into a flashed build. Doing that needs the six modules
-and a USB property area packaged into the runtime, the bring-up run from init,
-and a decision about whether USB ADB is always on or gated the way network ADB
-already is.
+The payload lives at `/opt/reinvoke/usb-adb`: the six modules, a property area
+with no `service.adb.tcp.port`, and the teardown script. Bring-up runs from
+init; teardown runs on the shutdown path.
 
-`rmmod g_android` panics the kernel. Unloading is not part of any supported
-path; reboot instead.
+It is gated the same way the peer firewall is:
+
+* `usbAdb.enabled` in the build configuration decides whether the payload is
+  installed at all.
+* `/persist/reinvoke/usb-adb-disabled` turns it off at runtime across reboots
+  without reflashing and without removing anything.
+* `/opt/reinvoke/usb-adb/usb-adb-down.sh` stops it for the current boot.
+
+Teardown is on the shutdown path because leaving it up broke reboots. adbd
+sleeps inside the gadget driver and the driver holds the USB controller; with
+both left in place this unit could not complete a soft `reboot` and had to be
+power cycled.
+
+Network ADB was removed in the same change. It needed an associated Wi-Fi link
+and a healthy runtime, which is exactly what SSH already needs, so it only ever
+helped in the narrow case where SSH specifically broke while networking did
+not. It was also limited to a 300 second window and a single `/32` peer, and it
+had been sitting in the `failed` state with a stale peer address for an entire
+session without either of us noticing, because SSH did everything. USB ADB
+covers the case that actually matters: the build boots but the network does
+not.
+
+## Unloading
+
+`rmmod g_android` followed by `insmod` panics this unit. The unload itself is
+safe, and the kernel refuses the genuinely dangerous ones on its own: module
+dependency refcounting returned `EBUSY` for `udc_core` with two users, and
+`f_adb` sets `.owner = THIS_MODULE` so the VFS holds a reference while adbd has
+the device open. What panicked was the *re-insert*, and with no pstore or
+`last_kmsg` on this unit there is no log saying why. So teardown is supported
+and reload is not: bring USB ADB back with a reboot.
