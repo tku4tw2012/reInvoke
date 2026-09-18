@@ -326,9 +326,15 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 		retry = nil
 
 		level := controller.effectiveLevel()
-		// The user volume rides on the ALSA softvol control and is faded there.
-		// The DSP call is kept for the services that still answer on it, but it
-		// no longer carries the level the listener hears.
+		// The DSP call carries the level the listener hears.
+		//
+		// The donor faded a softvol control instead, in
+		// aui::VolumeManager::softvol_fading_tick. That control does not exist
+		// on this runtime: nothing defines a softvol plugin, and the default
+		// this code shipped pointed at card 0, which is the Loopback device.
+		// So the fade failed on every change and logged while the DSP call did
+		// the work. The fade is left here, disabled, for whoever ships a real
+		// softvol plugin; until then it is off rather than failing.
 		if err := controller.fadeToTarget(ctx, softvolForPercent(level)); err != nil {
 			if ctx.Err() != nil {
 				return
