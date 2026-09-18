@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -200,5 +201,96 @@ func TestSoftvolPercentMapping(t *testing.T) {
 		if got := softvolForPercent(c.percent); got != c.want {
 			t.Errorf("softvolForPercent(%d) = %d, want %d", c.percent, got, c.want)
 		}
+	}
+}
+
+// countingRing records every arc the controller asks the microcontroller to
+// draw.
+type countingRing struct {
+	mu     sync.Mutex
+	levels []int
+}
+
+func (ring *countingRing) ShowVolume(level int) error {
+	ring.mu.Lock()
+	defer ring.mu.Unlock()
+	ring.levels = append(ring.levels, level)
+	return nil
+}
+
+func (ring *countingRing) count() int {
+	ring.mu.Lock()
+	defer ring.mu.Unlock()
+	return len(ring.levels)
+}
+
+// TestRingIsDrawnOnlyForAVolumeChange proves the ring follows changes, as
+// the donor did, and not this runtime's apply attempts.
+//
+// The ring used to be written on every attempt. The DSP registers its
+// procedures seconds after this service starts, so each lost race lit the ring
+// again and the number of illuminations at boot was simply how slow the DSP
+// had been. Confirmed on hardware at one illumination per apply.
+func TestRingIsDrawnOnlyForAVolumeChange(t *testing.T) {
+	controller := newTestVolumeController(t)
+	ring := &countingRing{}
+	controller.ring = ring
+
+	attempts := make(chan int, 8)
+	var mu sync.Mutex
+	fail := true
+	controller.push = func(_ context.Context, level int) error {
+		attempts <- level
+		mu.Lock()
+		defer mu.Unlock()
+		if fail {
+			return errors.New("no_such_procedure")
+		}
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go controller.Run(ctx)
+
+	select {
+	case <-attempts:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run never attempted the configured level")
+	}
+	if drawn := ring.count(); drawn != 0 {
+		t.Fatalf("a failed apply drew the ring %d times", drawn)
+	}
+
+	mu.Lock()
+	fail = false
+	mu.Unlock()
+
+	// The startup assertion is not a change, so it must not draw either. The
+	// donor only ever drew on com.harman.volumeChanged.
+	select {
+	case <-attempts:
+	case <-time.After(volumeRetryDelay + 5*time.Second):
+		t.Fatal("Run never retried the assertion")
+	}
+	time.Sleep(200 * time.Millisecond)
+	if drawn := ring.count(); drawn != 0 {
+		t.Fatalf("the startup assertion drew the ring %d times", drawn)
+	}
+
+	// An actual change must draw.
+	if _, err := controller.SetVolume(context.Background(), 42); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(5 * time.Second)
+	for ring.count() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("a volume change never drew the ring")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if drawn := ring.count(); drawn != 1 {
+		t.Fatalf("one change drew the ring %d times, want 1", drawn)
 	}
 }

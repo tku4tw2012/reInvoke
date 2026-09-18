@@ -21,7 +21,7 @@ const (
 	maxLEDAssetBytes  = 1024 * 1024
 	ledAnimationCode  = byte(0x0e)
 	ledFirstChunkFlag = byte(0x01)
-	micMuteLEDName = "L_108_c_error"
+	micMuteLEDName    = "L_108_c_error"
 )
 
 type ledWriter interface {
@@ -33,9 +33,9 @@ type ledPlayer struct {
 	writer    ledWriter
 	logf      func(string, ...interface{})
 
-	mu           sync.Mutex
-	cancel       context.CancelFunc
-	done         chan struct{}
+	mu       sync.Mutex
+	cancel   context.CancelFunc
+	done     chan struct{}
 	micMuted bool
 }
 

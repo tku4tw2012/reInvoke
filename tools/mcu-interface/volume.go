@@ -306,6 +306,12 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 	// low the configured level was.
 	controller.RequestPush()
 
+	// The ring already shows the startup level as far as the listener is
+	// concerned: nothing has changed yet. Seeding it here rather than at the
+	// first apply means a dial turn made before the DSP is ready still draws,
+	// because that level differs from this one.
+	drawn := controller.displayLevel()
+
 	var retry <-chan time.Time
 	for {
 		select {
@@ -347,14 +353,32 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 		// The arc shows the level the listener chose, not the ducked one: a
 		// duck is a transient from a prompt speaking over music, and redrawing
 		// for it would make the ring flicker on every notification.
-		if controller.ring != nil {
-			if ringErr := controller.ring.ShowVolume(
-				controller.displayLevel(),
-			); ringErr != nil && controller.logf != nil {
-				controller.logf("show volume on ring: %v", ringErr)
-			}
-		}
+		//
+		// The ring is written once per volume change, matching the donor.
+		//
+		// The donor drew it once per change: its mcu-interface subscribed to
+		// com.harman.volumeChanged, published by audio-ui, and its handler
+		// ("Receive volume change notify event: %d!") range-checked the level
+		// and wrote opcode 0x03. It never applied volume itself, so it had no
+		// retries and no failures to draw.
+		//
+		// This runtime does apply volume, and the DSP registers its procedures
+		// seconds after this service starts, so the opening attempts fail.
+		// Writing the arc on those too lit the ring once per lost race, which
+		// made the number of illuminations at boot a readout of how slow the
+		// DSP had been. Confirmed on this unit at one illumination per apply,
+		// four applies to four rings.
 		if err == nil {
+			if shown := controller.displayLevel(); shown != drawn {
+				if controller.ring != nil {
+					if ringErr := controller.ring.ShowVolume(
+						shown,
+					); ringErr != nil && controller.logf != nil {
+						controller.logf("show volume on ring: %v", ringErr)
+					}
+				}
+				drawn = shown
+			}
 			controller.markApplied()
 			continue
 		}

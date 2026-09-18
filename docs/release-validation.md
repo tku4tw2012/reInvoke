@@ -76,8 +76,9 @@ nothing:
 
 ### Indicators
 
-1. **Ring at boot.** Watch the ring from power-on. Report how many LEDs light
-   and when. This is the open question below.
+1. **Ring at boot.** Watch the ring from power-on. It should not draw the
+   volume arc at all now; only a boot animation. Any arc means the change
+   check regressed.
 2. **Mic mute.** Mute and confirm the indicator matches the capture state.
 
 ### Recovery
@@ -88,30 +89,37 @@ nothing:
 
 ## Open questions
 
-### Three ring LEDs at boot
+### Ring illuminations at boot (resolved)
 
-Observed by eye at the last boot, unexplained. The volume worker writes the arc
-on every apply attempt, including the ones that fail, at the displayed level of
-80. An arc at 80 was confirmed on hardware to light most of the ring, so three
-LEDs does not match what the code asks for.
+The ring lights once per volume apply attempt. `ShowVolume` writes MCU opcode
+`0x03`, and it was called on every pass of the apply loop, before the error was
+checked, so attempts that never reached the DSP drew it too. Since the DSP
+registers its procedures seconds after this service starts and the loop retries
+every 5 seconds, the number of illuminations at boot was a readout of how slow
+the DSP had been that time.
 
-Two possibilities, and the evidence does not choose between them: the observed
-lights were a different indicator, or the arc is drawn before the level is
-known. Resolving it needs the boot watched deliberately rather than recalled.
+Confirmed on hardware: four volume applies produced four illuminations, one
+each.
 
-Worth questioning separately: the donor drew the arc in response to
-`com.harman.volumeChanged`, that is, when a listener changed something. This
-runtime also draws it at startup, as a side effect of applying the initial
-volume, and redraws it on every failed retry. Whether a stock unit lit its ring
-at boot is unknown, and adopting donor behaviour would mean not drawing it
-until something changes.
+The donor never had this. Its `mcu-interface` subscribed to
+`com.harman.volumeChanged`, published by `audio-ui`, and its handler
+(`Receive volume change notify event: %d!`) range-checked the level and wrote
+`0x03`. It did not apply volume itself, so it had no retries and no failures to
+draw. The runtime now matches that: the ring is written when the level changes
+and not when it is merely asserted or retried, so a normal boot draws none.
 
 ### Why the DSP service restarts during boot
 
-On the last boot the DSP interface registered its procedures at 31 seconds,
-lost its session, and registered again at 43. The runtime absorbed it and the
-volume applied at 46 seconds. Nothing explains the restart. It is benign today
-only because the retry outlasts it.
+On one boot the DSP interface registered its procedures at 31 seconds, lost its
+session, and registered again at 43. The runtime absorbed it and the volume
+applied at 46 seconds. Nothing explains the restart.
+
+It is intermittent: on the boot of 18 September the service registered its
+seven procedures once, at 31 seconds, with no session loss, and the startup
+chime was audible. That is the same boot that produced a single ring
+illumination. This restart is the variable behind both symptoms, and the
+runtime now tolerates it rather than depending on it not happening: the chime
+waits for the DSP to accept a level, and the ring follows changes only.
 
 ### Why reloading the gadget module panics
 

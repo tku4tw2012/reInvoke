@@ -240,7 +240,6 @@ func (c *controller) writeDACMuteLocked(muted bool) error {
 	return err
 }
 
-
 func (c *controller) unmuteAllowedLocked() error {
 	if !c.initialized {
 		return errors.New("audio path is not initialized")

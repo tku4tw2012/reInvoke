@@ -108,7 +108,7 @@ func TestClearLEDsUsesRecoveredOffContract(t *testing.T) {
 func TestMicUnmuteClearsTheIndicator(t *testing.T) {
 	writer := &recordingLEDWriter{}
 	player := &ledPlayer{
-		writer:       writer,
+		writer:   writer,
 		micMuted: true,
 	}
 
