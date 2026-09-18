@@ -37,7 +37,7 @@ the MCU policy owner first, muting outputs before audio producers exit.
 | Owner                         | Responsibility                                           | Interface                                                      |
 | ----------------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
 | NAND bootstrap and paired BSL | Select and verify the read-only runtime                  | Retained vendor boot/kernel payloads                           |
-| MCU service                   | Inputs, LEDs, amplifier/DAC mute, public Mic-Mute policy | I2C, private DSP socket, WAMP                                  |
+| MCU service                   | Inputs, LEDs, amplifier/DAC mute, public Mic-Mute        | I2C, private DSP socket, WAMP                                  |
 | DSP service                   | Firmware, reset, command correlation and readiness       | SPI/GPIO, seven WAMP registrations, private microphone control |
 | BlueZ/BlueALSA                | A2DP Sink and PCM playback                               | Private D-Bus, ALSA, active-PCM lease                          |
 | Capture owner                 | Supervise `arecord`, select left channel, gate records   | ALSA `hw:1,0`, root-only Unix socket                           |

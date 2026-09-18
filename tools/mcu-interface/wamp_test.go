@@ -532,7 +532,7 @@ func TestMicMuteAnimationOutlivesWAMPSession(t *testing.T) {
 	time.Sleep(ledChunkDelay + 100*time.Millisecond)
 	if after := writer.count(); after <= before {
 		t.Fatalf(
-			"micMute animation stopped with WAMP session: before=%d after=%d",
+			"mic-mute animation stopped with WAMP session: before=%d after=%d",
 			before,
 			after,
 		)
@@ -559,10 +559,10 @@ func TestCancelledSessionCannotResumeQueuedMicMuteMutation(t *testing.T) {
 	cancel()
 	micMute.mu.Unlock()
 	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("queued micMute error = %v, want cancellation", err)
+		t.Fatalf("queued mic-mute error = %v, want cancellation", err)
 	}
 	if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("cancelled session persisted micMute state: %v", err)
+		t.Fatalf("cancelled session persisted mic-mute state: %v", err)
 	}
 }
 

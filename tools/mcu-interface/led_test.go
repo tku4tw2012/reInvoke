@@ -121,7 +121,7 @@ func TestMicUnmuteClearsTheIndicator(t *testing.T) {
 		t.Fatal(err)
 	}
 	if player.micMuted {
-		t.Fatal("micMute indicator remained locked after unmute")
+		t.Fatal("mic-mute indicator remained locked after unmute")
 	}
 	if len(writer.packets) == 0 {
 		t.Fatal("unmute wrote nothing to the LEDs")
@@ -159,10 +159,10 @@ func TestMicMuteIndicatorRetriesAfterPostStartFailure(t *testing.T) {
 	select {
 	case <-writer.recovered:
 	case <-time.After(2 * time.Second):
-		t.Fatal("micMute animation did not recover after second-chunk failure")
+		t.Fatal("mic-mute animation did not recover after second-chunk failure")
 	}
 	if logged == 0 {
-		t.Fatal("post-start micMute animation failure was not logged")
+		t.Fatal("post-start mic-mute animation failure was not logged")
 	}
 	if err := player.SetMicrophoneMuted(ctx, false); err != nil {
 		t.Fatal(err)

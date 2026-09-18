@@ -42,7 +42,7 @@ not exclusively emulated results.
 
 | Page                                                            | Purpose                                          |
 | --------------------------------------------------------------- | ------------------------------------------------ |
-| [Owned speaker control](emulation/owned-speaker-control.md)     | Mute policy, active-PCM ownership and volume     |
+| [Owned speaker control](emulation/owned-speaker-control.md)     | Speaker mute procedures and volume               |
 | [MCU boundary](emulation/mcu-boundary.md)                       | I2C, physical inputs and indicators              |
 | [Vendor button semantics](vendor-button-semantics.md)           | Recovered button-to-action table and its limits  |
 | [DSP boundary](emulation/dsp-boundary.md)                       | Firmware, SPI/GPIO control and message framing   |

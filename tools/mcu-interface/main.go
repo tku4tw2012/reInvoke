@@ -51,7 +51,7 @@ func main() {
 	microphoneState := flag.String(
 		"microphone-state",
 		"/run/reinvoke/microphone-state",
-		"RAM state used to restore microphone micMute after a service restart",
+		"RAM state used to restore microphone mute after a service restart",
 	)
 	microphoneControlSocket := flag.String(
 		"dsp-mic-control-socket",

@@ -31,9 +31,11 @@ The accepted BlueALSA build applies six patches:
 5. Draining clips below the normal prefill threshold
 6. Draining buffered audio after PCM FIFO closure
 
-The MCU verifies lease, ALSA `owner_pid`, packaged executable and `RUNNING`
-state before opening physical mute gates. Loss of authorization remutes after
-1.5 seconds; shutdown requests mute directly. Positive PCM can contain silence.
+The amplifier and DAC are open whenever the hardware is initialized, so a
+connected source is audible without any ownership check. Shutdown requests mute
+directly. An earlier design gated physical unmute on a lease, ALSA `owner_pid`
+and a packaged executable; it was this project's invention and has been
+removed.
 
 ## Validation scope
 

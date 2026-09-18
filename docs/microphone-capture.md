@@ -85,7 +85,7 @@ write exceeding its 250 ms deadline disconnects that slow consumer.
 
 ## Implemented mute boundary
 
-The [MCU mic-mute controller](current-product-contract.md#microphone-mic mute-boundary)
+The [MCU mic-mute controller](current-product-contract.md#microphone-mute-boundary)
 owns `/run/reinvoke/microphone-state`. Capture starts muted and polls it every
 100 ms. Missing, invalid, oversized or `muted` state discards periods;
 `unmuted` allows delivery after the next poll.
@@ -121,7 +121,7 @@ A stronger fence remains proposed, not part of the wire protocol above.
 `BLOCKED`, `DRAIN`, `DRAINED`, authority epochs and `ALLOW` are not implemented
 messages and must not be assumed by consumers.
 
-The design would keep the MCU as sole mic mute authority and require:
+The design would keep the MCU as the sole owner of mute state and require:
 
 1. Blocked delivery after every ALSA configuration.
 2. An MCU-requested synchronous capture fence, followed by confirmed DSP mute.

@@ -683,7 +683,7 @@ func (service *wampService) handleInvocation(
 		var muted bool
 		muted, invocationError = microphoneMuteArgument(args)
 		if invocationError == nil && service.micMute == nil {
-			invocationError = errors.New("microphone micMute backend is unavailable")
+			invocationError = errors.New("microphone mute backend is unavailable")
 		}
 		if invocationError == nil {
 			invocationError = service.micMute.Set(ctx, muted)

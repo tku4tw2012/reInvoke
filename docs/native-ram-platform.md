@@ -166,7 +166,7 @@ audible output. PCM travels through BlueALSA/ALSA, not through the DSP daemon.
 ## Owned runtime and safety
 
 PID 1 supervises the runtime. `reinvoke-mcu-interface` owns MCU input, LEDs,
-public Mic-Mute policy and speaker gates. `reinvoke-dsp-interface` owns DSP
+public Mic-Mute and the speaker mute procedures. `reinvoke-dsp-interface` owns DSP
 SPI/GPIO/reset, seven public WAMP registrations and a private root-only
 microphone socket. Bonefish remains a narrow compatibility router, not the
 product policy owner. Donor supervisor, updater and hardware daemons are

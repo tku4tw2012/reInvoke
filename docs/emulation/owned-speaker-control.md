@@ -45,24 +45,26 @@ flowchart TB
   Decode --> Player["bluealsa-aplay"]
   Player --> PCM["ALSA playback PCM"]
   PCM --> Output["Audio output and speakers"]
-  Player -. "Thread lease" .-> Policy["MCU playback policy"]
-  PCM -. "RUNNING and owner_pid" .-> Policy
   Keys["Rotary or WAMP volume call"] --> Volume["MCU BlueALSA<br/>volume adapter"]
   Volume -. "Stereo volume and mute" .-> Decode
-  Policy -. "I2C mute gates" .-> Output
+  MCU["MCU service"] -. "I2C mute procedures" .-> Output
   DSP["Owned DSP service"] -. "SPI firmware/control" .-> BoardDSP["Board DSP"]
 ```
 
-Every 100 ms, the MCU verifies that the lease thread matches ALSA `owner_pid`,
-`/proc/<tid>/exe` resolves to the packaged player, and PCM is `RUNNING`.
-Only that conjunction authorizes physical amplifier/DAC unmute. Losing
-authorization reasserts mute after a 1.5-second holdoff; shutdown requests mute
-directly. Failed unmute attempts to restore mute. Neither DSP boot nor a
-compatibility volume setter grants this authorization.
+There is no automatic speaker muting. The amplifier and DAC are opened once
+the DAC is configured and stay open; they change only through the
+`muteampcontrol` and `mutedaccontrol` procedures, and mute again on shutdown.
 
-The lease proves an owner and PCM delivery, not audible content: positive
-buffers can contain zero-valued samples. See
-[playback policy](../../tools/mcu-interface/playback_policy.go) and
+An earlier design polled ALSA every 100 ms and authorized physical unmute only
+while a lease thread matched `owner_pid` and `/proc/<tid>/exe` resolved to one
+packaged player, re-muting 1.5 seconds after that lapsed. That was this
+project's invention rather than donor behaviour, and it silenced every sound
+the runtime did not itself render, including the vendor's own startup chime.
+It has been removed.
+
+Initialization still mutes both while the IO expander is brought up, which is
+what the donor does; its log line there reads `MCU init io expander. mute amp
+and dac!!!`. See
 [controller sequencing](../../tools/mcu-interface/controller.go).
 
 ## Host reference versus target

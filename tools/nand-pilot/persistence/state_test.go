@@ -269,7 +269,7 @@ func TestCorruptLiveStoreAndMissingRAMDoNotReportSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := s.flush(); err == nil || err.Error() != "PERSIST_RUNTIME_STATE_MISSING" {
-		t.Fatal("missing runtime micMute replaced committed state")
+		t.Fatal("missing runtime mic-mute state replaced committed state")
 	}
 	path := filepath.Join(store.root, "state.json")
 	if err := os.WriteFile(path, []byte("{}"), 0600); err != nil {

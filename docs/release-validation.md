@@ -70,15 +70,15 @@ nothing:
 | Action button, short | Pause or resume playback |
 | Action button, long | Nothing, or a voice prompt |
 | Bluetooth button | Enters pairing |
-| mic mute | Mic indicator changes, capture stops |
-| mic mute, long | Enters Wi-Fi setup |
+| Mic-Mute button | Mic indicator changes, capture stops |
+| Mic-Mute button, long | Enters Wi-Fi setup |
 | Volume up and down | Arc grows and shrinks, loudness follows |
 
 ### Indicators
 
 1. **Ring at boot.** Watch the ring from power-on. Report how many LEDs light
    and when. This is the open question below.
-2. **Mic mic mute.** Mute and confirm the indicator matches the capture state.
+2. **Mic mute.** Mute and confirm the indicator matches the capture state.
 
 ### Recovery
 

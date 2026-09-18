@@ -46,7 +46,7 @@ func main() {
 	var cfg serviceConfig
 	flag.StringVar(&cfg.runtimeDirectory, "runtime-dir", defaultRuntimeDirectory, "root-only runtime directory")
 	flag.StringVar(&cfg.audioSocket, "audio-socket", defaultAudioSocket, "root-only microphone stream socket")
-	flag.StringVar(&cfg.micMuteState, "microphone-state", defaultMicMuteState, "microphone micMute state file")
+	flag.StringVar(&cfg.micMuteState, "microphone-state", defaultMicMuteState, "microphone mute state file")
 	flag.StringVar(&cfg.dspPID, "dsp-pid", defaultDSPPID, "DSP interface PID file")
 	flag.StringVar(&cfg.dspControl, "dsp-mic-socket", defaultDSPControl, "DSP mic control socket")
 	flag.StringVar(&cfg.dspExecutable, "dsp-executable", defaultDSPExecutable, "expected DSP executable")

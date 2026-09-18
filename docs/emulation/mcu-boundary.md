@@ -6,7 +6,7 @@ ms.topic: reference
 ---
 
 `reinvoke-mcu-interface` owns MCU I2C, physical input, rotary volume,
-indicators, amplifier/DAC power and mute policy, and the compatibility
+indicators, amplifier/DAC power and mute procedures, and the compatibility
 microphone API. It replaces Harman's `mcu-interface`; the
 [current contract](../current-product-contract.md) is normative.
 

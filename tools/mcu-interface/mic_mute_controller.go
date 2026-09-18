@@ -140,7 +140,7 @@ func (controller *microphoneMuteController) setLocked(
 			controller.lifetime,
 			false,
 		); err != nil {
-			return fmt.Errorf("clear micMute indicator before unmute: %w", err)
+			return fmt.Errorf("clear mic-mute indicator before unmute: %w", err)
 		}
 	}
 	if muted {
@@ -168,7 +168,7 @@ func (controller *microphoneMuteController) setLocked(
 			controller.lifetime,
 			muted,
 		); err != nil {
-			return fmt.Errorf("set microphone micMute indicator: %w", err)
+			return fmt.Errorf("set microphone mute indicator: %w", err)
 		}
 	}
 	if controller.logf != nil {
