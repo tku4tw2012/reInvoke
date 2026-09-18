@@ -43,7 +43,7 @@ Staging must byte-match the known-good set, whose authoritative copy is
 | ---- | ---- |
 | `06_IMAGE` | Host USB path record |
 | `07_IMAGE` | **4 bytes, little-endian image size. Omitting this is fatal.** |
-| `08_IMAGE.stock` | Source of truth; copy it to `08_IMAGE`, never delete either |
+| `08_IMAGE.stock` | Source of truth. Keep it, but do **not** copy it to `08_IMAGE`: see "Do not serve `08_IMAGE`" below |
 | `09_IMAGE` | Opaque record |
 | `79_IMAGE` | Comment-only script; must stay comment-only |
 | `81_IMAGE`, `82_IMAGE` | Recovery payloads |
@@ -53,6 +53,7 @@ Staging must byte-match the known-good set, whose authoritative copy is
 Verify every time:
 
 ```bash
+# 08_IMAGE itself must be absent; only the .stock copy is carried.
 for f in 06_IMAGE 07_IMAGE 08_IMAGE.stock 09_IMAGE 79_IMAGE 81_IMAGE 82_IMAGE \
          bcm_erom.bin.usb bootloader.img drm_erom.img sysinit.img; do
   cmp -s "<known-good>/$f" "<staging>/$f" && echo "same  $f" || echo "DIFF  $f"
@@ -68,7 +69,9 @@ REINVOKE_ARCHIVE=... \
   tools/usb-boot/arm-flash.sh <staging> <83_IMAGE-sha256> <attempt-dir>
 ```
 
-Wait for `READY` before touching the speaker. The command starts exactly one
+Wait for `READY` before touching the speaker. `arm-flash.sh` refuses to start
+if `08_IMAGE` is present, so a staging mistake is caught before any hardware
+interaction rather than after a run of failed entries. The command starts exactly one
 helper and one console client, then leaves both waiting. Nothing else should
 watch, claim or reset the USB device. The helper matches the Invoke by vendor
 and product identifiers, not a host port path.
@@ -122,7 +125,8 @@ attempts before one takes is normal and not a fault.
 | Observed | Meaning |
 | -------- | ------- |
 | Only `Image request 0x08`, repeating | Entered at `FE`; iROM was missed. Check `08_IMAGE` is withheld, then retry the entry. |
-| `Cannot open image file ...` | Staging incomplete |
+| `Cannot open image file ...08_IMAGE` | Expected. The file is withheld on purpose and the device continues to iROM |
+| `Cannot open image file ...` for any other image | Staging incomplete |
 | Duplicated log lines | More than one helper running |
 | `No device found within 120 seconds` | The bare helper timed out; the catcher does not |
 
@@ -197,8 +201,16 @@ program/read checks are not independent readback.
 ## What this procedure fixed
 
 The Candidate 04 and 05 attempts failed for host-side reasons, all corrected
-here: a missing `07_IMAGE`, a wrapper that deleted `08_IMAGE` before every
-attempt, duplicate helpers contending for interface 0, an unsupervised helper
+here: a missing `07_IMAGE`, duplicate helpers contending for interface 0, an
+unsupervised helper
 whose 120-second timeout expired before the operator could act, and a
 persistent helper that claimed the device at `FE` before iROM ever appeared.
 None of these were device faults.
+
+This list previously also blamed "a wrapper that deleted `08_IMAGE` before
+every attempt". That attribution is withdrawn. Withholding the file is what
+makes the device reach iROM, and serving it is what kept candidate 05.8.11
+stuck: twelve consecutive enumerations at `FE` with no iROM, then a successful
+flash on the first attempt after the file was withheld. What is genuinely
+unsafe is destroying `08_IMAGE.stock`, which is the only copy of the record.
+Rename rather than delete.
