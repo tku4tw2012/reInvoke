@@ -17,21 +17,21 @@ const fs = require('fs');
 const path = require('path');
 const { hashFile } = require('./build-lib');
 
-// The device cue family, with the donor state each one accompanies.
+// The cue family, with the event each one accompanies.
+//
+// These are Harman's own sounds from the installed rootfs, not the Cortana
+// cue set. The Cortana assets in other dumps of this device are a different,
+// larger family with names like S_311_d_pluggedin; that one is mastered to
+// full scale and was identified by ear as a recording rather than the chime
+// this speaker actually made. Power_On is the chime.
 const DEVICE_CUES = [
-  ['S_311_d_pluggedin', 'system:booting'],
-  ['S_301_d_micon', 'microphone:unmute'],
-  ['S_301_d_micoff', 'microphone:mute'],
-  ['S_302_d_wifisetup', 'system:wifi-setup'],
-  ['S_304_d_exitwifisetup', 'system:wifi-setup ends'],
-  ['S_305_d_volumeup', 'volume up'],
-  ['S_306_d_volumedown', 'volume down'],
-  ['S_307_d_btpairing', 'bluetooth:pairing'],
-  ['S_308_d_btconnected', 'bluetooth:connected'],
-  ['S_309_d_pinreset', 'factory reset'],
+  ['Power_On', 'the speaker has finished starting up'],
+  ['BT_Pairing', 'bluetooth pairing opened'],
+  ['BT_Connected', 'a bluetooth peer connected'],
+  ['Volume_Max', 'volume reached maximum'],
 ];
 
-const CUE_SOURCE = 'usr/share/sounds/cortana';
+const CUE_SOURCE = 'usr/share/sounds/podium';
 const RENDERER_SOURCE = 'usr/bin/aplay';
 
 function validateCues(value) {

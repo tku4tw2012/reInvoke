@@ -337,9 +337,9 @@ func main() {
 		// every other cue does. Without this the dial moves silently.
 		media.ring = appearance
 	}
-	// The donor's own table pairs S_311_d_pluggedin with system:booting. Named
-	// pluggedin because this speaker has no battery, so plugging in is booting.
-	cues.PlayAsync(ctx, "S_311_d_pluggedin")
+	// Harman's own startup chime, from the installed rootfs. Identified by ear
+	// against the other candidates in that image.
+	cues.PlayAsync(ctx, "Power_On")
 
 	if gpioSource != nil {
 		// Replies to our own requests arrive on the button channel. Without

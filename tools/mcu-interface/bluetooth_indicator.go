@@ -90,14 +90,13 @@ func (watcher *bluetoothStateWatcher) reconcile() {
 		} else {
 			logf("Bluetooth indicator state=%s", status)
 		}
-		// The donor paired S_307_d_btpairing with bluetooth:pairing and
-		// S_308_d_btconnected with bluetooth:connected in its own table.
+		// Harman's own Bluetooth cues, from the installed rootfs.
 		if watcher.cues != nil {
 			switch status {
 			case "pairing":
-				watcher.cues.PlayAsync(context.Background(), "S_307_d_btpairing")
+				watcher.cues.PlayAsync(context.Background(), "BT_Pairing")
 			case "connected":
-				watcher.cues.PlayAsync(context.Background(), "S_308_d_btconnected")
+				watcher.cues.PlayAsync(context.Background(), "BT_Connected")
 			}
 		}
 		watcher.lastStatus = status
