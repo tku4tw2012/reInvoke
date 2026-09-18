@@ -40,11 +40,24 @@ fail() {
 [[ -x "${helper}" ]] || fail "helper not executable: ${helper}"
 [[ -r "${driver_path}" ]] || fail "console driver missing: ${driver_path}"
 
-for required in 06_IMAGE 07_IMAGE 08_IMAGE 09_IMAGE 79_IMAGE 81_IMAGE 82_IMAGE \
+for required in 06_IMAGE 07_IMAGE 09_IMAGE 79_IMAGE 81_IMAGE 82_IMAGE \
   83_IMAGE bcm_erom.bin.usb bootloader.img drm_erom.img sysinit.img; do
   [[ -f "${staging}/${required}" ]] ||
     fail "staging is missing ${required}"
 done
+
+# 08_IMAGE must be absent, which is why it is not in the list above.
+#
+# A device that has not entered recovery asks for 0x08 and continues its normal
+# boot once it is answered. Answering it is therefore not neutral: it helps the
+# device leave the state we are trying to catch. The staging that caught iROM
+# on every attempt kept the file as 08_IMAGE.withheld-for-uboot-access and
+# recorded zero 0x08 requests, while staging that served it logged repeated
+# 0x08 at subclass FE and never reached Phase 1. docs/uboot-access.md states
+# the requirement directly: "Prepare recovery-only staging: 08_IMAGE absent".
+if [[ -f "${staging}/08_IMAGE" ]]; then
+  fail "staging contains 08_IMAGE; rename it to 08_IMAGE.withheld-for-uboot-access"
+fi
 
 actual_sha="$(sha256sum "${staging}/83_IMAGE" | cut -d' ' -f1)"
 [[ "${actual_sha}" == "${expected_sha}" ]] ||

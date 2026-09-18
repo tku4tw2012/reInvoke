@@ -121,13 +121,23 @@ attempts before one takes is normal and not a fault.
 
 | Observed | Meaning |
 | -------- | ------- |
-| Only `Image request 0x08`, repeating | Entered at `FE`; iROM was missed. Retry the entry. |
+| Only `Image request 0x08`, repeating | Entered at `FE`; iROM was missed. Check `08_IMAGE` is withheld, then retry the entry. |
 | `Cannot open image file ...` | Staging incomplete |
 | Duplicated log lines | More than one helper running |
 | `No device found within 120 seconds` | The bare helper timed out; the catcher does not |
 
-Serving `08_IMAGE` does not rescue a failed entry. Feed the device what it
-asks for, but a `0x08`-only loop means the entry itself must be repeated.
+Do not serve `08_IMAGE`. Keep it in staging as
+`08_IMAGE.withheld-for-uboot-access`; `arm-flash.sh` refuses to start if the
+plain name is present.
+
+An earlier revision of this file said to "feed the device what it asks for".
+That is wrong and it cost a long run of failed entries. A device that has not
+entered recovery asks for `0x08` and resumes its normal boot once it is
+answered, so answering helps it leave the state we are trying to catch. The
+staging that caught iROM on every attempt withheld the file and recorded zero
+`0x08` requests; staging that served it logged repeated `0x08` at subclass
+`FE` and never reached Phase 1. [U-Boot access](uboot-access.md) has always
+required "recovery-only staging: `08_IMAGE` absent".
 
 ## Console
 
