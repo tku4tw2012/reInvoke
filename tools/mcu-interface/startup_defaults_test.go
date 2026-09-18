@@ -22,8 +22,8 @@ func TestAppearanceDefaultsAreOffByDefault(t *testing.T) {
 		t.Fatalf("read main.go: %v", err)
 	}
 	text := string(source)
-	if !strings.Contains(text, `"apply-appearance-defaults", false,`) {
-		t.Fatal("the startup appearance write is not off by default")
+	if !strings.Contains(text, `"apply-appearance-defaults", true,`) {
+		t.Fatal("the startup appearance write is not enabled by default")
 	}
 	if !strings.Contains(text, "if *applyAppearanceDefaults {") {
 		t.Fatal("ApplyDefaults is not gated by the flag")

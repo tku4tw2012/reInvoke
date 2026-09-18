@@ -74,8 +74,14 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
     '      log "provisioning window requires reinvoke.wifi_mode=sta-uap"\n' +
     '      pilot_resume_then_exec /bin/busybox true &\n' +
     '      echo "$!" >/run/reinvoke/wifi-resume.pid');
+  // The cue renderer is the donor's aplay, run under the runtime loader with
+  // the runtime libraries, the same way every other retained binary here is.
   replace('      --lights-dir "${runtime_root}/share/lights"',
     '      --music-volume-state /run/reinvoke/music-volume \\\n' +
+    '      --cue-dir "${runtime_root}/share/cues" \\\n' +
+    '      --cue-player "${runtime_bin}/aplay" \\\n' +
+    '      --cue-loader "${runtime_lib}/ld-linux-armhf.so.3" \\\n' +
+    '      --cue-libpath "${runtime_lib}" \\\n' +
     '      --lights-dir "${runtime_root}/share/lights"');
   // A development build can turn the peer firewall off. A single /32 allowlist
   // locks the operator out of a healthy device whenever their workstation takes
@@ -108,7 +114,27 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
     // cannot stop its debug channel must still be able to reboot.
     '  pilot_usb_adb_down || log "USB ADB teardown reported a problem; continuing"\n' +
     '  stop_service syslogd\n');
-  replace('log "native RAM environment is running"', `pilot_phase runtime-dispatched
+  // The runtime traps TERM and INT, runs stop_runtime, and then returns to
+  // its sleep loop. Nothing ever asks the kernel to restart, so `reboot` on
+  // this unit stopped every service and left the speaker running with no
+  // network and no USB: indistinguishable from a hang, and only recoverable
+  // by pulling the power. Observed twice before it was traced here.
+  replace('trap stop_runtime TERM INT',
+    'pilot_stop_and_restart() {\n' +
+    '  stop_runtime\n' +
+    '  ${BB} sync\n' +
+    '  # reboot -f calls reboot(2) directly instead of signalling init, which\n' +
+    '  # is this script.\n' +
+    '  ${BB} reboot -f\n' +
+    '  # If that does not take, force it. An orderly restart walks every\n' +
+    '  # driver shutdown handler, and one that blocks there would strand the\n' +
+    '  # speaker with no way back except the power lead.\n' +
+    '  ${BB} sleep 8\n' +
+    '  log "orderly restart did not take; forcing"\n' +
+    '  echo b >/proc/sysrq-trigger\n' +
+    '}\n' +
+    'trap pilot_stop_and_restart TERM INT');
+    replace('log "native RAM environment is running"', `pilot_phase runtime-dispatched
 log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence, not this message"`);
   // /dev/log is either the BusyBox syslog socket or the Android logger
   // directory, and this BusyBox hardcodes the socket path. Earlier candidates
@@ -417,9 +443,17 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
   // is what /proc/<pid>/exe resolves to for that process. Observed on 05.8.3:
   // the amplifier stayed muted for every source because the named owner could
   // never exist, and WAMP unmute was refused as well.
+  // The amplifier used to unmute only while the process holding the playback
+  // device resolved to one specific executable. That restriction was this
+  // project's invention, not the donor's: the donor's audio-ui rendered
+  // chimes and prompts through its own players and nothing checked who was
+  // rendering. Keeping it meant no sound this runtime did not itself play
+  // could ever reach the speaker, which blocked the vendor's own cues. The
+  // amplifier still follows ALSA: it energises while the device is RUNNING
+  // and re-mutes when it is not.
   replace('      --playback-lease /run/reinvoke/bluealsa-playback-active \\\n' +
     '      --playback-owner-executable "${runtime_bin}/bluealsa-aplay" \\',
-    '      --playback-owner-executable /opt/bluedroid/lib/ld-linux-armhf.so.3 \\');
+    '');
   // One service missing its precondition must not silently cancel every
   // service after it. Candidate 05.8.4 shipped an mcu-interface that refused
   // its own flags, so the microphone state never appeared, this bare return

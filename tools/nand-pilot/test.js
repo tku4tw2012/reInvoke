@@ -111,7 +111,16 @@ try {
   assert.equal(lib.BUILD_ID, 'reInvoke-NAND-05.8.10-20260917');
   assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-NAND-05.8.10');
   assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-05.8.10');
-  assert(bootstrap.includes(`PILOT_ADBD_PRODUCT=${lib.BLUETOOTH_NAME}`));
+  // The bootstrap no longer launches an early USB ADB daemon. That launcher
+  // was written for booting from RAM over USB, where the boot ROM had already
+  // put the port in device mode. Booting from NAND there is no gadget until
+  // the runtime loads one, and the launcher spent the boot polling for it and
+  // then reconfigured the gadget out from under the runtime the moment it
+  // appeared, rewriting functions and iProduct behind it.
+  assert(!bootstrap.includes('pilot_usb_adbd_launch'));
+  assert(!bootstrap.includes('PILOT_ADBD_PRODUCT'));
+  // The BSL still carries it: that path is the writer, and it never reaches
+  // the runtime that owns USB ADB.
   assert(bsl.includes(`PILOT_ADBD_PRODUCT=${lib.BLUETOOTH_NAME}`));
   const oldMain = path.join(fixture, 'old-main');
   const oldBSL = path.join(fixture, 'old-bsl');

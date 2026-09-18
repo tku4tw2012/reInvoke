@@ -27,10 +27,17 @@ func main() {
 		"GPIO sysfs root; empty disables rotary input",
 	)
 	gpioNumber := flag.Int("gpio", 3, "MCU interrupt GPIO")
+	cueDirectory := flag.String("cue-dir", "",
+		"directory holding the device cue sounds; empty disables cues")
+	cuePlayerPath := flag.String("cue-player", "/opt/reinvoke/bin/aplay",
+		"renderer used for device cues")
+	cueLoader := flag.String("cue-loader", "",
+		"dynamic loader for the cue renderer, if it needs one")
+	cueLibraryPath := flag.String("cue-libpath", "",
+		"LD_LIBRARY_PATH for the cue renderer")
 	applyAppearanceDefaults := flag.Bool(
-		"apply-appearance-defaults", false,
-		"send the vendor LED brightness and colour at startup; off until the "+
-			"opcodes have been observed working on this unit")
+		"apply-appearance-defaults", true,
+		"send the vendor LED brightness and colour at startup")
 	devmemPath := flag.String(
 		"devmem",
 		"/dev/mem",
@@ -309,6 +316,20 @@ func main() {
 		privacy.RequestReconcile()
 	}
 	indicatorLEDs := newIndicatorLEDController(bus)
+	// Device cues: the short sounds the speaker makes about itself. The donor
+	// played these from audio-ui; the asset names and the states that trigger
+	// them come from its own table. See docs/device-cues.md.
+	cues := &cuePlayer{
+		directory: *cueDirectory,
+		player:    *cuePlayerPath,
+		loader:    *cueLoader,
+		libPath:   *cueLibraryPath,
+		logf:      log.Printf,
+	}
+	if media != nil {
+		cues.volume = func() int { return media.displayLevel() }
+	}
+
 	appearance := newDeviceAppearanceController(bus, log.Printf)
 	if media != nil {
 		// The ring arc is drawn by the microcontroller from the level, which
@@ -316,22 +337,19 @@ func main() {
 		// every other cue does. Without this the dial moves silently.
 		media.ring = appearance
 	}
+	// The donor's own table pairs S_311_d_pluggedin with system:booting. Named
+	// pluggedin because this speaker has no battery, so plugging in is booting.
+	cues.PlayAsync(ctx, "S_311_d_pluggedin")
+
 	if gpioSource != nil {
 		// Replies to our own requests arrive on the button channel. Without
 		// this they are counted as undecodable frames and logged as faults.
 		gpioSource.frameObserver = appearance.OfferFrame
 	}
-	// The vendor's own startup appearance is LED_INTENSITY 50 and LED_RGB
-	// 000000, and this sends it. It is off by default.
-	//
-	// The opcodes were read out of the donor binary rather than guessed, but no
-	// frame carrying them has ever reached this unit's microcontroller, and
-	// there is no evidence here of what that controller does with a command it
-	// does not recognise. Applying them at boot would put an unobserved write
-	// on the bus before anything could watch it, on every boot, with no chance
-	// to intervene. Left off, the same procedures stay reachable over WAMP, so
-	// the first write can be made deliberately and the result observed. Turn
-	// this on once that has happened.
+	// The vendor's own startup appearance: LED_INTENSITY 50 and LED_RGB 000000
+	// from caldata/FENV.bin. These opcodes were held back until they had been
+	// sent to this unit's microcontroller and watched; that has happened, so
+	// they are applied at startup as the vendor did.
 	if *applyAppearanceDefaults {
 		appearance.ApplyDefaults()
 	}
@@ -343,6 +361,7 @@ func main() {
 		watcher := &bluetoothStateWatcher{
 			path:      *bluetoothState,
 			indicator: indicatorLEDs,
+			cues:      cues,
 			logf:      log.Printf,
 		}
 		// The front lamp reports network state, which the donor drove from

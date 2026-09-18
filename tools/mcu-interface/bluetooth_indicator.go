@@ -23,6 +23,9 @@ type bluetoothIndicatorController interface {
 type bluetoothStateWatcher struct {
 	path           string
 	indicator      bluetoothIndicatorController
+	// cues plays the donor's pairing and connected sounds on the same state
+	// change that drives the rear indicator.
+	cues *cuePlayer
 	interval       time.Duration
 	readFile       func(string) ([]byte, error)
 	logf           func(string, ...interface{})
@@ -86,6 +89,16 @@ func (watcher *bluetoothStateWatcher) reconcile() {
 			logf("Bluetooth indicator state: %v; using safe off", stateErr)
 		} else {
 			logf("Bluetooth indicator state=%s", status)
+		}
+		// The donor paired S_307_d_btpairing with bluetooth:pairing and
+		// S_308_d_btconnected with bluetooth:connected in its own table.
+		if watcher.cues != nil {
+			switch status {
+			case "pairing":
+				watcher.cues.PlayAsync(context.Background(), "S_307_d_btpairing")
+			case "connected":
+				watcher.cues.PlayAsync(context.Background(), "S_308_d_btconnected")
+			}
 		}
 		watcher.lastStatus = status
 	}

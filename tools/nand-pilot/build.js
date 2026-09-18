@@ -7,6 +7,7 @@ const zlib = require('zlib');
 const { patchRuntime } = require('./patch-runtime');
 const { readConfig, installConfig } = require('./private-config');
 const { validateUsbAdb, installUsbAdb } = require('./usb-adb-config');
+const { validateCues, installCues } = require('./cue-config');
 const { readPersistenceConfig, installPersistence } = require('./persistence-config');
 const { readBluedroidConfig, installBluedroid } = require('./bluedroid-config');
 const lib = require('./build-lib');
@@ -41,6 +42,7 @@ function cpioPack(root, out) {
 function prepare() {
   const privateConfig = readConfig(process.env.PILOT_PRIVATE_CONFIG);
   validateUsbAdb(privateConfig.usbAdb);
+  validateCues(privateConfig.deviceCues);
   const persistenceConfig = readPersistenceConfig(process.env.PILOT_PERSISTENCE_CONFIG);
   const bluedroidConfig = readBluedroidConfig(process.env.PILOT_BLUEDROID_CONFIG);
   for (const key of Object.keys(pins)) verify(input(key), pins[key]);
@@ -88,6 +90,8 @@ function prepare() {
   // Installed after the vendor module tree is replaced so the gadget payload
   // is not swept away with it.
   installUsbAdb(privateConfig, root, here);
+  json(path.join(output, 'cue-manifest.json'),
+    installCues(privateConfig, root, stock));
   const modules = [];
   const suffixes = ['wlan_sd8887/mlan.ko', 'wlan_sd8887/sd8xxx.ko', 'bt_sd8887/bt8xxx.ko'];
   for (const [release, source] of [['3.8.13-yocto-standard', stock], ['3.8.13-reinvoke-audio-sd8887', original]]) {

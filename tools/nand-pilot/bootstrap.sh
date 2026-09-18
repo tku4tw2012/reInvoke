@@ -50,17 +50,15 @@ if ${BB} awk '$5 == "/" && $0 ~ / - squashfs / {found=1} END {exit !found}' \
   ${BB} mount -o remount,ro / || pilot_fatal "cannot enforce read-only source"
 fi
 
-PILOT_ADBD_PRODUCT=reInvoke-NAND-05.8.10
-PILOT_ADBD_STARTED_PHASE=early-adb-started
-PILOT_ADBD_DEGRADED_PHASE=early-adb-degraded
-PILOT_ADBD_ENABLE_DEV_FILE=/sys/class/misc/android_adb_enable/dev
-PILOT_ADBD_ENABLE_NODE=/dev/android_adb_enable
-PILOT_ADBD_TTYGS0_DEV_FILE=/sys/class/tty/ttyGS0/dev
-PILOT_ADBD_TTYGS0_NODE=/dev/ttyGS0
-PILOT_ADBD_RUNTIME_ROOT=/runtime
-if ! pilot_usb_adbd_launch; then
-  pilot_log "early USB diagnostics unavailable; continuing to the runtime"
-fi
+# The early USB ADB launcher is gone. It was written when the runtime booted
+# from RAM over USB and the boot ROM had already put the port in device mode,
+# so a gadget existed before the runtime started. Booting from NAND there is no
+# gadget until the runtime loads one, and this launcher spent the whole boot
+# polling for it, then reconfigured the gadget out from under the runtime the
+# moment it appeared. Observed on hardware as the runtime reporting
+# "USB ADB ready" at 27.68s while this loop went on to log
+# "retry-budget-exhausted" at 41.41s, having rewritten functions and iProduct
+# in between. The runtime owns USB ADB now; see usb-adb-start.sh.
 
 . /etc/nand-pilot/payload.conf
 pilot_verify_payload /payload/runtime.cpio.gz "${PAYLOAD_SHA256}" "${PAYLOAD_BYTES}" ||

@@ -99,24 +99,22 @@ func TestClearLEDsUsesRecoveredOffContract(t *testing.T) {
 
 }
 
-func TestPrivacyIndicatorBlocksTransientAnimationsAndLEDOff(t *testing.T) {
+// TestPrivacyUnmuteClearsTheIndicator pins what remains after the privacy
+// override was removed: muting still lights the indicator and unmuting still
+// clears it. What is gone is the refusal to let any other caller stop the
+// ring while the microphone was muted. That refusal was this project's rule,
+// not the donor's, and it meant a caller had to know about a privacy state it
+// had no part in before it could clear an animation.
+func TestPrivacyUnmuteClearsTheIndicator(t *testing.T) {
 	writer := &recordingLEDWriter{}
 	player := &ledPlayer{
 		writer:       writer,
 		privacyMuted: true,
 	}
 
-	if err := player.Apply(
-		context.Background(),
-		inputEvent{Name: "action"},
-	); err != nil {
-		t.Fatal(err)
-	}
+	// A stop is no longer refused while muted.
 	if err := player.Stop(); err != nil {
 		t.Fatal(err)
-	}
-	if len(writer.packets) != 0 {
-		t.Fatalf("privacy indicator was replaced: %d packets", len(writer.packets))
 	}
 
 	if err := player.SetPrivacyMuted(context.Background(), false); err != nil {
@@ -125,8 +123,13 @@ func TestPrivacyIndicatorBlocksTransientAnimationsAndLEDOff(t *testing.T) {
 	if player.privacyMuted {
 		t.Fatal("privacy indicator remained locked after unmute")
 	}
-	if len(writer.packets) != 1 || len(writer.packets[0]) != 41 {
-		t.Fatalf("privacy clear packets = %#v", writer.packets)
+	if len(writer.packets) == 0 {
+		t.Fatal("unmute wrote nothing to the LEDs")
+	}
+	for _, packet := range writer.packets {
+		if len(packet) != 41 {
+			t.Fatalf("clear packet is %d bytes, expected 41", len(packet))
+		}
 	}
 }
 

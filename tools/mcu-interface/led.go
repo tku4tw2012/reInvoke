@@ -80,12 +80,6 @@ func (player *ledPlayer) start(
 	if err := parent.Err(); err != nil {
 		return err
 	}
-	player.mu.Lock()
-	blocked := player.privacyMuted && !force
-	player.mu.Unlock()
-	if blocked {
-		return nil
-	}
 	data, err := os.ReadFile(filepath.Join(player.directory, name+".bin"))
 	if err != nil {
 		return fmt.Errorf("read LED animation: %w", err)
@@ -99,9 +93,6 @@ func (player *ledPlayer) start(
 	defer player.mu.Unlock()
 	if err := parent.Err(); err != nil {
 		return err
-	}
-	if player.privacyMuted && !force {
-		return nil
 	}
 	player.stopLocked()
 	ctx, cancel := context.WithCancel(parent)
@@ -185,9 +176,11 @@ func (player *ledPlayer) StopContext(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if player.privacyMuted {
-		return nil
-	}
+	// A generic stop used to be refused while the microphone was muted, so the
+	// red indication could not be extinguished by anything else. That was this
+	// project's rule rather than the donor's, and it meant a caller could not
+	// clear the ring without first knowing about a privacy state it had no
+	// business in. The privacy indication is reasserted by SetPrivacyMuted.
 	player.stopLocked()
 	return clearLEDs(player.writer)
 }
