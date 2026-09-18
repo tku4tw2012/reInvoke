@@ -48,7 +48,7 @@ byte 0 is set to immediately before the call.
 | `0x07` | `GetHWID` request | reply carries the same opcode; see below | disassembly |
 | `0x03` | volume arc on the ring | byte 1: 0 to 100 | **verified on hardware** |
 | `0x22` | OTA flag | byte 1: 0 clear, 1 set | disassembly |
-| `0x24` | heartbeat | none | verified on hardware |
+| `0x24` | heartbeat | none | verified on hardware; see below |
 | `0x01`, `0x23`, `0x25`, `0x26` | startup sequence | not decoded | verified on hardware |
 
 Opcodes `0x03`, `0x05`, `0x08`, `0x0D`, `0x0F`, `0x10`, `0x11`, `0x14`, `0x20`
@@ -210,3 +210,30 @@ cannot reproduce `0x09` is not to be trusted on anything else.
 `GetHWID` and `SetHWID`, and the upgrade path `requestmcuupgrade`,
 `startmcuupgrade`, `sendfirmwaredata`, `mcuupgraderesult`. The upgrade family is
 out of scope by decision, not by difficulty.
+
+## The heartbeat is a hardware watchdog
+
+Opcode `0x24` is not advisory. If it stops arriving, the microcontroller
+power-cycles the board.
+
+Observed on this unit: a candidate `mcu-interface` was run by hand, its
+supervisor stopped so nothing would restart it, and the candidate then exited
+with the shell session that launched it. Minutes later the speaker restarted on
+its own. Nothing asked it to. The init script contains no watchdog, its only
+`reboot` is inside the `TERM`/`INT` trap, and the runtime log carried no
+orderly shutdown: the board was reset from underneath a running system.
+
+The donor does the same thing from a dedicated POSIX timer. Its
+`mcu_heartbeat_timer_handler` at `0x7dc58` writes six bytes to I2C `0x36` with
+opcode `36` decimal, which is `0x24`.
+
+Two consequences worth knowing before touching this service:
+
+* `reinvoke-mcu-interface` cannot be stopped for long. Replacing it by hand is
+  possible, but the replacement has to be sending `0x24` within seconds or the
+  speaker resets.
+* A background process started over `adb` dies with its session. Run a
+  replacement in the foreground of a live session, or it will be killed and the
+  board will reset shortly afterwards.
+
+The exact timeout has not been measured, because measuring it costs a reboot.

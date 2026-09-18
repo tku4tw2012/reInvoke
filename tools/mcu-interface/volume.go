@@ -371,10 +371,18 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 		if err == nil {
 			if shown := controller.displayLevel(); shown != drawn {
 				if controller.ring != nil {
+					// Logged on the way out, not only on failure. A line
+					// that appears only when the write errors cannot tell
+					// a ring that was drawn from one that was skipped, and
+					// that difference is the whole behaviour here.
 					if ringErr := controller.ring.ShowVolume(
 						shown,
-					); ringErr != nil && controller.logf != nil {
-						controller.logf("show volume on ring: %v", ringErr)
+					); ringErr != nil {
+						if controller.logf != nil {
+							controller.logf("show volume on ring: %v", ringErr)
+						}
+					} else if controller.logf != nil {
+						controller.logf("RING_ARC drawn at %d", shown)
 					}
 				}
 				drawn = shown
