@@ -70,6 +70,13 @@ type dspVolumeController struct {
 	// was still speaking; the same applies here even with one caller.
 	ducks map[string]duckState
 
+	// applied closes once the DSP has accepted a level. A cue rendered before
+	// that plays into whatever gain the DSP powered up with, which on this
+	// unit was inaudible: the amplifier and DAC were open, the samples were
+	// scaled correctly, and nothing came out.
+	appliedOnce sync.Once
+	applied     chan struct{}
+
 	// musicStatePath, when set, remembers the chosen level across restarts.
 	musicStatePath string
 	savedVolume    int
@@ -154,9 +161,10 @@ func newDSPVolumeController(socket string) (*dspVolumeController, error) {
 		return nil, errors.New("DSP control socket is required for volume")
 	}
 	return &dspVolumeController{
-		socket: socket,
-		volume: defaultVolume,
-		notify: make(chan struct{}, 1),
+		socket:  socket,
+		volume:  defaultVolume,
+		notify:  make(chan struct{}, 1),
+		applied: make(chan struct{}),
 	}, nil
 }
 
@@ -347,6 +355,7 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 			}
 		}
 		if err == nil {
+			controller.markApplied()
 			continue
 		}
 		if ctx.Err() != nil {
@@ -356,8 +365,15 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 			controller.logf("apply DSP volume %d: %v", level, err)
 		}
 		// The DSP service registers its procedures after this one starts, so
-		// the first assertion can lose a race nobody can hear. Keep trying;
-		// each attempt re-reads the level, so a retry cannot apply a stale one.
+		// the first assertions lose a race nobody can hear. Keep trying; each
+		// attempt re-reads the level, so a retry cannot apply a stale one.
+		//
+		// Retrying until it works, rather than a fixed number of times, is the
+		// point. On this unit the DSP finished registering about fifty seconds
+		// into a boot while the earlier retry budget ran out at forty-six, so
+		// the level was never applied at all: every service reported volume 80
+		// while the DSP sat at whatever gain it powered up with, and the boot
+		// cue played into it inaudibly.
 		retry = time.After(volumeRetryDelay)
 	}
 }
@@ -503,3 +519,45 @@ func (controller *dspVolumeController) fadeToTarget(
 	}
 	return nil
 }
+
+// markApplied records that the DSP has accepted a level.
+func (controller *dspVolumeController) markApplied() {
+	controller.appliedOnce.Do(func() {
+		if controller.applied != nil {
+			close(controller.applied)
+		}
+	})
+}
+
+// WaitApplied blocks until the DSP has accepted a level, or the deadline
+// passes. It reports whether the level was applied.
+//
+// A sound rendered before this returns true goes through a DSP still at its
+// power-on gain. On this unit that was silent even with the amplifier and DAC
+// open and the samples scaled correctly, and it looked like a working cue in
+// every log.
+func (controller *dspVolumeController) WaitApplied(
+	ctx context.Context,
+	timeout time.Duration,
+) bool {
+	if controller == nil || controller.applied == nil {
+		return false
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-controller.applied:
+		return true
+	case <-timer.C:
+		return false
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// dspReadyTimeout bounds how long a startup cue waits for the audio path.
+//
+// The DSP registered about fifty seconds into a boot on this unit, measured
+// from its own log. Ninety seconds leaves room for a slower boot without
+// holding a cue for a DSP that is never coming.
+const dspReadyTimeout = 90 * time.Second

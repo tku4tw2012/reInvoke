@@ -341,7 +341,24 @@ func main() {
 	}
 	// Harman's own startup chime, from the installed rootfs. Identified by ear
 	// against the other candidates in that image.
-	cues.PlayAsync(ctx, "Power_On")
+	//
+	// It waits for the DSP to accept a volume first. The DSP sits between the
+	// DAC and the speaker, and it registers its WAMP procedures several
+	// seconds after this service starts. A cue rendered before that plays
+	// through whatever gain the DSP powered up with: on this unit the
+	// amplifier and DAC were open, the samples were scaled correctly, the
+	// renderer exited cleanly, and nothing was audible.
+	if media != nil {
+		go func() {
+			if !media.WaitApplied(ctx, dspReadyTimeout) {
+				log.Printf("CUE_SKIPPED Power_On: DSP did not accept a volume")
+				return
+			}
+			cues.PlayAsync(ctx, "Power_On")
+		}()
+	} else {
+		cues.PlayAsync(ctx, "Power_On")
+	}
 
 	if gpioSource != nil {
 		// Replies to our own requests arrive on the button channel. Without

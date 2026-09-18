@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // buildWAV assembles a minimal PCM WAV for the decoder tests.
@@ -189,5 +190,65 @@ func TestPlayRendersThroughTheConfiguredPlayer(t *testing.T) {
 	peak := samplePeak(rendered)
 	if peak > int(cueTargetPeak)+1 || peak < int(cueTargetPeak)-1 {
 		t.Fatalf("rendered peak %d, want about %v", peak, cueTargetPeak)
+	}
+}
+
+// TestWaitAppliedBlocksUntilTheDSPAccepts proves a startup cue waits for the
+// audio path rather than assuming it.
+//
+// The DSP sits between the DAC and the speaker and registers its procedures
+// several seconds after this service starts. On hardware the boot cue rendered
+// at 32 seconds while the DSP had not accepted a volume: the amplifier and DAC
+// were open, the samples were scaled correctly, the renderer exited cleanly,
+// the log said CUE_PLAYED, and nothing was audible.
+func TestWaitAppliedBlocksUntilTheDSPAccepts(t *testing.T) {
+	controller, err := newDSPVolumeController("/tmp/does-not-matter")
+	if err != nil {
+		t.Fatalf("controller: %v", err)
+	}
+	// Nothing has been applied, so a waiter must time out rather than proceed.
+	if controller.WaitApplied(context.Background(), 50*time.Millisecond) {
+		t.Fatal("WaitApplied returned true before the DSP accepted anything")
+	}
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		controller.markApplied()
+	}()
+	if !controller.WaitApplied(context.Background(), 2*time.Second) {
+		t.Fatal("WaitApplied did not observe the DSP accepting a level")
+	}
+	// It stays satisfied once applied.
+	if !controller.WaitApplied(context.Background(), 50*time.Millisecond) {
+		t.Fatal("WaitApplied forgot that the DSP had accepted")
+	}
+}
+
+// TestMarkAppliedIsIdempotent proves repeated success does not panic on an
+// already closed channel. Every accepted volume marks the path applied.
+func TestMarkAppliedIsIdempotent(t *testing.T) {
+	controller, err := newDSPVolumeController("/tmp/does-not-matter")
+	if err != nil {
+		t.Fatalf("controller: %v", err)
+	}
+	controller.markApplied()
+	controller.markApplied()
+	controller.markApplied()
+	if !controller.WaitApplied(context.Background(), time.Second) {
+		t.Fatal("WaitApplied did not observe the mark")
+	}
+}
+
+// TestWaitAppliedHonoursCancellation proves a cancelled startup does not hold
+// a cue waiting for a DSP that is never coming.
+func TestWaitAppliedHonoursCancellation(t *testing.T) {
+	controller, err := newDSPVolumeController("/tmp/does-not-matter")
+	if err != nil {
+		t.Fatalf("controller: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if controller.WaitApplied(ctx, 10*time.Second) {
+		t.Fatal("WaitApplied ignored a cancelled context")
 	}
 }

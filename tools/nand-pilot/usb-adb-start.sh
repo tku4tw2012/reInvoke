@@ -114,6 +114,24 @@ pilot_usb_adb_up() {
     return 1
   fi
 
+  # Identify this speaker before enabling the gadget. The Android gadget
+  # driver ships a compiled-in serial of 0123456789ABCDEF and a product string
+  # of "Android", so every unit running this build would be indistinguishable
+  # in adb devices and adb -s could not address one of several. The Wi-Fi MAC
+  # is the identity this runtime already publishes as its Bluetooth name, so
+  # the same value is used here.
+  usb_adb_mac="$(${BB} cat /sys/class/net/mlan0/address 2>/dev/null |
+    ${BB} tr -d ':' | ${BB} tr 'a-f' 'A-F')"
+  if ${BB} test -n "${usb_adb_mac}"; then
+    echo "${usb_adb_mac}" > "${USB_ADB_GADGET}/iSerial" 2>/dev/null
+  fi
+  # The product string is the name this speaker already answers to over WAMP
+  # and advertises over Bluetooth, so one unit reads the same everywhere.
+  if ${BB} test -n "${usb_adb_mac}"; then
+    echo "reInvoke-$(echo "${usb_adb_mac}" | ${BB} cut -c7-12)" \
+      > "${USB_ADB_GADGET}/iProduct" 2>/dev/null
+  fi
+
   echo adb > "${USB_ADB_GADGET}/functions" || return 1
   echo 1 > "${USB_ADB_GADGET}/enable" || return 1
   ${BB} sleep 1
