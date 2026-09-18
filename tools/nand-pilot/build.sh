@@ -9,6 +9,13 @@ archive="$(realpath "${1:-${repo}/../reinvoke-archive}")"
 output="${2:-${archive}/build/artifacts/reinvoke-native-05-20260913/main}"
 [[ -n "${PILOT_PRIVATE_CONFIG:-}" ]] || { echo "PILOT_PRIVATE_CONFIG is required" >&2; exit 1; }
 [[ -n "${PILOT_PERSISTENCE_CONFIG:-}" ]] || { echo "PILOT_PERSISTENCE_CONFIG is required" >&2; exit 1; }
+# Required, not optional. build.js treats an unset value as "no Bluedroid", so
+# omitting it produces a complete-looking build with no Bluetooth stack and no
+# reinvoke-identifiers. Candidate 05.8.11 shipped that way and flashed: every
+# volume apply failed with "fork/exec /bin/reinvoke-identifiers: no such file
+# or directory", so the DSP never took a level and the startup chime never
+# played. Nothing in the build reported a problem.
+[[ -n "${PILOT_BLUEDROID_CONFIG:-}" ]] || { echo "PILOT_BLUEDROID_CONFIG is required" >&2; exit 1; }
 mkdir -p "${output}"
 chmod 0700 "${output}"
 output="$(realpath "${output}")"
