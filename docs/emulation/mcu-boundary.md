@@ -1,6 +1,6 @@
 ---
 title: MCU boundary
-description: Owned controls and privacy policy, recovered I2C frames and donor API reference
+description: Owned controls and mute state, recovered I2C frames and donor API reference
 ms.date: 2026-09-12
 ms.topic: reference
 ---
@@ -18,7 +18,7 @@ demonstrated rotary, indicator and provisioning controls. See the
 ## Current owned boundary
 
 Both physical `micmute` and WAMP `com.harman.dsp.micMute` enter one
-process-lifetime privacy controller before publication. It atomically retains
+process-lifetime mic-mute controller before publication. It atomically retains
 mode-`0600` RAM state, updates the protected red ring only after confirmed DSP
 state, retries failed mute reconciliation without Bonefish, and fails safe
 after indeterminate unmute. Raw DSP opcode `0x09` is reachable only through
@@ -27,7 +27,7 @@ the DSP-owned mode-`0600` `/run/reinvoke/dsp-mic-control.sock`.
 | Physical input                     | Local action                                                |
 | ---------------------------------- | ----------------------------------------------------------- |
 | Rotary clockwise/counter-clockwise | Coalesced BlueALSA volume, then compatibility publication   |
-| Mic-Mute short                     | Toggle DSP privacy and confirmed red indication             |
+| Mic-Mute short                     | Toggle DSP mic mute and confirmed red indication             |
 | Bluetooth short                    | Open bounded pairing window when idle; cancel when active   |
 | Bluetooth long                     | Reopen bounded allowlisted pairing window                   |
 | Action short                       | Toggle Bluetooth play/pause and reviewed one-shot animation |
@@ -36,7 +36,7 @@ the DSP-owned mode-`0600` `/run/reinvoke/dsp-mic-control.sock`.
 
 Some physical Mic-Mute attempts produced no MCU frame under both donor and
 owned services. Software can handle received events, not manufacture missing
-ones. The privacy boundary is software-enforced, not an established electrical
+ones. The mute boundary is software-enforced, not an established electrical
 microphone disconnect.
 
 Speaker unmute separately requires the active-PCM lease, ALSA owner thread,
@@ -168,7 +168,7 @@ bytes (30 frames) per I2C message to `0x36`, waiting 280 ms between chunks:
 The first chunk uses `01`, later chunks `00`. Owned `ledOff` cancels ordinary
 animation and sends 41 bytes: `0e 01` followed by three zero 13-byte frames.
 RAM testing physically confirmed clearing after microphone unmute.
-Generic animations and `ledOff` are rejected while privacy requires the red
+Generic animations and `ledOff` are rejected while mic mute requires the red
 indication.
 
 ### Recovered ledSet contract
@@ -229,7 +229,7 @@ the generation guard removes stale state after process loss. MCU polling is
 250 ms, limited to 32 bytes. Missing/oversized/invalid state maps to off.
 Confirmed unchanged state avoids repeat writes; failures remain retryable.
 The serialized watcher corrects a WAMP rear write on the next poll without
-using top-ring animation or bypassing privacy.
+using top-ring animation or bypassing mic mute.
 
 ## Historical donor WAMP API
 
@@ -276,7 +276,7 @@ For off-device work use the
 a real host bus. Its successful startup does not measure physical behavior.
 
 Owned RAM tests cover mute-first startup, heartbeat, rotary, pairing, LEDs,
-speaker authorization and microphone privacy across router/DSP restarts;
+speaker authorization and microphone mute across router/DSP restarts;
 provenance begins at [P1-048](../../metadata/P1-048.json). MCU identity,
 undecoded frame fields, complete register maps, cold-state behavior and missing
 physical key events remain unresolved.

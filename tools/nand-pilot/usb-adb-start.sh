@@ -120,16 +120,18 @@ pilot_usb_adb_up() {
   # in adb devices and adb -s could not address one of several. The Wi-Fi MAC
   # is the identity this runtime already publishes as its Bluetooth name, so
   # the same value is used here.
+  # The radio modules load before this runs, so the interface exists here even
+  # when it never associates, which is the case USB ADB is for.
   usb_adb_mac="$(${BB} cat /sys/class/net/mlan0/address 2>/dev/null |
     ${BB} tr -d ':' | ${BB} tr 'a-f' 'A-F')"
   if ${BB} test -n "${usb_adb_mac}"; then
-    echo "${usb_adb_mac}" > "${USB_ADB_GADGET}/iSerial" 2>/dev/null
-  fi
-  # The product string is the name this speaker already answers to over WAMP
-  # and advertises over Bluetooth, so one unit reads the same everywhere.
-  if ${BB} test -n "${usb_adb_mac}"; then
+    echo "${usb_adb_mac}" > "${USB_ADB_GADGET}/iSerial"
+    # The product string is the name this speaker already answers to over WAMP
+    # and advertises over Bluetooth, so one unit reads the same everywhere.
     echo "reInvoke-$(echo "${usb_adb_mac}" | ${BB} cut -c7-12)" \
-      > "${USB_ADB_GADGET}/iProduct" 2>/dev/null
+      > "${USB_ADB_GADGET}/iProduct"
+  else
+    log "USB ADB identity unavailable; gadget keeps the driver defaults"
   fi
 
   echo adb > "${USB_ADB_GADGET}/functions" || return 1

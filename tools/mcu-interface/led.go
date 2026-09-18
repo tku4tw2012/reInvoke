@@ -21,7 +21,7 @@ const (
 	maxLEDAssetBytes  = 1024 * 1024
 	ledAnimationCode  = byte(0x0e)
 	ledFirstChunkFlag = byte(0x01)
-	micPrivacyLEDName = "L_108_c_error"
+	micMuteLEDName = "L_108_c_error"
 )
 
 type ledWriter interface {
@@ -36,7 +36,7 @@ type ledPlayer struct {
 	mu           sync.Mutex
 	cancel       context.CancelFunc
 	done         chan struct{}
-	privacyMuted bool
+	micMuted bool
 }
 
 func (player *ledPlayer) Apply(
@@ -147,19 +147,19 @@ func (player *ledPlayer) start(
 	return nil
 }
 
-func (player *ledPlayer) SetPrivacyMuted(
+func (player *ledPlayer) SetMicrophoneMuted(
 	parent context.Context,
 	muted bool,
 ) error {
 	player.mu.Lock()
-	player.privacyMuted = muted
+	player.micMuted = muted
 	if !muted {
 		defer player.mu.Unlock()
 		player.stopLocked()
 		return clearLEDs(player.writer)
 	}
 	player.mu.Unlock()
-	return player.start(parent, micPrivacyLEDName, true, true)
+	return player.start(parent, micMuteLEDName, true, true)
 }
 
 func (player *ledPlayer) Clear() error {
@@ -179,8 +179,8 @@ func (player *ledPlayer) StopContext(ctx context.Context) error {
 	// A generic stop used to be refused while the microphone was muted, so the
 	// red indication could not be extinguished by anything else. That was this
 	// project's rule rather than the donor's, and it meant a caller could not
-	// clear the ring without first knowing about a privacy state it had no
-	// business in. The privacy indication is reasserted by SetPrivacyMuted.
+	// clear the ring without first knowing about a micMute state it had no
+	// business in. The micMute indication is reasserted by SetMicrophoneMuted.
 	player.stopLocked()
 	return clearLEDs(player.writer)
 }

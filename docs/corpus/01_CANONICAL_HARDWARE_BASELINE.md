@@ -207,7 +207,7 @@ WM8904 appears in an ACast reference device tree, not a verified Invoke
 component identification. Daughterboard modularity motivated an August 2026
 replacement-compute proposal; electrical compatibility remains unproved.
 Actual native kernel, PID 1, and mounts remain unread via shell. RAM microphone
-privacy/capture and supervision results still require native acceptance.
+Mic-mute and capture supervision results still require native acceptance.
 
 ## Sources
 

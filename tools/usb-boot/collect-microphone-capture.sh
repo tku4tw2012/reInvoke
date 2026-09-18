@@ -2,7 +2,7 @@
 # Copyright (c) Microsoft Corporation.
 # SPDX-License-Identifier: MIT
 #
-# Collect attended microphone capture, privacy, and restart evidence.
+# Collect attended microphone capture, mic-mute, and restart evidence.
 
 set -euo pipefail
 
@@ -267,7 +267,7 @@ main() {
     remote_line '/bin/busybox wc -l < /run/reinvoke/logs/runtime.log'
   )"
 
-  printf "READY: tap Mic-Mute once now; wait for the red privacy indication.\n"
+  printf "READY: tap Mic-Mute once now; wait for the red mic-mute indication.\n"
   wait_for_state muted "${state_timeout}" ||
     err "physical Mic-Mute did not reach muted state"
   wait_for_confirmation true "${log_start}" "${state_timeout}" ||
@@ -307,7 +307,7 @@ main() {
   log_start="$(
     remote_line '/bin/busybox wc -l < /run/reinvoke/logs/runtime.log'
   )"
-  printf "READY: tap Mic-Mute once now to clear privacy.\n"
+  printf "READY: tap Mic-Mute once now to clear the mute.\n"
   wait_for_state unmuted "${state_timeout}" ||
     err "physical Mic-Mute did not return to unmuted state"
   wait_for_confirmation false "${log_start}" "${state_timeout}" ||

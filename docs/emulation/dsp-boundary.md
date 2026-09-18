@@ -13,7 +13,7 @@ SPI carries firmware/control, not PCM; see the
 
 Byte-exact captures and pinmux/restart tests below are historical RAM evidence.
 Candidate 02 independently returned native version event `[25688]`, not a
-native microphone/privacy or shell-level kernel audit. The
+native microphone/mic mute or shell-level kernel audit. The
 [current contract](../current-product-contract.md) defines product ownership.
 
 ## Current owned boundary
@@ -27,17 +27,17 @@ Seven public WAMP procedures remain: `com.harman.dsp.micTestSingle`,
 Raw microphone opcode `0x09` is available only through DSP-owned
 `/run/reinvoke/dsp-mic-control.sock`, mode `0600`.
 The MCU registers `com.harman.dsp.micMute` and funnels physical and
-compatibility requests through its process-lifetime privacy controller.
+compatibility requests through its process-lifetime mic-mute controller.
 
-Every DSP restart reads the mode-`0600` RAM privacy state and restores required
+Every DSP restart reads the mode-`0600` RAM mute state and restores required
 mute before readiness; failed reconciliation fails startup. External WAMP and
-subscribed-state commands wait for the private socket and privacy restoration.
+subscribed-state commands wait for the private socket and mic-mute restoration.
 Only internal startup mute bypasses that barrier.
 
 Opening ALSA capture can reconfigure the DSP route: RAM tests obtained an
 all-zero stream after mute following capture `hw_params`, while startup mute
 did not constrain a later raw root-level open. Capture owners must obey the
-privacy-state contract and confirm post-configuration mute before consumption.
+Mic-mute-state contract and confirm post-configuration mute before consumption.
 See [microphone capture](../microphone-capture.md).
 
 ## Evidence and required artifacts
@@ -284,4 +284,4 @@ Keep the window free of state-changing WAMP calls.
 Unresolved details are DSP identity/image contents, id-0 event codes below 4,
 unsolicited header/payload-id correspondence, the binary write that sets
 message delay to 1, and normal occurrence of retry/re-download. A boot event
-does not establish AEC, beamforming, microphone privacy or acoustic output.
+does not establish AEC, beamforming, microphone mute or acoustic output.

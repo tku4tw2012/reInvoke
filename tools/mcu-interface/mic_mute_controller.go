@@ -12,7 +12,7 @@ import (
 
 const microphoneReconcileInterval = 5 * time.Second
 
-type microphonePrivacyController struct {
+type microphoneMuteController struct {
 	mu sync.Mutex
 
 	muted   bool
@@ -27,14 +27,14 @@ type microphonePrivacyController struct {
 	logf        func(string, ...interface{})
 }
 
-func newMicrophonePrivacyController(
+func newMicrophoneMuteController(
 	muted bool,
 	statePath string,
 	controlPath string,
 	lights *ledPlayer,
 	logf func(string, ...interface{}),
-) *microphonePrivacyController {
-	return &microphonePrivacyController{
+) *microphoneMuteController {
+	return &microphoneMuteController{
 		muted:       muted,
 		desired:     muted,
 		unknown:     muted,
@@ -47,7 +47,7 @@ func newMicrophonePrivacyController(
 	}
 }
 
-func (controller *microphonePrivacyController) Apply(
+func (controller *microphoneMuteController) Apply(
 	ctx context.Context,
 	event inputEvent,
 ) error {
@@ -67,7 +67,7 @@ func (controller *microphonePrivacyController) Apply(
 	return err
 }
 
-func (controller *microphonePrivacyController) Set(
+func (controller *microphoneMuteController) Set(
 	ctx context.Context,
 	muted bool,
 ) error {
@@ -84,7 +84,7 @@ func (controller *microphonePrivacyController) Set(
 	return err
 }
 
-func (controller *microphonePrivacyController) Reconcile(
+func (controller *microphoneMuteController) Reconcile(
 	ctx context.Context,
 ) error {
 	controller.mu.Lock()
@@ -98,14 +98,14 @@ func (controller *microphonePrivacyController) Reconcile(
 	return controller.setLocked(ctx, true)
 }
 
-func (controller *microphonePrivacyController) RequestReconcile() {
+func (controller *microphoneMuteController) RequestReconcile() {
 	select {
 	case controller.reconcile <- struct{}{}:
 	default:
 	}
 }
 
-func (controller *microphonePrivacyController) Run(ctx context.Context) {
+func (controller *microphoneMuteController) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -129,18 +129,18 @@ func (controller *microphonePrivacyController) Run(ctx context.Context) {
 	}
 }
 
-func (controller *microphonePrivacyController) setLocked(
+func (controller *microphoneMuteController) setLocked(
 	ctx context.Context,
 	muted bool,
 ) error {
 	controller.desired = true
 	controller.unknown = true
 	if !muted && controller.lights != nil {
-		if err := controller.lights.SetPrivacyMuted(
+		if err := controller.lights.SetMicrophoneMuted(
 			controller.lifetime,
 			false,
 		); err != nil {
-			return fmt.Errorf("clear privacy indicator before unmute: %w", err)
+			return fmt.Errorf("clear micMute indicator before unmute: %w", err)
 		}
 	}
 	if muted {
@@ -164,11 +164,11 @@ func (controller *microphonePrivacyController) setLocked(
 	controller.desired = muted
 	controller.unknown = false
 	if controller.lights != nil {
-		if err := controller.lights.SetPrivacyMuted(
+		if err := controller.lights.SetMicrophoneMuted(
 			controller.lifetime,
 			muted,
 		); err != nil {
-			return fmt.Errorf("set microphone privacy indicator: %w", err)
+			return fmt.Errorf("set microphone micMute indicator: %w", err)
 		}
 	}
 	if controller.logf != nil {
@@ -177,7 +177,7 @@ func (controller *microphonePrivacyController) setLocked(
 	return nil
 }
 
-func (controller *microphonePrivacyController) restoreMuteLocked(
+func (controller *microphoneMuteController) restoreMuteLocked(
 	ctx context.Context,
 	cause error,
 ) error {
@@ -190,7 +190,7 @@ func (controller *microphonePrivacyController) restoreMuteLocked(
 		controller.desired = true
 		controller.unknown = false
 		if controller.lights != nil {
-			restoreErr = controller.lights.SetPrivacyMuted(
+			restoreErr = controller.lights.SetMicrophoneMuted(
 				controller.lifetime,
 				true,
 			)

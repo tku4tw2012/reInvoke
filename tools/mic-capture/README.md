@@ -1,15 +1,15 @@
 ---
 title: reInvoke microphone capture owner
-description: Build and client reference for the privacy-gated local capture service
+description: Build and client reference for the mic mute-gated local capture service
 ms.date: 2026-09-12
 ms.topic: how-to
 ---
 
 `reinvoke-mic-capture` is the packaged capture-PCM owner. It supervises the
-pinned donor `arecord`, polls MCU privacy state and serves channel 0 over a
-root-only Unix socket. The [wire/privacy contract](../../docs/microphone-capture.md)
+pinned donor `arecord`, polls MCU mute state and serves channel 0 over a
+root-only Unix socket. The [wire/mic mute contract](../../docs/microphone-capture.md)
 is authoritative; synchronous per-delivery fencing is deferred, not implemented.
-Data-path/privacy hardware acceptance remains RAM-scoped.
+Data-path/mic mute hardware acceptance remains RAM-scoped.
 
 ## Runtime interface
 
@@ -21,7 +21,7 @@ Default socket is `/run/reinvoke/mic-capture/audio.sock`. Each connection
 starts with a 32-byte `RINVOMIC` version-1 header, followed by records containing
 a 24-byte generation/sequence/timestamp header and 1,024 PCM bytes.
 Numeric fields are little-endian; exact offsets are in [protocol.go](protocol.go).
-Polled privacy state does not fence every delivery; queued data and root bypass
+Polled mute state does not fence every delivery; queued data and root bypass
 remain part of the threat model.
 
 ## Build and test

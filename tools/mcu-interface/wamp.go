@@ -101,7 +101,7 @@ type wampService struct {
 	events         eventSource
 	version        string
 	flushEvents    bool
-	privacy        *microphonePrivacyController
+	micMute        *microphoneMuteController
 	appearance     *deviceAppearanceController
 	bluetoothState string
 	playbackStatus string
@@ -327,11 +327,11 @@ func (service *wampService) handleDSPSessionEvent(
 		return false, nil
 	}
 
-	if service.privacy == nil {
+	if service.micMute == nil {
 		return true, nil
 	}
-	if err := service.privacy.Reconcile(ctx); err != nil {
-		service.privacy.RequestReconcile()
+	if err := service.micMute.Reconcile(ctx); err != nil {
+		service.micMute.RequestReconcile()
 		if service.logf != nil {
 			service.logf("restore DSP microphone mute: %v", err)
 		}
@@ -682,11 +682,11 @@ func (service *wampService) handleInvocation(
 	case "com.harman.dsp.micMute":
 		var muted bool
 		muted, invocationError = microphoneMuteArgument(args)
-		if invocationError == nil && service.privacy == nil {
-			invocationError = errors.New("microphone privacy backend is unavailable")
+		if invocationError == nil && service.micMute == nil {
+			invocationError = errors.New("microphone micMute backend is unavailable")
 		}
 		if invocationError == nil {
-			invocationError = service.privacy.Set(ctx, muted)
+			invocationError = service.micMute.Set(ctx, muted)
 		}
 		if invocationError == nil {
 			result = []interface{}{muted}

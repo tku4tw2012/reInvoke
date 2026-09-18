@@ -18,7 +18,7 @@ milestones, not a complete assistant or a 1.0.0 release.
 | Software mapping     | Boot/update, services, WAMP, audio, radio and hardware-control boundaries recovered                   | [Control-plane reference](emulation/control-plane-emulation.md#vendor-control-surface) |
 | Emulation            | Bonefish and selected ARM services accepted WAMP calls and changed state under `qemu-user`            | [Emulation](emulation/control-plane-emulation.md)                                      |
 | Closed-unit bring-up | External USB/U-Boot, RAM Linux, NAND logical reads and usable audio/radio/control interfaces          | [Journal](journal.md#closed-unit-bring-up)                                             |
-| Owned services       | MCU/DSP, media, privacy/capture and provisioning implemented; detailed safety/restart tests in RAM    | [Product contract](current-product-contract.md)                                        |
+| Owned services       | MCU/DSP, media, mic mute/capture and provisioning implemented; detailed safety/restart tests in RAM    | [Product contract](current-product-contract.md)                                        |
 | Native operation     | Candidate 02 audio/control baseline; candidate 03 startup, provisioning and SSH negotiation           | [Native results](native-nand-platform.md#current-result)                               |
 
 The evidence does not establish a full schematic, every upstream build input,
@@ -34,9 +34,9 @@ pinouts do not prevent maintaining the recovered software interfaces.
 2. Repeat bounded candidate-03 audio, rotary, indicator and service checks.
    Its observed A2DP connection is not acoustic acceptance; candidate-02
    results remain separately scoped.
-3. Validate microphone capture/privacy under native startup. Decide whether
+3. Validate microphone capture/mic mute under native startup. Decide whether
    the implemented polled gate meets the intended consumer contract before
-   adopting the [synchronous design](microphone-capture.md#deferred-synchronous-privacy-design).
+   adopting the [synchronous design](microphone-capture.md#deferred-synchronous-mute-design).
 4. Design persistence for Wi-Fi, Bluetooth bonds and preferences, including
    secret handling, power loss, updates, recovery and reset semantics.
    No storage mechanism or partition allocation has been selected.

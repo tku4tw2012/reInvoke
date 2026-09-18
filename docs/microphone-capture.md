@@ -1,6 +1,6 @@
 ---
-title: Privacy-gated microphone capture
-description: Audio format, stream protocol, polled privacy gate and measured limits
+title: mic mute-gated microphone capture
+description: Audio format, stream protocol, polled mic mute gate and measured limits
 ms.date: 2026-09-12
 ms.topic: concept
 ---
@@ -10,7 +10,7 @@ raw ALSA access. Audio and configuration remain volatile; the service writes
 neither to NAND. Wake-word recognition and assistant behavior are consumer
 work, not capture features.
 
-The implemented gate polls MCU-owned state. Native capture/privacy acceptance
+The implemented gate polls MCU-owned state. Native capture/mic-mute acceptance
 is open; the measurements below are from RAM boots. See the
 [current native ledger](native-nand-platform.md#current-result), not indicator
 changes or Bluetooth connection, for candidate acceptance.
@@ -83,9 +83,9 @@ service/client invocation.
 The default per-client queue holds four periods. A full queue or a socket
 write exceeding its 250 ms deadline disconnects that slow consumer.
 
-## Implemented privacy boundary
+## Implemented mute boundary
 
-The [MCU privacy controller](current-product-contract.md#microphone-privacy-boundary)
+The [MCU mic-mute controller](current-product-contract.md#microphone-mic mute-boundary)
 owns `/run/reinvoke/microphone-state`. Capture starts muted and polls it every
 100 ms. Missing, invalid, oversized or `muted` state discards periods;
 `unmuted` allows delivery after the next poll.
@@ -110,18 +110,18 @@ RAM speech/tap measurements found 99.975% nonzero unmuted samples and exactly
 0/244,736 nonzero muted samples. Capture checks covered 14 toggles, zero muted
 delivery in measured windows, resumed unmuted delivery and recovery after DSP
 restart. Those windows do not establish an instantaneous or adversarial
-privacy guarantee.
+Mic-mute guarantee.
 
 The [RAM platform](native-ram-platform.md) records the hardware context.
 Native Mic-Mute indicator changes are narrower evidence than a data-path test.
 
-## Deferred synchronous privacy design
+## Deferred synchronous mute design
 
 A stronger fence remains proposed, not part of the wire protocol above.
 `BLOCKED`, `DRAIN`, `DRAINED`, authority epochs and `ALLOW` are not implemented
 messages and must not be assumed by consumers.
 
-The design would keep the MCU as sole privacy authority and require:
+The design would keep the MCU as sole mic mute authority and require:
 
 1. Blocked delivery after every ALSA configuration.
 2. An MCU-requested synchronous capture fence, followed by confirmed DSP mute.
@@ -133,7 +133,7 @@ The design would keep the MCU as sole privacy authority and require:
 
 Ordinary mute would fence the exact capture generation before hardware mute;
 an unresponsive owner would need verified termination. Confirmed hardware
-mute must remain visible on the privacy indicator during synchronization.
+mute must remain visible on the mic-mute indicator during synchronization.
 A design decision and native tests are required before adopting this contract.
 
 Even a synchronous fence cannot revoke bytes already copied into consumer

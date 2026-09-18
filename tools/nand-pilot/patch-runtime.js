@@ -436,21 +436,16 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
   replace('      --pairing-agent-executable "${runtime_bin}/bluez-pairing-agent" \\',
     '      --pairing-agent-executable /opt/reinvoke/bin/reinvoke-pairing-agent \\');
 
-  // The amplifier is only unmuted while a verified renderer holds the playback
-  // device. That check still named bluealsa-aplay, which this candidate stops
-  // shipping: the donor Bluedroid stack renders in-process through
-  // BtSocketHandler::OpenAlsa. The owner is therefore the donor's loader, which
-  // is what /proc/<pid>/exe resolves to for that process. Observed on 05.8.3:
-  // the amplifier stayed muted for every source because the named owner could
-  // never exist, and WAMP unmute was refused as well.
+  // There is no automatic speaker muting, so neither flag has a reader.
+  //
   // The amplifier used to unmute only while the process holding the playback
-  // device resolved to one specific executable. That restriction was this
-  // project's invention, not the donor's: the donor's audio-ui rendered
-  // chimes and prompts through its own players and nothing checked who was
-  // rendering. Keeping it meant no sound this runtime did not itself play
-  // could ever reach the speaker, which blocked the vendor's own cues. The
-  // amplifier still follows ALSA: it energises while the device is RUNNING
-  // and re-mutes when it is not.
+  // device resolved to one named executable, and re-mute when ALSA stopped.
+  // That was this project's invention, not the donor's: the donor's own
+  // audio-ui rendered chimes and prompts through its own players and nothing
+  // checked who was rendering. Keeping it meant no sound this runtime did not
+  // itself play could reach the speaker, which silenced the vendor's startup
+  // chime. The amplifier and DAC are now opened when the hardware is
+  // initialised and follow only the explicit mute procedures.
   replace('      --playback-lease /run/reinvoke/bluealsa-playback-active \\\n' +
     '      --playback-owner-executable "${runtime_bin}/bluealsa-aplay" \\\n',
     '');
@@ -460,10 +455,12 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
   // fired, and dbus, identifiers, bluedroid, pairing-agent, dsp-interface and
   // mic-capture were all skipped with nothing in the log to say why. The
   // speaker came up with no Bluetooth and no DSP for one bad flag.
+  // The matched text is pinned to the base image, so it keeps that image's
+  // wording. Ours below does not.
   replace('      log "microphone privacy state was not initialized"\n' +
     '      return\n',
     '      pilot_failure "service-mcu-interface" \\\n' +
-    '        "microphone privacy state absent; continuing without it"\n');
+    '        "microphone mute state absent; continuing without it"\n');
   return text;
 }
 module.exports = { patchRuntime, INIT_SHA256 };

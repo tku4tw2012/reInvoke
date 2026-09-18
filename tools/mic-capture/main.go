@@ -19,7 +19,7 @@ import (
 const (
 	defaultRuntimeDirectory = "/run/reinvoke/mic-capture"
 	defaultAudioSocket      = "/run/reinvoke/mic-capture/audio.sock"
-	defaultPrivacyState     = "/run/reinvoke/microphone-state"
+	defaultMicMuteState     = "/run/reinvoke/microphone-state"
 	defaultDSPPID           = "/run/reinvoke/dsp-interface.pid"
 	defaultDSPControl       = "/run/reinvoke/dsp-mic-control.sock"
 	defaultDSPExecutable    = "/opt/reinvoke/bin/reinvoke-dsp-interface"
@@ -35,7 +35,7 @@ const (
 type serviceConfig struct {
 	runtimeDirectory string
 	audioSocket      string
-	privacyState     string
+	micMuteState     string
 	dspPID           string
 	dspControl       string
 	dspExecutable    string
@@ -46,7 +46,7 @@ func main() {
 	var cfg serviceConfig
 	flag.StringVar(&cfg.runtimeDirectory, "runtime-dir", defaultRuntimeDirectory, "root-only runtime directory")
 	flag.StringVar(&cfg.audioSocket, "audio-socket", defaultAudioSocket, "root-only microphone stream socket")
-	flag.StringVar(&cfg.privacyState, "microphone-state", defaultPrivacyState, "microphone privacy state file")
+	flag.StringVar(&cfg.micMuteState, "microphone-state", defaultMicMuteState, "microphone micMute state file")
 	flag.StringVar(&cfg.dspPID, "dsp-pid", defaultDSPPID, "DSP interface PID file")
 	flag.StringVar(&cfg.dspControl, "dsp-mic-socket", defaultDSPControl, "DSP mic control socket")
 	flag.StringVar(&cfg.dspExecutable, "dsp-executable", defaultDSPExecutable, "expected DSP executable")
@@ -174,7 +174,7 @@ func runCapture(
 			case <-mutedCtx.Done():
 				return
 			case <-ticker.C:
-				m, err := readMicrophoneMuted(cfg.privacyState)
+				m, err := readMicrophoneMuted(cfg.micMuteState)
 				if err != nil {
 					m = true
 				}
@@ -237,7 +237,7 @@ func validateConfig(cfg serviceConfig) error {
 	for label, value := range map[string]string{
 		"runtime directory": cfg.runtimeDirectory,
 		"audio socket":      cfg.audioSocket,
-		"microphone state":  cfg.privacyState,
+		"microphone state":  cfg.micMuteState,
 		"DSP PID":           cfg.dspPID,
 		"DSP control":       cfg.dspControl,
 		"DSP executable":    cfg.dspExecutable,

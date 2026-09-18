@@ -132,13 +132,29 @@ func TestLiveExpanderValueIsPreservedByInitialization(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Initialization owns the amplifier and DAC mute bits and nothing else.
+	// Every other bit of the live expander value must survive untouched.
+	const owned = ampMuteMask | dacMuteMask
+	var last byte
+	var sawWrite bool
 	for _, operation := range hardware.operations {
-		if operation.kind == "write" &&
-			operation.address == expanderAddress &&
-			operation.register == expanderOutput &&
-			operation.value != 0xfb {
-			t.Fatalf("captured expander value changed: %#v", operation)
+		if operation.kind != "write" ||
+			operation.address != expanderAddress ||
+			operation.register != expanderOutput {
+			continue
 		}
+		sawWrite = true
+		last = operation.value
+		if operation.value&^owned != 0xfb&^owned {
+			t.Fatalf("initialization changed a bit it does not own: %#v",
+				operation)
+		}
+	}
+	if !sawWrite {
+		t.Fatal("initialization never wrote the expander output")
+	}
+	if last&ampMuteMask != 0 || last&dacMuteMask == 0 {
+		t.Fatalf("initialization left outputs muted: expander = %#x", last)
 	}
 }
 
@@ -231,36 +247,48 @@ func TestShutdownMutesAmplifierBeforeDAC(t *testing.T) {
 	}
 }
 
-func TestPlaybackPolicyOwnsOrderedUnmuteAndRemute(t *testing.T) {
+// TestInitializationLeavesOutputsOpen proves the speaker is audible once the
+// hardware is initialised, without any process having to claim ownership of
+// the audio device first.
+//
+// This replaces a policy that muted the amplifier whenever ALSA was not
+// running and reopened it only for an approved renderer. That was this
+// project's invention, not donor behaviour, and it silenced every sound the
+// runtime did not itself play. The donor mutes both only while it brings the
+// IO expander up, which is what initialize still does.
+func TestInitializationLeavesOutputsOpen(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
 	control := newController(hardware)
 	control.sleep = func(time.Duration) {}
+
 	if err := control.initialize(); err != nil {
 		t.Fatal(err)
 	}
-	start := len(hardware.operations)
 
-	if err := control.setPlaybackActive(true); err != nil {
-		t.Fatal(err)
-	}
-	if err := control.setPlaybackActive(false); err != nil {
-		t.Fatal(err)
-	}
-
-	var writes []hardwareOperation
-	for _, operation := range hardware.operations[start:] {
-		if operation.kind == "write" {
-			writes = append(writes, operation)
+	var last byte
+	var sawWrite bool
+	for _, operation := range hardware.operations {
+		if operation.kind == "write" &&
+			operation.address == expanderAddress &&
+			operation.register == expanderOutput {
+			last = operation.value
+			sawWrite = true
 		}
 	}
-	want := []byte{0x1e, 0x1c, 0x1e, 0x1a}
-	if len(writes) != len(want) {
-		t.Fatalf("playback writes = %#v", writes)
+	if !sawWrite {
+		t.Fatal("initialization never wrote the expander output")
 	}
-	for index, value := range want {
-		if writes[index].value != value {
-			t.Fatalf("playback writes = %#v, want values %x", writes, want)
-		}
+	if last&ampMuteMask != 0 {
+		t.Fatalf("amplifier left muted: expander = %#x", last)
+	}
+	// The DAC bit is an enable line, the inverse of the amplifier bit:
+	// writeDACMuteLocked clears it to mute and sets it to unmute.
+	if last&dacMuteMask == 0 {
+		t.Fatalf("DAC left muted: expander = %#x", last)
+	}
+	if control.ampMuted || control.dacMuted {
+		t.Fatalf("controller still reports muted: amp=%v dac=%v",
+			control.ampMuted, control.dacMuted)
 	}
 }
 

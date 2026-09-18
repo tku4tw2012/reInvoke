@@ -21,7 +21,7 @@ Wi-Fi, bonds and selected preferences; see its
 
 Installed candidate 03 has startup, provisioning and SSH-negotiation evidence
 but no login. Candidate 02 owns the broader native audio/control baseline;
-detailed privacy, firewall and restart checks remain RAM-scoped.
+detailed mic-mute, firewall and restart checks remain RAM-scoped.
 The actual native kernel, PID 1 and mount table remain unread through a shell.
 
 The original Cortana system and final Bluetooth-oriented `12.2134.0` donor
@@ -50,7 +50,7 @@ PCM uses ALSA, not the DSP control daemon's SPI channel. The
 ### MCU and DSP ownership
 
 `reinvoke-mcu-interface` owns MCU transactions, input decoding, animation and
-speaker/privacy policy. Shared expander updates preserve the DSP reset bit.
+speaker and mic-mute state. Shared expander updates preserve the DSP reset bit.
 
 `reinvoke-dsp-interface` owns `/dev/spidev0.0`, handshake GPIOs, GPIO5
 pin-function transition, expander reset and host-loaded `dsp-img.ldr`.
@@ -121,9 +121,9 @@ the area by path; the loader parses `ANDROID_PROPERTY_WORKSPACE` as
 The kernel already provides `/dev/binder` and `ashmem`, so nothing else was
 required. See [propertyd](../tools/propertyd/main.go).
 
-### Microphone privacy boundary
+### Microphone mute boundary
 
-The MCU controller is the sole privacy-policy authority:
+The MCU controller owns microphone mute state:
 
 1. Physical `micmute` events reach it before WAMP publication, independently
    of router availability.
@@ -136,7 +136,8 @@ The MCU controller is the sole privacy-policy authority:
    triggers a mute attempt; failed reconciliation retries independently of WAMP.
 
 Moving public Mic-Mute to the MCU reduced the owned DSP service from the
-donor's eight WAMP registrations to seven, preventing a policy bypass.
+donor's eight WAMP registrations to seven, so a single controller holds the
+state the button and the DSP procedure both change.
 
 Capture selects the donor's left voice-recognition channel and emits mono
 48 kHz `S32_LE`, 256-frame records on
@@ -148,10 +149,9 @@ when state is muted or invalid. DSP identity changes restart capture.
 This is not a synchronous fence for queued audio; ALSA `hw_params` can also
 overwrite a previous DSP route. Consumers use the owned socket, not raw ALSA.
 
-Root is trusted. Privacy is neither an electrical disconnect nor protection
-from arbitrary root access. Beamforming, AEC, AGC and noise-reduction activation
+The mute is a software state, not an electrical disconnect. Beamforming, AEC, AGC and noise-reduction activation
 are unproven. The [capture reference](microphone-capture.md) owns measurements,
-the wire format and the [deferred synchronous design](microphone-capture.md#deferred-synchronous-privacy-design).
+the wire format and the [deferred synchronous design](microphone-capture.md#deferred-synchronous-mute-design).
 
 ### Front and rear indicators
 
@@ -170,12 +170,12 @@ The fixed command to I2C address `0x36` is:
 
 State and transport are serialized; I2C failure rolls back candidate state and
 propagates to the caller. The final zeros replace indeterminate donor stack
-residue. These indicators are separate from top animation and privacy.
+residue. These indicators are separate from top animation and mic mute.
 
 `com.harman.ledAnimate` uses checksum-gated assets. `ledOff` cancels ordinary
 animation with a 41-byte clear packet: opcode `0x0e`, first-chunk flag `0x01`,
 three zero 13-byte frames. Generic LED calls cannot extinguish required red
-privacy indication. Full native front/rear acceptance remains open.
+mic-mute indication. Full native front/rear acceptance remains open.
 
 ### Bluetooth policy
 
@@ -192,7 +192,7 @@ Connection state comes from allowlisted `Device1.Connected`, including startup.
 Atomic mode-0600 `/run/reinvoke/bluetooth-state` reports `pairing` during a
 window, otherwise `connected` or `off`. MCU policy maps these to rear
 slow-blink/on/off, deduplicates writes and clears invalid state without altering
-top privacy. A generation guard removes stale state on producer exit.
+top mic-mute ring. A generation guard removes stale state on producer exit.
 See [Bluetooth evidence](emulation/bluetooth-stack.md).
 
 ### Network and local administration
@@ -220,7 +220,7 @@ WAMP and host helper/ADB ports are not substitutes for native administration.
 | Input                         | Implemented action                                   |
 | ----------------------------- | ---------------------------------------------------- |
 | Rotary                        | Coalesced media volume and compatibility publication |
-| Mic-Mute short                | Privacy toggle and confirmed red ring                |
+| Mic-Mute short                | Mute toggle and confirmed red ring                   |
 | Mic-Mute long                 | Bounded isolated Wi-Fi setup                         |
 | Bluetooth short / long        | Toggle / reopen pairing window                       |
 | Action short                  | Play/pause and reviewed one-shot animation           |

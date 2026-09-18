@@ -40,7 +40,7 @@ setup continue without durable settings.
 | ----------- | ----------------------------------------------------------------------------- |
 | Wi-Fi       | Last successfully associated SSID, derived WPA2 PSK, security and hidden flag |
 | Bluetooth   | Selected BlueZ peer `info` and `attributes` files; no discovery cache         |
-| Preferences | Microphone privacy and music-volume preference                                |
+| Preferences | microphone mute and music-volume preference                                |
 
 One versioned, checksummed envelope limits selected data to 1 MiB and the
 encoded snapshot to 2 MiB. Symlinks, special files, unsafe ownership/modes,

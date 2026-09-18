@@ -408,7 +408,7 @@ func (service *wampService) handleInvocation(
 	})
 }
 
-// dispatch waits until post-boot initialization and persisted privacy restore
+// dispatch waits until post-boot initialization and persisted micMute restore
 // finish before allowing an external command onto the DSP link.
 func (service *wampService) dispatch(
 	ctx context.Context,
@@ -425,7 +425,7 @@ func (service *wampService) dispatch(
 	return service.dispatchLink(ctx, spec, args)
 }
 
-// dispatchLink is also used for the startup privacy restore that must complete
+// dispatchLink is also used for the startup micMute restore that must complete
 // before ready can close.
 func (service *wampService) dispatchLink(
 	ctx context.Context,

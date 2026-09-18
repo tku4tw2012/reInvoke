@@ -187,7 +187,7 @@ rotary volume both ways, indicators, physical Wi-Fi provisioning and MCU/DSP
 WAMP control. Eight RawSocket test groups covered fresh sessions/events,
 state changes and invalid arguments. A real `wamp.2.msgpack` WebSocket
 handshake passed; no heartbeat appeared during 75 seconds. Indicators were
-not microphone privacy tests.
+not microphone mute tests.
 
 Several variables changed together: vendor programming, default app seed,
 cleared prior state and startup that no longer withheld core services when USB

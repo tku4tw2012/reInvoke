@@ -149,7 +149,7 @@ window by itself.
 
 Isolation boot arguments are `reinvoke.runtime=off`, `reinvoke.router=off`,
 `reinvoke.mcu=off`, `reinvoke.dsp=off`, `reinvoke.bluetooth=off` and
-`reinvoke.networkd=off`. Speaker/privacy policy is specified in the
+`reinvoke.networkd=off`. Speaker/mute state is specified in the
 [speaker](../../docs/emulation/owned-speaker-control.md) and
 [microphone](../../docs/microphone-capture.md) references.
 

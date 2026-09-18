@@ -21,7 +21,7 @@ not identity: the controller never completes HCI initialisation, so
 
 Candidate 05.4 is built and staged, carrying the OOBE query answer, the HAL
 install-path correction and a supervisor restart fix. Candidate 02 remains the
-broader native audio/control baseline. RAM privacy, firewall and restart
+broader native audio/control baseline. RAM mic mute, firewall and restart
 measurements are not native acceptance.
 
 ### Candidate 03 startup
@@ -205,7 +205,7 @@ Candidate 04 combines the administration fix with a daily-use settings layer:
   reproduced in the extracted 03 root. The unchanged ARM Dropbear then logs
   in and executes the packaged ARM shell under QEMU.
 * The existing named app/YAFFS2 allocation stores successful Wi-Fi profiles,
-  selected BlueZ bond files, privacy and safe-volume preferences. No partition
+  selected BlueZ bond files, mic mute and safe-volume preferences. No partition
   is added or formatted. Failed storage leaves explicit volatile operation.
 * A private derived Wi-Fi seed can initialize a verified empty store.
   Saved profiles take precedence; association precedes durable saving.

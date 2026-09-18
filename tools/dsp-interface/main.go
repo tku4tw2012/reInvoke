@@ -83,12 +83,12 @@ func main() {
 	microphoneState := flag.String(
 		"microphone-state",
 		"/run/reinvoke/microphone-state",
-		"RAM state used to restore microphone privacy during DSP boot",
+		"RAM state used to restore microphone micMute during DSP boot",
 	)
 	microphoneControlSocket := flag.String(
 		"mic-control-socket",
 		"/run/reinvoke/dsp-mic-control.sock",
-		"root-only socket used by the MCU privacy owner",
+		"root-only socket used by the MCU micMute owner",
 	)
 	dryRun := flag.Bool(
 		"dry-run",

@@ -105,7 +105,24 @@ func (c *controller) initialize() error {
 	}
 
 	c.sleep(2 * time.Second)
+
+	// Open the outputs and leave them open.
+	//
+	// The mute above is adopted from the donor, whose own log line at this
+	// point reads "MCU init io expander. mute amp and dac!!!". The donor mutes
+	// both while it brings the IO expander up. It does not keep them muted.
+	// Staying muted afterwards was this project's invention: the amplifier was
+	// held closed until a process holding the ALSA device passed an ownership
+	// test, which meant no sound the runtime did not itself render could reach
+	// the speaker. The amplifier and DAC now follow the explicit mute
+	// procedures and nothing else.
 	c.initialized = true
+	if err := c.setAmpMuteLocked(false); err != nil {
+		return fmt.Errorf("unmute amplifier: %w", err)
+	}
+	if err := c.setDACMuteLocked(false); err != nil {
+		return fmt.Errorf("unmute DAC: %w", err)
+	}
 	return nil
 }
 
@@ -223,33 +240,6 @@ func (c *controller) writeDACMuteLocked(muted bool) error {
 	return err
 }
 
-func (c *controller) setPlaybackActive(active bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if !active {
-		ampErr := c.writeAmpMuteLocked(true)
-		dacErr := c.writeDACMuteLocked(true)
-		if ampErr != nil {
-			return fmt.Errorf("mute amplifier: %w", ampErr)
-		}
-		if dacErr != nil {
-			return fmt.Errorf("mute DAC: %w", dacErr)
-		}
-		return nil
-	}
-	if !c.initialized {
-		return errors.New("audio path is not initialized")
-	}
-	if err := c.writeDACMuteLocked(false); err != nil {
-		return fmt.Errorf("unmute DAC: %w", err)
-	}
-	if err := c.writeAmpMuteLocked(false); err != nil {
-		_ = c.writeDACMuteLocked(true)
-		return fmt.Errorf("unmute amplifier: %w", err)
-	}
-	return nil
-}
 
 func (c *controller) unmuteAllowedLocked() error {
 	if !c.initialized {

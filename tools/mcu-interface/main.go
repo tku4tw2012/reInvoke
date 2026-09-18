@@ -51,7 +51,7 @@ func main() {
 	microphoneState := flag.String(
 		"microphone-state",
 		"/run/reinvoke/microphone-state",
-		"RAM state used to restore microphone privacy after a service restart",
+		"RAM state used to restore microphone micMute after a service restart",
 	)
 	microphoneControlSocket := flag.String(
 		"dsp-mic-control-socket",
@@ -61,17 +61,7 @@ func main() {
 	playbackStatus := flag.String(
 		"playback-status",
 		"",
-		"ALSA playback status path that owns automatic physical mute policy",
-	)
-	playbackLease := flag.String(
-		"playback-lease",
-		"",
-		"RAM lease written while real Bluetooth PCM data is arriving",
-	)
-	playbackOwnerExecutable := flag.String(
-		"playback-owner-executable",
-		"",
-		"executable permitted to activate the physical playback path",
+		"ALSA playback status path read to tell whether something is playing",
 	)
 	softvolCard := flag.Int(
 		"softvol-card",
@@ -138,19 +128,6 @@ func main() {
 	}
 	if *gpioNumber < 0 {
 		log.Fatal("gpio must be non-negative")
-	}
-	// The owner is optional. The amplifier used to unmute only while the
-	// process holding the playback device resolved to one specific executable,
-	// which was this project's invention rather than the donor's and meant no
-	// sound this runtime did not itself render could reach the speaker. That
-	// restriction is gone, so an owner may be supplied or not; the amplifier
-	// follows ALSA either way. Requiring the two together outlived the rule it
-	// enforced and crash-looped this service when the flag was dropped.
-	if *playbackOwnerExecutable != "" && *playbackStatus == "" {
-		log.Fatal("playback-owner-executable requires playback-status")
-	}
-	if *playbackLease != "" && *playbackStatus == "" {
-		log.Fatal("playback-lease requires playback-status")
 	}
 	if (*pairingAgentPID == "") != (*pairingAgentExecutable == "") {
 		log.Fatal(
@@ -300,22 +277,22 @@ func main() {
 			lights:     lights,
 		})
 	}
-	privacy := newMicrophonePrivacyController(
+	micMute := newMicrophoneMuteController(
 		microphoneMuted,
 		*microphoneState,
 		*microphoneControlSocket,
 		lights,
 		log.Printf,
 	)
-	privacy.lifetime = ctx
-	inputControls = append(inputControls, privacy)
-	privacyDone := make(chan struct{})
+	micMute.lifetime = ctx
+	inputControls = append(inputControls, micMute)
+	micMuteDone := make(chan struct{})
 	go func() {
-		defer close(privacyDone)
-		privacy.Run(ctx)
+		defer close(micMuteDone)
+		micMute.Run(ctx)
 	}()
 	if microphoneMuted {
-		privacy.RequestReconcile()
+		micMute.RequestReconcile()
 	}
 	indicatorLEDs := newIndicatorLEDController(bus)
 	// Device cues: the short sounds the speaker makes about itself. The donor
@@ -380,7 +357,6 @@ func main() {
 		watcher := &bluetoothStateWatcher{
 			path:      *bluetoothState,
 			indicator: indicatorLEDs,
-			cues:      cues,
 			logf:      log.Printf,
 		}
 		// The front lamp reports network state, which the donor drove from
@@ -425,13 +401,13 @@ func main() {
 		indicatorLEDs:  indicatorLEDs,
 		events:         source,
 		version:        recoveredMCUVersion,
-		privacy:        privacy,
+		micMute:        micMute,
 		appearance:     appearance,
 		bluetoothState: *bluetoothState,
 		playbackStatus: *playbackStatus,
 		logf:           log.Printf,
 	}
-	log.Print("hardware initialized muted")
+	log.Print("hardware initialized; outputs open")
 	heartbeatDone := make(chan error, 1)
 	go func() {
 		err := runMCUHeartbeat(ctx, bus, mcuHeartbeatInterval)
@@ -440,27 +416,14 @@ func main() {
 		}
 		heartbeatDone <- err
 	}()
+	// There is no automatic speaker muting. The amplifier and DAC are opened
+	// once the DAC is configured and stay open; they follow the explicit mute
+	// procedures and nothing else. The policy that used to close them whenever
+	// ALSA stopped, and only reopen them for an approved renderer, was this
+	// project's invention. It made the speaker silent for every sound the
+	// runtime did not itself play, including the vendor's own startup chime.
 	playbackDone := make(chan error, 1)
-	if *playbackStatus != "" {
-		go func() {
-			err := runPlaybackPolicy(
-				ctx,
-				*playbackStatus,
-				*playbackLease,
-				*playbackOwnerExecutable,
-				control,
-				playbackPolicyInterval,
-				playbackPolicyHoldoff,
-				log.Printf,
-			)
-			if err != nil {
-				cancel()
-			}
-			playbackDone <- err
-		}()
-	} else {
-		playbackDone <- nil
-	}
+	playbackDone <- nil
 	runErr := runWithReconnect(
 		ctx,
 		wampReconnectDelay,
@@ -474,7 +437,7 @@ func main() {
 	if volumeDone != nil {
 		<-volumeDone
 	}
-	<-privacyDone
+	<-micMuteDone
 	heartbeatErr := <-heartbeatDone
 	playbackErr := <-playbackDone
 	if relayDone != nil {

@@ -452,14 +452,14 @@ func startMicControlResponder(
 func TestMicrophoneMuteUsesPrivateControlSocket(t *testing.T) {
 	socketPath, requests := startMicControlResponder(t, "OK\n")
 	statePath := filepath.Join(t.TempDir(), "microphone-state")
-	privacy := newMicrophonePrivacyController(
+	micMute := newMicrophoneMuteController(
 		false,
 		statePath,
 		socketPath,
 		nil,
 		nil,
 	)
-	if err := privacy.Set(context.Background(), true); err != nil {
+	if err := micMute.Set(context.Background(), true); err != nil {
 		t.Fatal(err)
 	}
 	if request := <-requests; request != "1\n" {
@@ -470,48 +470,48 @@ func TestMicrophoneMuteUsesPrivateControlSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(content) != microphoneMutedState ||
-		!privacy.muted || !privacy.desired || privacy.unknown {
+		!micMute.muted || !micMute.desired || micMute.unknown {
 		t.Fatalf(
 			"state=%q muted=%t desired=%t unknown=%t",
 			content,
-			privacy.muted,
-			privacy.desired,
-			privacy.unknown,
+			micMute.muted,
+			micMute.desired,
+			micMute.unknown,
 		)
 	}
 }
 
-type countingPrivacyLEDWriter struct {
+type countingMicMuteLEDWriter struct {
 	mu    sync.Mutex
 	calls int
 }
 
-func (writer *countingPrivacyLEDWriter) WriteMCUData([]byte) error {
+func (writer *countingMicMuteLEDWriter) WriteMCUData([]byte) error {
 	writer.mu.Lock()
 	writer.calls++
 	writer.mu.Unlock()
 	return nil
 }
 
-func (writer *countingPrivacyLEDWriter) count() int {
+func (writer *countingMicMuteLEDWriter) count() int {
 	writer.mu.Lock()
 	defer writer.mu.Unlock()
 	return writer.calls
 }
 
-func TestPrivacyAnimationOutlivesWAMPSession(t *testing.T) {
+func TestMicMuteAnimationOutlivesWAMPSession(t *testing.T) {
 	socketPath, requests := startMicControlResponder(t, "OK\n")
 	lightsDirectory := t.TempDir()
 	if err := os.WriteFile(
-		filepath.Join(lightsDirectory, micPrivacyLEDName+".bin"),
+		filepath.Join(lightsDirectory, micMuteLEDName+".bin"),
 		make([]byte, ledFrameBytes),
 		0o600,
 	); err != nil {
 		t.Fatal(err)
 	}
-	writer := &countingPrivacyLEDWriter{}
+	writer := &countingMicMuteLEDWriter{}
 	lights := &ledPlayer{directory: lightsDirectory, writer: writer}
-	privacy := newMicrophonePrivacyController(
+	micMute := newMicrophoneMuteController(
 		false,
 		filepath.Join(t.TempDir(), "microphone-state"),
 		socketPath,
@@ -519,9 +519,9 @@ func TestPrivacyAnimationOutlivesWAMPSession(t *testing.T) {
 		nil,
 	)
 	processCtx, cancelProcess := context.WithCancel(context.Background())
-	privacy.lifetime = processCtx
+	micMute.lifetime = processCtx
 	sessionCtx, cancelSession := context.WithCancel(context.Background())
-	if err := privacy.Set(sessionCtx, true); err != nil {
+	if err := micMute.Set(sessionCtx, true); err != nil {
 		t.Fatal(err)
 	}
 	if request := <-requests; request != "1\n" {
@@ -532,20 +532,20 @@ func TestPrivacyAnimationOutlivesWAMPSession(t *testing.T) {
 	time.Sleep(ledChunkDelay + 100*time.Millisecond)
 	if after := writer.count(); after <= before {
 		t.Fatalf(
-			"privacy animation stopped with WAMP session: before=%d after=%d",
+			"micMute animation stopped with WAMP session: before=%d after=%d",
 			before,
 			after,
 		)
 	}
 	cancelProcess()
-	if err := lights.SetPrivacyMuted(context.Background(), false); err != nil {
+	if err := lights.SetMicrophoneMuted(context.Background(), false); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestCancelledSessionCannotResumeQueuedPrivacyMutation(t *testing.T) {
+func TestCancelledSessionCannotResumeQueuedMicMuteMutation(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "microphone-state")
-	privacy := newMicrophonePrivacyController(
+	micMute := newMicrophoneMuteController(
 		false,
 		statePath,
 		filepath.Join(t.TempDir(), "missing.sock"),
@@ -554,15 +554,15 @@ func TestCancelledSessionCannotResumeQueuedPrivacyMutation(t *testing.T) {
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	privacy.mu.Lock()
-	go func() { done <- privacy.Set(ctx, true) }()
+	micMute.mu.Lock()
+	go func() { done <- micMute.Set(ctx, true) }()
 	cancel()
-	privacy.mu.Unlock()
+	micMute.mu.Unlock()
 	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("queued privacy error = %v, want cancellation", err)
+		t.Fatalf("queued micMute error = %v, want cancellation", err)
 	}
 	if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("cancelled session persisted privacy state: %v", err)
+		t.Fatalf("cancelled session persisted micMute state: %v", err)
 	}
 }
 
@@ -571,26 +571,26 @@ func TestMicrophoneMutePrecedesIndicatorFailure(t *testing.T) {
 	stateDirectory := t.TempDir()
 	lightsDirectory := t.TempDir()
 	if err := os.WriteFile(
-		filepath.Join(lightsDirectory, micPrivacyLEDName+".bin"),
+		filepath.Join(lightsDirectory, micMuteLEDName+".bin"),
 		make([]byte, ledFrameBytes),
 		0o600,
 	); err != nil {
 		t.Fatal(err)
 	}
-	privacy := newMicrophonePrivacyController(
+	micMute := newMicrophoneMuteController(
 		false,
 		filepath.Join(stateDirectory, "microphone-state"),
 		socketPath,
 		&ledPlayer{directory: lightsDirectory, writer: failingLEDWriter{}},
 		nil,
 	)
-	if err := privacy.Set(context.Background(), true); err == nil {
+	if err := micMute.Set(context.Background(), true); err == nil {
 		t.Fatal("indicator failure was not reported")
 	}
 	if request := <-requests; request != "1\n" {
 		t.Fatalf("request = %q, want mute", request)
 	}
-	if !privacy.muted {
+	if !micMute.muted {
 		t.Fatal("microphone was not muted after indicator failure")
 	}
 }
@@ -601,25 +601,25 @@ func TestFailedUnmuteIsImmediatelyRemuted(t *testing.T) {
 	if err := persistMicrophoneState(statePath, true); err != nil {
 		t.Fatal(err)
 	}
-	privacy := newMicrophonePrivacyController(
+	micMute := newMicrophoneMuteController(
 		true,
 		statePath,
 		socketPath,
 		nil,
 		nil,
 	)
-	if err := privacy.Set(context.Background(), false); err == nil {
+	if err := micMute.Set(context.Background(), false); err == nil {
 		t.Fatal("failed unmute was reported as successful")
 	}
 	if first, second := <-requests, <-requests; first != "0\n" || second != "1\n" {
 		t.Fatalf("requests = %q, %q, want unmute then mute", first, second)
 	}
-	if !privacy.muted || !privacy.desired || privacy.unknown {
+	if !micMute.muted || !micMute.desired || micMute.unknown {
 		t.Fatalf(
 			"muted=%t desired=%t unknown=%t, want restored mute",
-			privacy.muted,
-			privacy.desired,
-			privacy.unknown,
+			micMute.muted,
+			micMute.desired,
+			micMute.unknown,
 		)
 	}
 }
@@ -635,7 +635,7 @@ func TestFailedUnmuteRecoveryRetriesUntilMuted(t *testing.T) {
 	if err := persistMicrophoneState(statePath, true); err != nil {
 		t.Fatal(err)
 	}
-	privacy := newMicrophonePrivacyController(
+	micMute := newMicrophoneMuteController(
 		true,
 		statePath,
 		socketPath,
@@ -644,8 +644,8 @@ func TestFailedUnmuteRecoveryRetriesUntilMuted(t *testing.T) {
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go privacy.Run(ctx)
-	if err := privacy.Set(ctx, false); err == nil {
+	go micMute.Run(ctx)
+	if err := micMute.Set(ctx, false); err == nil {
 		t.Fatal("failed unmute was reported as successful")
 	}
 	for index, want := range []string{"0\n", "1\n", "1\n"} {
@@ -658,14 +658,14 @@ func TestFailedUnmuteRecoveryRetriesUntilMuted(t *testing.T) {
 			t.Fatalf("request %d was not received", index)
 		}
 	}
-	privacy.mu.Lock()
-	defer privacy.mu.Unlock()
-	if !privacy.muted || !privacy.desired || privacy.unknown {
+	micMute.mu.Lock()
+	defer micMute.mu.Unlock()
+	if !micMute.muted || !micMute.desired || micMute.unknown {
 		t.Fatalf(
 			"muted=%t desired=%t unknown=%t, want reconciled mute",
-			privacy.muted,
-			privacy.desired,
-			privacy.unknown,
+			micMute.muted,
+			micMute.desired,
+			micMute.unknown,
 		)
 	}
 }
@@ -673,14 +673,14 @@ func TestFailedUnmuteRecoveryRetriesUntilMuted(t *testing.T) {
 func TestDSPBootReconcilesConfirmedMicrophoneMute(t *testing.T) {
 	socketPath, requests := startMicControlResponder(t, "OK\n")
 	statePath := filepath.Join(t.TempDir(), "microphone-state")
-	privacy := newMicrophonePrivacyController(
+	micMute := newMicrophoneMuteController(
 		true,
 		statePath,
 		socketPath,
 		nil,
 		nil,
 	)
-	service := wampService{privacy: privacy}
+	service := wampService{micMute: micMute}
 	handled, err := service.handleDSPSessionEvent(
 		context.Background(),
 		nil,
@@ -704,7 +704,7 @@ func TestDSPBootReconcilesConfirmedMicrophoneMute(t *testing.T) {
 func TestDSPBootReconcileFailureKeepsWAMPSession(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "microphone-state")
 	var logged string
-	privacy := newMicrophonePrivacyController(
+	micMute := newMicrophoneMuteController(
 		true,
 		statePath,
 		filepath.Join(t.TempDir(), "missing.sock"),
@@ -713,7 +713,7 @@ func TestDSPBootReconcileFailureKeepsWAMPSession(t *testing.T) {
 			logged = fmt.Sprintf(format, args...)
 		},
 	)
-	service := wampService{privacy: privacy, logf: privacy.logf}
+	service := wampService{micMute: micMute, logf: micMute.logf}
 
 	handled, err := service.handleDSPSessionEvent(
 		context.Background(),
@@ -734,22 +734,22 @@ func TestDSPBootReconcileFailureKeepsWAMPSession(t *testing.T) {
 		t.Fatalf("log = %q, want reconciliation failure", logged)
 	}
 	select {
-	case <-privacy.reconcile:
+	case <-micMute.reconcile:
 	default:
 		t.Fatal("reconciliation retry was not requested")
 	}
 }
 
-func TestWAMPMicrophoneMuteUsesPrivacyOwner(t *testing.T) {
+func TestWAMPMicrophoneMuteUsesMicMuteOwner(t *testing.T) {
 	socketPath, requests := startMicControlResponder(t, "OK\n")
-	privacy := newMicrophonePrivacyController(
+	micMute := newMicrophoneMuteController(
 		false,
 		filepath.Join(t.TempDir(), "microphone-state"),
 		socketPath,
 		nil,
 		nil,
 	)
-	service := wampService{privacy: privacy}
+	service := wampService{micMute: micMute}
 	response := invokeForTest(
 		t,
 		&service,

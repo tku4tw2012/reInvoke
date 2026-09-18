@@ -101,7 +101,7 @@ positive PCM-read leases, ALSA ownership checks and edge-driven MCU reads
 became the speaker-safety basis.
 
 RAM capture required 16 periods of 2,048 bytes. Later attended speech/tap
-correlation and all-zero muted capture established the software privacy path.
+correlation and all-zero muted capture established the software mic-mute path.
 Network tests covered credential delivery, DHCP/DNS cleanup, restart and stale
 owner controls. These measurements remain RAM-scoped, not native acceptance.
 

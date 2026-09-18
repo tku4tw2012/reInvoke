@@ -24,7 +24,7 @@ RAM measurements and vendor evidence are separate scopes.
 | Page                                                              | Purpose                                         |
 | ----------------------------------------------------------------- | ----------------------------------------------- |
 | [Wi-Fi provisioning](native-provisioning.md)                      | Volatile onboarding and bootstrap trust         |
-| [Microphone capture](microphone-capture.md)                       | Stream protocol and implemented privacy gate    |
+| [Microphone capture](microphone-capture.md)                       | Stream protocol and implemented mic mute gate    |
 | [RAM platform](native-ram-platform.md)                            | Host-loaded development/recovery runtime        |
 | [U-Boot access](uboot-access.md)                                  | USB recovery procedure and observed limits      |
 | [Control tools](../tools/control/README.md)                       | WAMP clients, adapters and Bluetooth helpers    |

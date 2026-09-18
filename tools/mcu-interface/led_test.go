@@ -99,17 +99,17 @@ func TestClearLEDsUsesRecoveredOffContract(t *testing.T) {
 
 }
 
-// TestPrivacyUnmuteClearsTheIndicator pins what remains after the privacy
+// TestMicUnmuteClearsTheIndicator pins what remains after the micMute
 // override was removed: muting still lights the indicator and unmuting still
 // clears it. What is gone is the refusal to let any other caller stop the
 // ring while the microphone was muted. That refusal was this project's rule,
-// not the donor's, and it meant a caller had to know about a privacy state it
+// not the donor's, and it meant a caller had to know about a micMute state it
 // had no part in before it could clear an animation.
-func TestPrivacyUnmuteClearsTheIndicator(t *testing.T) {
+func TestMicUnmuteClearsTheIndicator(t *testing.T) {
 	writer := &recordingLEDWriter{}
 	player := &ledPlayer{
 		writer:       writer,
-		privacyMuted: true,
+		micMuted: true,
 	}
 
 	// A stop is no longer refused while muted.
@@ -117,11 +117,11 @@ func TestPrivacyUnmuteClearsTheIndicator(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := player.SetPrivacyMuted(context.Background(), false); err != nil {
+	if err := player.SetMicrophoneMuted(context.Background(), false); err != nil {
 		t.Fatal(err)
 	}
-	if player.privacyMuted {
-		t.Fatal("privacy indicator remained locked after unmute")
+	if player.micMuted {
+		t.Fatal("micMute indicator remained locked after unmute")
 	}
 	if len(writer.packets) == 0 {
 		t.Fatal("unmute wrote nothing to the LEDs")
@@ -133,10 +133,10 @@ func TestPrivacyUnmuteClearsTheIndicator(t *testing.T) {
 	}
 }
 
-func TestPrivacyIndicatorRetriesAfterPostStartFailure(t *testing.T) {
+func TestMicMuteIndicatorRetriesAfterPostStartFailure(t *testing.T) {
 	directory := t.TempDir()
 	if err := os.WriteFile(
-		filepath.Join(directory, micPrivacyLEDName+".bin"),
+		filepath.Join(directory, micMuteLEDName+".bin"),
 		make([]byte, ledChunkBytes+ledFrameBytes),
 		0o600,
 	); err != nil {
@@ -153,18 +153,18 @@ func TestPrivacyIndicatorRetriesAfterPostStartFailure(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := player.SetPrivacyMuted(ctx, true); err != nil {
+	if err := player.SetMicrophoneMuted(ctx, true); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case <-writer.recovered:
 	case <-time.After(2 * time.Second):
-		t.Fatal("privacy animation did not recover after second-chunk failure")
+		t.Fatal("micMute animation did not recover after second-chunk failure")
 	}
 	if logged == 0 {
-		t.Fatal("post-start privacy animation failure was not logged")
+		t.Fatal("post-start micMute animation failure was not logged")
 	}
-	if err := player.SetPrivacyMuted(ctx, false); err != nil {
+	if err := player.SetMicrophoneMuted(ctx, false); err != nil {
 		t.Fatal(err)
 	}
 }

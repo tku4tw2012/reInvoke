@@ -19,7 +19,7 @@ Results from one closed Invoke, as of 2026-09-12:
 | Installed native candidate 03 | Wall-power startup as `reInvoke-NAND`; reported physical pairing and observed host A2DP connection |
 | Candidate 03 networking       | Attended Wi-Fi provisioning and ping; pinned Dropbear negotiation, then disconnect before login    |
 | Candidate 02 native baseline  | Audible playback, rotary volume, indicators, provisioning and MCU/DSP/WAMP checks                  |
-| RAM platform                  | Detailed microphone capture/privacy, speaker safety, firewall and restart measurements             |
+| RAM platform                  | Detailed microphone capture/mic mute, speaker safety, firewall and restart measurements             |
 | Remaining product work        | Native administration and acceptance, persistent settings and assistant integration                |
 
 Candidate 03 has no native shell or USB enumeration; its SSH failure cause is
@@ -47,9 +47,9 @@ flowchart LR
     NAND["Vendor boot payloads<br/>and owned bootstrap"] --> Init["Owned init<br/>and supervision"]
     Init --> Media["BlueZ and BlueALSA<br/>Bluetooth to ALSA playback"]
     Init --> Control["MCU: I2C controls<br/>DSP: SPI/GPIO control"]
-    Init --> Capture["ALSA capture<br/>Privacy gate and local socket"]
+    Init --> Capture["ALSA capture<br/>mic mute gate and local socket"]
     Init --> Network["Wi-Fi and provisioning"]
-    Control -. "Privacy state" .-> Capture
+    Control -. "mic mute state" .-> Capture
     WAMP["Bonefish<br/>compatibility bus"] <--> Control
 ```
 

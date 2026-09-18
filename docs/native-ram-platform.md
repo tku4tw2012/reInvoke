@@ -10,7 +10,7 @@ ms.topic: reference
 Native RAM means ARM Linux and owned userspace executing on the Invoke after
 a host loads the kernel and initramfs into DRAM. It is not autonomous NAND
 startup. September 2026 RAM validation established acoustic playback, rotary
-volume, microphone capture/privacy, provisioning and supervised services.
+volume, microphone capture/mic mute, provisioning and supervised services.
 These results do not transfer automatically to an installed native candidate.
 
 The [product contract](current-product-contract.md) defines runtime behavior;
@@ -149,7 +149,7 @@ tinycap <ram-output.wav> -D 1 -d 0 -c 2 -r 48000 -b 32 -p 256 -n 16
 This is 256 frames per period and 4,096 frames per buffer. TinyALSA defaults
 and sweeps omitting all 16 periods failed. Later attended capture correlated
 speech/taps while unmuted and returned all-zero samples while muted.
-The [capture reference](microphone-capture.md) owns privacy and restart details;
+The [capture reference](microphone-capture.md) owns mic mute and restart details;
 these RAM measurements do not prove electrical microphone disconnection,
 beamforming or AEC activation.
 
