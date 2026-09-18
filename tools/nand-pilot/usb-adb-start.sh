@@ -130,6 +130,11 @@ pilot_usb_adb_up() {
     # and advertises over Bluetooth, so one unit reads the same everywhere.
     echo "reInvoke-$(echo "${usb_adb_mac}" | ${BB} cut -c7-12)" \
       > "${USB_ADB_GADGET}/iProduct"
+    # All three descriptor strings are placeholders until something fills them
+    # in. android_bind writes "Android", "Android" and "0123456789ABCDEF" into
+    # them, and exposes these attributes so the product replaces them; a device
+    # still reporting those has simply never been configured.
+    echo "Harman Kardon" > "${USB_ADB_GADGET}/iManufacturer"
   else
     log "USB ADB identity unavailable; gadget keeps the driver defaults"
   fi

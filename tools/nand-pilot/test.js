@@ -130,16 +130,18 @@ try {
   // file on the device reads correctly. Observed exactly that way on this unit.
   {
     const up = fs.readFileSync(path.join(__dirname, 'usb-adb-start.sh'), 'utf8');
-    const iSerial = up.indexOf('/iSerial');
-    const iProduct = up.indexOf('/iProduct');
     const enable = up.indexOf('> "${USB_ADB_GADGET}/enable"');
-    assert(iSerial >= 0, 'usb-adb-start.sh never writes iSerial');
-    assert(iProduct >= 0, 'usb-adb-start.sh never writes iProduct');
     assert(enable >= 0, 'usb-adb-start.sh never enables the gadget');
-    assert(iSerial < enable,
-      'iSerial is written after the gadget is enabled; the host will not see it');
-    assert(iProduct < enable,
-      'iProduct is written after the gadget is enabled; the host will not see it');
+    // All three descriptor strings, not just the serial. android_bind fills
+    // them with "Android", "Android" and "0123456789ABCDEF" and exposes these
+    // attributes so the product replaces them. A unit still reporting those
+    // has never been configured, which is what this speaker did report.
+    for (const name of ['iSerial', 'iProduct', 'iManufacturer']) {
+      const at = up.indexOf('/' + name);
+      assert(at >= 0, `usb-adb-start.sh never writes ${name}`);
+      assert(at < enable,
+        `${name} is written after the gadget is enabled; the host will not see it`);
+    }
     // The identity comes from the Wi-Fi MAC, which exists even unassociated.
     assert(up.includes('/sys/class/net/mlan0/address'),
       'the gadget identity no longer derives from the Wi-Fi MAC');
