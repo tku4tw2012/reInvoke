@@ -25,6 +25,25 @@ export GOCACHE="${archive}/build/cache/go-1.18"
 mkdir -p "${output}/work"
 export TMPDIR="${output}/work" GOTMPDIR="${output}/work"
 cd "${repo}"
+# The mcu-interface binary is pinned by path and hash in the persistence
+# config rather than built here, so a candidate can be built, tested and
+# flashed while the pin still names the previous build. That happened: a
+# build reported success with every change absent from the image, because
+# the stale binary matched its own stale hash. The pin must be the binary
+# this source produces.
+mcu_pin_sha="$(node -e 'const c=require(process.argv[1]);process.stdout.write(c.mcu.sha256)' "${PILOT_PERSISTENCE_CONFIG}")"
+mcu_pin_path="$(node -e 'const c=require(process.argv[1]);process.stdout.write(c.mcu.path)' "${PILOT_PERSISTENCE_CONFIG}")"
+rm -f "${output}/work/mcu-pin-check"
+env -u GO111MODULE -u GOFLAGS -u GOWORK \
+  "${here}/../mcu-interface/build.sh" --output "${output}/work/mcu-pin-check" >/dev/null
+mcu_built_sha="$(sha256sum "${output}/work/mcu-pin-check" | cut -d" " -f1)"
+if [[ "${mcu_built_sha}" != "${mcu_pin_sha}" ]]; then
+  echo "mcu-interface pin is not this source" >&2
+  echo "  pinned : ${mcu_pin_sha}  (${mcu_pin_path})" >&2
+  echo "  built  : ${mcu_built_sha}" >&2
+  exit 1
+fi
+rm -f "${output}/work/mcu-pin-check"
 nice -n 10 "${PILOT_GO}" test -p 1 ./tools/nand-pilot/status
 nice -n 10 env GOOS=linux GOARCH=arm GOARM=7 "${PILOT_GO}" build \
   -p 1 -trimpath -ldflags="-s -w -buildid=" -o "${output}/reinvoke-status" ./tools/nand-pilot/status
