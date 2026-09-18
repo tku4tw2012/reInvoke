@@ -13,26 +13,31 @@ is normative; recovered donor calls are consolidated in
 
 ## State authority
 
-| State              | Authority                                  | WAMP projection                                      |
-| ------------------ | ------------------------------------------ | ---------------------------------------------------- |
-| Connected source   | BlueZ `org.bluez.Device1`                  | Source `com.harman.bluetooth`                        |
-| Transport/playback | BlueZ transport and BlueALSA PCM lifecycle | Bluetooth stream state and `com.harman.stateChanged` |
-| Music volume/mute  | BlueALSA `org.bluealsa.PCM1.Volume`        | Volume/mute procedures and events                    |
+| State              | Authority                                | WAMP projection                                      |
+| ------------------ | ---------------------------------------- | ---------------------------------------------------- |
+| Connected source   | Donor Bluedroid stack                    | Source `com.harman.bluetooth`                        |
+| Transport/playback | Donor Bluedroid PCM lifecycle            | Bluetooth stream state and `com.harman.stateChanged` |
+| Music volume       | MCU service over the DSP control socket  | Volume procedures and events                         |
+| Amplifier/DAC mute | MCU service over I2C                     | `muteampcontrol`, `mutedaccontrol`                   |
 
-The MCU reads D-Bus state, handles physical rotary input before compatibility
-publication, and writes both BlueALSA channels together. BlueALSA packs mute
-bits and 0-127 A2DP volumes into one `uint16`; WAMP uses 0-100 with integer
-nearest rounding:
+The MCU handles physical rotary input before compatibility publication and
+applies the level by calling `com.harman.dsp.volumeSet`, a plain WAMP
+registration of the DSP service.
 
-```text
-write: (percent * 127 + 50) / 100
-read:  (rawVolume * 100 + 63) / 127
-```
+The DSP takes a single byte and percent is passed straight through. The scale
+is not established as linear: the only measured points on this unit are 5 and
+10 (comfortable) against 90 (loud), so levels are kept in that low range rather
+than scaled to fill the byte.
 
-Mute is independent of volume zero. A newly acquired transport is capped at
-12 percent; its PCM is polled every 250 ms. This is a connection policy, not
-a loudness calibration. Reconnect and missing-PCM handling are fail-closed.
-See [BlueALSA controller](../../tools/mcu-interface/bluealsa.go).
+An earlier design drove volume through BlueALSA's `org.bluealsa.PCM1.Volume`
+and packed mute bits with 0-127 A2DP volumes into one `uint16`. BlueZ and
+BlueALSA were removed in favour of the donor Bluedroid stack, so `bluealsa-cli`
+does not ship and every volume request failed with `fork/exec
+/opt/reinvoke/bin/bluealsa-cli: no such file or directory`. The connect-time
+12 percent ceiling went with it; it existed only because a BlueALSA transport
+arrived at full scale.
+
+See [volume control](../../tools/mcu-interface/volume.go).
 
 ## PCM and speaker safety
 

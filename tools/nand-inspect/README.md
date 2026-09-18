@@ -123,7 +123,7 @@ re-extracts the output to check all file hashes and metadata. It also saves
 the exact data-area erase-block extent for a proposed rollback, and produces
 `PROPOSAL.json` with `write_approved: false`.
 
-See the [experiment and interpretation](../../docs/nand-startup-probe.md).
+See the [NAND write decision](../../docs/nand-write-decision.md).
 
 The complete pilot uses [tools/nand-pilot](../nand-pilot/README.md) instead.
 The historical diagnostic is not the current installation target.
