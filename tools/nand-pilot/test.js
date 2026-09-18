@@ -178,9 +178,17 @@ try {
       assert(defined.has(flag.slice(2)),
         `init passes ${flag} but mcu-interface does not define it`);
     }
-    // A blank line inside a continued command silently truncates it.
+    // A blank line inside a continued command silently truncates it. That is
+    // not a style point: a removal that left one shipped a service running on
+    // three flags instead of thirteen, with no error anywhere, and the boot
+    // cue simply never happened.
     assert(!invocation.join('\n').includes('\\\n\n'),
       'the mcu-interface invocation contains a blank continuation line');
+    // Count the flags as the shell would, so a truncation is caught by its
+    // effect rather than by recognising one way of causing it.
+    assert(passed.length >= 13,
+      `init passes only ${passed.length} flags to mcu-interface; ` +
+      'the invocation is truncated');
   }
   // Teardown must be on the shutdown path. Leaving adbd asleep inside the
   // gadget driver and the driver holding the USB controller stopped this unit

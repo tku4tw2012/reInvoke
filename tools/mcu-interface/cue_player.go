@@ -223,6 +223,9 @@ func (player *cuePlayer) Play(parent context.Context, name string) error {
 	}
 	gain := cueGain(level, samplePeak(decoded.samples))
 	if gain <= 0 {
+		if player.logf != nil {
+			player.logf("CUE_SKIPPED %s: volume %d gives no gain", name, level)
+		}
 		return nil
 	}
 	scaleSamples(decoded.samples, gain)
@@ -277,9 +280,15 @@ func (player *cuePlayer) PlayAsync(parent context.Context, name string) {
 		return
 	}
 	go func() {
-		if err := player.Play(parent, name); err != nil && player.logf != nil {
-			player.logf("CUE_FAILED %s: %v", name, err)
+		err := player.Play(parent, name)
+		if player.logf == nil {
+			return
 		}
+		if err != nil {
+			player.logf("CUE_FAILED %s: %v", name, err)
+			return
+		}
+		player.logf("CUE_PLAYED %s", name)
 	}()
 }
 
