@@ -107,10 +107,10 @@ try {
   assert.equal(invoke('. "$1"; pilot_select_kernel 3.8.13-unreviewed', [kernel]).status, 1);
   const bootstrap = fs.readFileSync(path.join(__dirname, 'bootstrap.sh'), 'utf8');
   const bsl = fs.readFileSync(path.join(__dirname, 'bsl-init.sh'), 'utf8');
-  assert.equal(lib.CANDIDATE, '05.8.10');
-  assert.equal(lib.BUILD_ID, 'reInvoke-NAND-05.8.10-20260917');
-  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-NAND-05.8.10');
-  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-05.8.10');
+  assert.equal(lib.CANDIDATE, '05.8.11');
+  assert.equal(lib.BUILD_ID, 'reInvoke-NAND-05.8.11-20260918');
+  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-NAND-05.8.11');
+  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-05.8.11');
   // The bootstrap no longer launches an early USB ADB daemon. That launcher
   // was written for booting from RAM over USB, where the boot ROM had already
   // put the port in device mode. Booting from NAND there is no gadget until
