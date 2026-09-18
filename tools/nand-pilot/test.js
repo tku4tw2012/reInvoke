@@ -122,6 +122,28 @@ try {
   // The BSL still carries it: that path is the writer, and it never reaches
   // the runtime that owns USB ADB.
   assert(bsl.includes(`PILOT_ADBD_PRODUCT=${lib.BLUETOOTH_NAME}`));
+
+  // The gadget identity must be written before the gadget is enabled. The host
+  // reads string descriptors at enumeration and caches them, so an identity
+  // written afterwards changes sysfs and nothing else: the unit still appears
+  // as the driver's compiled-in 0123456789ABCDEF in adb devices while every
+  // file on the device reads correctly. Observed exactly that way on this unit.
+  {
+    const up = fs.readFileSync(path.join(__dirname, 'usb-adb-start.sh'), 'utf8');
+    const iSerial = up.indexOf('/iSerial');
+    const iProduct = up.indexOf('/iProduct');
+    const enable = up.indexOf('> "${USB_ADB_GADGET}/enable"');
+    assert(iSerial >= 0, 'usb-adb-start.sh never writes iSerial');
+    assert(iProduct >= 0, 'usb-adb-start.sh never writes iProduct');
+    assert(enable >= 0, 'usb-adb-start.sh never enables the gadget');
+    assert(iSerial < enable,
+      'iSerial is written after the gadget is enabled; the host will not see it');
+    assert(iProduct < enable,
+      'iProduct is written after the gadget is enabled; the host will not see it');
+    // The identity comes from the Wi-Fi MAC, which exists even unassociated.
+    assert(up.includes('/sys/class/net/mlan0/address'),
+      'the gadget identity no longer derives from the Wi-Fi MAC');
+  }
   const oldMain = path.join(fixture, 'old-main');
   const oldBSL = path.join(fixture, 'old-bsl');
   fs.mkdirSync(oldMain);
