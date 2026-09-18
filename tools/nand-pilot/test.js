@@ -156,6 +156,32 @@ try {
   assert(!fs.readFileSync(kernel, 'utf8').includes('mac_addr=02:'), 'no hardcoded fleet MAC');
   assert(patched.includes('pilot_ssh_start'));
   assert(patched.includes('pilot_usb_adb_up'));
+  // Every flag the init hands mcu-interface must be one that service defines.
+  // Removing the amplifier owner restriction dropped a flag from here while
+  // the service still refused to start without it, and it crash-looped on
+  // hardware: LEDs, buttons, volume and the boot cue all went with it.
+  {
+    const start = patched.indexOf('supervise mcu-interface');
+    assert(start >= 0, 'init does not supervise mcu-interface');
+    const invocation = [];
+    for (const line of patched.slice(start).split('\n')) {
+      invocation.push(line);
+      if (!line.trimEnd().endsWith('\\')) break;
+    }
+    const passed = invocation.join('\n').match(/--[a-z0-9-]+/g) || [];
+    const source = fs.readFileSync(path.join(__dirname, '../mcu-interface/main.go'), 'utf8');
+    const defined = new Set(
+      [...source.matchAll(/flag\.(?:String|Int|Bool|Duration)\(\s*"([a-z0-9-]+)"/g)]
+        .map(match => match[1]));
+    assert(defined.size >= 10, 'flag definitions were not found in mcu-interface');
+    for (const flag of passed) {
+      assert(defined.has(flag.slice(2)),
+        `init passes ${flag} but mcu-interface does not define it`);
+    }
+    // A blank line inside a continued command silently truncates it.
+    assert(!invocation.join('\n').includes('\\\n\n'),
+      'the mcu-interface invocation contains a blank continuation line');
+  }
   // Teardown must be on the shutdown path. Leaving adbd asleep inside the
   // gadget driver and the driver holding the USB controller stopped this unit
   // completing a soft reboot; it had to be power cycled.

@@ -452,7 +452,7 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
   // amplifier still follows ALSA: it energises while the device is RUNNING
   // and re-mutes when it is not.
   replace('      --playback-lease /run/reinvoke/bluealsa-playback-active \\\n' +
-    '      --playback-owner-executable "${runtime_bin}/bluealsa-aplay" \\',
+    '      --playback-owner-executable "${runtime_bin}/bluealsa-aplay" \\\n',
     '');
   // One service missing its precondition must not silently cancel every
   // service after it. Candidate 05.8.4 shipped an mcu-interface that refused

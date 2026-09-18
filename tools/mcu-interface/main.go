@@ -139,13 +139,15 @@ func main() {
 	if *gpioNumber < 0 {
 		log.Fatal("gpio must be non-negative")
 	}
-	// The lease is optional now that the renderer is the donor stack, which
-	// never writes one. Status and owner still travel together: without both,
-	// the policy cannot tell who is holding the playback device.
-	if (*playbackStatus == "") != (*playbackOwnerExecutable == "") {
-		log.Fatal(
-			"playback-status and playback-owner-executable must be supplied together",
-		)
+	// The owner is optional. The amplifier used to unmute only while the
+	// process holding the playback device resolved to one specific executable,
+	// which was this project's invention rather than the donor's and meant no
+	// sound this runtime did not itself render could reach the speaker. That
+	// restriction is gone, so an owner may be supplied or not; the amplifier
+	// follows ALSA either way. Requiring the two together outlived the rule it
+	// enforced and crash-looped this service when the flag was dropped.
+	if *playbackOwnerExecutable != "" && *playbackStatus == "" {
+		log.Fatal("playback-owner-executable requires playback-status")
 	}
 	if *playbackLease != "" && *playbackStatus == "" {
 		log.Fatal("playback-lease requires playback-status")
