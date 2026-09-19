@@ -190,7 +190,7 @@ The realm is `default`; 9999 is RawSocket and 9998 is WebSocket.
 | `bluetooth.sh`, `btmrvl.ko`    | Marvell SDIO Bluetooth integration         | [Bluetooth stack](emulation/bluetooth-stack.md)               |
 | `mlan.ko`, `sd8xxx.ko`         | Wi-Fi integration and LS9 calibration      | [Hardware baseline](corpus/01_CANONICAL_HARDWARE_BASELINE.md) |
 
-The owned PCM path uses BlueALSA and ALSA, not the DSP daemon's SPI control
+The owned PCM path uses the donor Bluedroid stack and ALSA, not the DSP daemon's SPI control
 channel. Recovered procedure signatures, transport details and validation
 belong in the [control-plane reference](emulation/control-plane-emulation.md#vendor-control-surface),
 not a strings-only firmware inventory.

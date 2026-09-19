@@ -39,7 +39,7 @@ the MCU policy owner first, muting outputs before audio producers exit.
 | NAND bootstrap and paired BSL | Select and verify the read-only runtime                  | Retained vendor boot/kernel payloads                           |
 | MCU service                   | Inputs, LEDs, amplifier/DAC mute, public Mic-Mute        | I2C, private DSP socket, WAMP                                  |
 | DSP service                   | Firmware, reset, command correlation and readiness       | SPI/GPIO, seven WAMP registrations, private microphone control |
-| BlueZ/BlueALSA                | A2DP Sink and PCM playback                               | Private D-Bus, ALSA, active-PCM lease                          |
+| Donor Bluedroid stack         | A2DP sink, AVRCP and SBC playback                        | Android property service, binder, ALSA                         |
 | Capture owner                 | Supervise `arecord`, select left channel, gate records   | ALSA `hw:1,0`, root-only Unix socket                           |
 | Network/provisioning services | Station lifecycle, setup window and credentials          | TLS parser, Unix handoff, fixed executables                    |
 | Bonefish                      | MessagePack WAMP compatibility routing                   | RawSocket 9999 and WebSocket 9998                              |
@@ -180,10 +180,18 @@ mic-mute indication. Full native front/rear acceptance remains open.
 
 ### Bluetooth policy
 
-BlueZ 5.55 owns BR/EDR and A2DP/AVRCP control. Patched BlueALSA 4.0.0 handles
-SBC playback; patched `bluealsa-aplay` supplies donor-compatible ALSA writes,
-buffering, underrun recovery and the active-PCM lease. `bluealsa-cli` is the
-per-peer volume/mute adapter. Donor Bluedroid and media supervisors do not run.
+The donor Bluedroid stack owns BR/EDR, A2DP/AVRCP and SBC playback, and
+renders in-process through `BtSocketHandler::OpenAlsa`. It registers the
+`com.harman.bluetooth` transport procedures itself, which is why they work
+without this project implementing them. See
+[Bluetooth audio rendering](#bluetooth-audio-rendering) for what it needs from
+the property service.
+
+This paragraph previously described BlueZ 5.55, BlueALSA 4.0.0,
+`bluealsa-aplay` and `bluealsa-cli` as the audio path, and stated that donor
+Bluedroid does not run. That was reversed by commit 225183e: BlueZ and
+BlueALSA were removed and Bluedroid is what runs. The text was not updated,
+and the error survived several releases.
 
 The pairing agent limits the window, peer and services. Bluetooth short press
 uses `SIGUSR2` to toggle the window; long uses `SIGUSR1` to reopen it.

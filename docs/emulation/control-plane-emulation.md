@@ -87,7 +87,7 @@ In isolated execution, `source.register ["com.harman.bluetooth"]` and
 `source.get-active []` changed from `[""]` to `["com.harman.bluetooth"]`.
 The service subscribes to `volumeChanged` and publishes
 `ready.music-source-manager` and `heartbeat.music-source-manager`.
-BlueZ/BlueALSA do not require this registry or donor process.
+The donor Bluedroid stack does not require this registry or donor process.
 
 ## Vendor control surface
 
@@ -136,7 +136,7 @@ default capture is `mic`. Capture uses `dsp_dsnoop` then `softvol mic`.
 Per-stream `dmix` instances slave to `dsp`; card-0 softvol controls are
 `system`, `music`, `timer`, `call`, `voice` and `mic`. `alarm` inherits
 `timer`; voice routes through LADSPA `mbeq_1197.so`.
-This is donor configuration, not the current BlueALSA route or board wiring.
+This is donor configuration, not the current audio route or board wiring.
 
 ## Isolated reproduction
 

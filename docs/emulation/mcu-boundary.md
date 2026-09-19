@@ -26,7 +26,7 @@ the DSP-owned mode-`0600` `/run/reinvoke/dsp-mic-control.sock`.
 
 | Physical input                     | Local action                                                |
 | ---------------------------------- | ----------------------------------------------------------- |
-| Rotary clockwise/counter-clockwise | Coalesced BlueALSA volume, then compatibility publication   |
+| Rotary clockwise/counter-clockwise | Coalesced DSP volume, then compatibility publication   |
 | Mic-Mute short                     | Toggle DSP mic mute and confirmed red indication             |
 | Bluetooth short                    | Open bounded pairing window when idle; cancel when active   |
 | Bluetooth long                     | Reopen bounded allowlisted pairing window                   |

@@ -1,13 +1,14 @@
 ---
 title: Owned Bluetooth speaker control boundary
-description: BlueALSA volume authority, MCU speaker authorization and PCM separation
+description: Volume authority, MCU speaker output control and PCM separation
 ms.date: 2026-09-12
 ms.topic: reference
 ---
 
-BlueZ and patched BlueALSA replace donor `music-source-manager` and `audio-ui`.
-The bridge runs inside the static ARM `reinvoke-mcu-interface`, not a second
-target-side music service. The [current contract](../current-product-contract.md)
+The donor Bluedroid stack carries Bluetooth audio; volume authority runs
+inside the static ARM `reinvoke-mcu-interface`, not a second target-side music
+service. An earlier design used BlueZ and patched BlueALSA in place of the
+donor `music-source-manager` and `audio-ui`; both were removed in 225183e. The [current contract](../current-product-contract.md)
 is normative; recovered donor calls are consolidated in
 [control-plane emulation](control-plane-emulation.md#audio-and-source-contracts).
 
@@ -46,11 +47,11 @@ wiring. PCM samples follow ALSA, not the DSP service's SPI control channel.
 
 ```mermaid
 flowchart TB
-  Peer["Allowlisted Bluetooth source"] --> Decode["BlueZ and BlueALSA<br/>SBC decode"]
-  Decode --> Player["bluealsa-aplay"]
+  Peer["Allowlisted Bluetooth source"] --> Decode["Donor Bluedroid<br/>SBC decode"]
+  Decode --> Player["in-process render<br/>BtSocketHandler::OpenAlsa"]
   Player --> PCM["ALSA playback PCM"]
   PCM --> Output["Audio output and speakers"]
-  Keys["Rotary or WAMP volume call"] --> Volume["MCU BlueALSA<br/>volume adapter"]
+  Keys["Rotary or WAMP volume call"] --> Volume["MCU volume<br/>via DSP control socket"]
   Volume -. "Stereo volume and mute" .-> Decode
   MCU["MCU service"] -. "I2C mute procedures" .-> Output
   DSP["Owned DSP service"] -. "SPI firmware/control" .-> BoardDSP["Board DSP"]
@@ -97,13 +98,14 @@ source/stream state.
 
 `--bluetooth-active` supplies a single-source test state without an adapter.
 Reference rotary handling applies one logical percent per event, not a claimed
-donor acceleration curve. The injectable backend requires an explicit
-BlueALSA PCM path and source/transport observers; it serializes changes,
-synchronizes stereo gain/mute and projects authoritative snapshots.
+donor acceleration curve. The injectable backend requires an explicit PCM
+path and source/transport observers; it serializes changes, synchronizes
+stereo gain/mute and projects authoritative snapshots. That backend was
+written against BlueALSA and is host-only; it has no counterpart on the
+target since BlueALSA was removed.
 
-The target instead uses the packaged BlueALSA CLI with explicit peer/PCM
-mapping and coalesced rotary updates. It runs neither Node.js nor the reference
-modules.
+The target applies volume through `com.harman.dsp.volumeSet` with coalesced
+rotary updates. It runs neither Node.js nor the reference modules.
 
 ## Evidence boundary
 

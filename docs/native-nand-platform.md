@@ -77,7 +77,7 @@ Composition retains vendor `12.2134.0` bootloader, TrustZone and encrypted
 kernel payloads byte-identically, replacing rootfs/BSL with the paired owned
 runtime/bootstrap. The complete bundle includes the vendor-default app seed.
 
-Owned PID 1 starts MCU/DSP, BlueZ/BlueALSA, capture, network, provisioning,
+Owned PID 1 starts MCU/DSP, the donor Bluedroid stack, capture, network, provisioning,
 logging and compatibility services. Missing USB, PTY or ADB prerequisites do
 not gate core startup. These are composition facts, not native shell
 introspection. See the [service contract](current-product-contract.md#accepted-runtime-architecture).
@@ -205,7 +205,7 @@ Candidate 04 combines the administration fix with a daily-use settings layer:
   reproduced in the extracted 03 root. The unchanged ARM Dropbear then logs
   in and executes the packaged ARM shell under QEMU.
 * The existing named app/YAFFS2 allocation stores successful Wi-Fi profiles,
-  selected BlueZ bond files, mic mute and safe-volume preferences. No partition
+  mic mute and volume preferences. No partition
   is added or formatted. Failed storage leaves explicit volatile operation.
 * A private derived Wi-Fi seed can initialize a verified empty store.
   Saved profiles take precedence; association precedes durable saving.

@@ -45,7 +45,7 @@ process dump.
 ```mermaid
 flowchart LR
     NAND["Vendor boot payloads<br/>and owned bootstrap"] --> Init["Owned init<br/>and supervision"]
-    Init --> Media["BlueZ and BlueALSA<br/>Bluetooth to ALSA playback"]
+    Init --> Media["Donor Bluedroid stack<br/>Bluetooth to ALSA playback"]
     Init --> Control["MCU: I2C controls<br/>DSP: SPI/GPIO control"]
     Init --> Capture["ALSA capture<br/>mic mute gate and local socket"]
     Init --> Network["Wi-Fi and provisioning"]
@@ -81,7 +81,7 @@ See the [firmware reference](docs/firmware-reference.md).
 | [docs/](docs/README.md) | Contracts, operating guides, journal and reference evidence |
 | [metadata/](metadata/)  | Public acquisition provenance, sizes and hashes             |
 | [tools/](tools/)        | Services, builders, analysis and recovery tools             |
-| [patches/](patches/)    | Kernel and BlueALSA patches                                 |
+| [patches/](patches/)    | Kernel patches, and BlueALSA patches kept for attribution    |
 
 Public Git holds authored material and sanitized metadata; acquired originals
 and generated images/captures remain in separate private storage. Acquisition
@@ -131,6 +131,8 @@ Public availability does not grant redistribution rights, and forks do not
 preserve release assets. Custom deployment images remain private.
 
 BlueALSA 4.0.0, BlueZ 5.55, SBC 2.0 and D-Bus 1.12.20 provenance is recorded
-in [P1-045](metadata/P1-045.json); [Dropbear provenance](docs/native-nand-platform.md#offline-ssh-implementation-milestone)
+in [P1-045](metadata/P1-045.json). BlueALSA and BlueZ are no longer in the
+image, which uses the donor Bluedroid stack; their patches and provenance are
+kept because the repository still carries them. [Dropbear provenance](docs/native-nand-platform.md#offline-ssh-implementation-milestone)
 is separate. Image distributors must assess each dependency's license
 obligations. Report vulnerabilities through the [security policy](.github/SECURITY.md).

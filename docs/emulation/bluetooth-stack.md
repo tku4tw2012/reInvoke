@@ -1,13 +1,27 @@
 ---
-title: Bluetooth stack
-description: Owned BlueZ and BlueALSA path and the historical Bluedroid boundary
-ms.date: 2026-09-12
+title: Bluetooth stack (superseded BlueZ and BlueALSA design)
+description: The BlueZ and BlueALSA path this runtime used before adopting donor Bluedroid
+ms.date: 2026-09-18
 ms.topic: reference
 ---
 
-reInvoke uses BlueZ 5.55, patched BlueALSA 4.0.0, private D-Bus and owned
-HCI/pairing helpers. The [current contract](../current-product-contract.md)
-defines the supported runtime; Harman's final firmware used Bluedroid instead.
+> **This document describes a design that is no longer shipped.** Commit
+> 225183e removed BlueZ and BlueALSA and adopted the donor Bluedroid stack,
+> which is what runs today. The text below is kept because the measurements
+> in it are real and were expensive to obtain, and because the decision to
+> replace this stack only makes sense alongside what it replaced.
+>
+> For the current path see
+> [Bluetooth audio rendering](../current-product-contract.md#bluetooth-audio-rendering).
+>
+> Until 05.8.11 this file said "reInvoke uses BlueZ 5.55, patched BlueALSA
+> 4.0.0" and described Bluedroid as what Harman used "instead". That was
+> exactly backwards for several releases.
+
+This runtime previously used BlueZ 5.55, patched BlueALSA 4.0.0, private
+D-Bus and owned HCI/pairing helpers. The
+[current contract](../current-product-contract.md) defines the supported
+runtime.
 Build inputs and commands are in the [control tools](../../tools/control/README.md).
 
 ## Current reInvoke stack

@@ -5,6 +5,12 @@ ms.date: 2026-09-12
 ms.topic: reference
 ---
 
+> **This describes the RAM-boot platform, which the NAND platform superseded.**
+> The measurements are real and the recovery path still uses RAM boot, but the
+> media stack described here is BlueZ and BlueALSA, removed in 225183e. For
+> what ships today see [native NAND platform](native-nand-platform.md) and the
+> [current contract](current-product-contract.md).
+
 ## Execution boundary
 
 Native RAM means ARM Linux and owned userspace executing on the Invoke after
