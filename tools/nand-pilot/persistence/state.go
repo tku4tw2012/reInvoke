@@ -492,7 +492,16 @@ func (s storage) restore(state snapshot) error {
 	if err := validateSnapshot(state); err != nil {
 		return err
 	}
-	// Startup only: reject a live/nonempty BlueZ tree rather than merge identities.
+	// Startup only: reject a live/nonempty bond tree rather than merge
+	// identities.
+	//
+	// This path is BlueZ's, and this runtime no longer runs BlueZ. The donor
+	// Bluedroid stack keeps its bonds in bt_config.conf on the persist
+	// partition, so nothing writes the directory this walks. Saving and
+	// restoring here is currently a no-op against an empty tree. Left in
+	// place rather than deleted because the correct fix is to persist what
+	// Bluedroid actually writes, which is untested work, not to drop
+	// pairing persistence entirely.
 	entries, err := os.ReadDir(s.bonds)
 	if err != nil || len(entries) != 0 {
 		return errors.New("PERSIST_RESTORE_TARGET_NOT_EMPTY")

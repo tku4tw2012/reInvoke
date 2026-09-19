@@ -108,6 +108,49 @@ The donor never had this. Its `mcu-interface` subscribed to
 draw. The runtime now matches that: the ring is written when the level changes
 and not when it is merely asserted or retried, so a normal boot draws none.
 
+### Whether Bluetooth pairing survives a reboot
+
+Unverified, and the evidence suggests it does not.
+
+The persistence service saves and restores bonds from `/usr/var/lib/bluetooth`
+in BlueZ's `bluetooth/<adapter>/<device>/info` layout. That was correct when
+this runtime used BlueZ. It now uses the donor Bluedroid stack, which keeps
+bonds in `/persist/data1/misc/bluedroid/bt_config.conf` instead, so the
+persistence service is watching a directory nothing writes.
+
+Observed on the running 05.8.11 unit: `/usr/var/lib/bluetooth` is empty, and
+`bt_config.conf` is zero bytes and dated 2018, which is the factory file. The
+persist partition itself is mounted read-write and is writable, so the store
+has somewhere to go; nothing has put anything there.
+
+This has not been tested. The test is small and needs a person: pair a phone,
+confirm audio, power cycle, and see whether it reconnects without pairing
+again. Until then, treat "Bluetooth pairing and playback: verified" in the
+table above as belonging to the BlueZ era, not to this build.
+
+### Donor claims in code comments that cite no evidence
+
+A comment saying "the donor does X" is load-bearing when the code does X
+because of it. One such claim was wrong: `controller.go` said the donor
+"does not keep them muted" after initialisation, which justified opening the
+amplifier there. Disassembly showed the donor's initialisation contains no
+unmute at all, and the opening was audible as pops.
+
+That claim was checkable only because someone went and checked. Others in the
+same form are not cited and have not been re-verified:
+
+| Claim | Where | Load-bearing |
+| --- | --- | --- |
+| Configure writes then reads back each parameter, as the donor does | `tools/dsp-interface/spi_linux.go` | yes, it justifies the readback |
+| The strobe sequence is the last thing the donor does before every transfer | `tools/dsp-interface/link.go` | yes, it justifies the ordering |
+| The donor never queues a payload longer than three bytes | `tools/dsp-interface/frame.go` | no, `maxPayloadBytes` bounds it regardless |
+
+The method that settled the mute question works here too: find the log string
+or symbol in the donor binary, locate the code that references it, and read
+what it does. Until that is done these are inherited assumptions, not
+established facts, and the DSP link is the part of this runtime with the least
+independent verification behind it.
+
 ### Why the DSP service restarts during boot
 
 On one boot the DSP interface registered its procedures at 31 seconds, lost its
