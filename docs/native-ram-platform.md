@@ -3,6 +3,7 @@ title: Native RAM platform
 description: Working RAM inputs, hardware dependencies, accepted measurements, and replacement-runtime boundaries
 ms.date: 2026-09-12
 ms.topic: reference
+status: superseded
 ---
 
 > **This describes the RAM-boot platform, which the NAND platform superseded.**

@@ -3,6 +3,7 @@ title: Bluetooth stack (superseded BlueZ and BlueALSA design)
 description: The BlueZ and BlueALSA path this runtime used before adopting donor Bluedroid
 ms.date: 2026-09-18
 ms.topic: reference
+status: superseded
 ---
 
 > **This document describes a design that is no longer shipped.** Commit

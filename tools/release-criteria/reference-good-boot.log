@@ -1,0 +1,362 @@
+reinvoke-networkd: start uptime=23.08
+reinvoke-networkd: 1970/01/01 00:00:23 network lifecycle supervision started interface=mlan0
+reinvoke-networkd: 1970/01/01 00:00:23 supplicant status query failed: inspect control directory: lstat /run/reinvoke/wpa_supplicant: no such file or directory
+reinvoke-sshd: start uptime=23.11
+reinvoke-sshd: [1120] Jan 01 00:00:23 Not backgrounding
+reinvoke-persistence: start uptime=23.73
+reinvoke-persistence: PERSIST_READY
+reinvoke-bonefish: start uptime=27.99
+reinvoke-bonefish: [rawsocket_server_impl.cpp:94][start] starting rawsocket server
+reinvoke-bonefish: [websocket_server_impl.cpp:54][start] starting websocket server: 0.0.0.0:9998
+reinvoke-provision-windowd: start uptime=28.01
+reinvoke-mcu-interface: start uptime=28.05
+reinvoke-dsp-interface: start uptime=29.06
+reinvoke-mic-capture: start uptime=29.08
+reinvoke-dsp-interface: 1970/01/01 00:00:29 loaded /opt/reinvoke/share/dsp-img.ldr: 160484 bytes, 40121 four byte transfers, sha256 e76f6ce7c53bb5b508507354fb08523089c136b3731d5ad4f4488a50526a44c8, bit reversed sha256 9e3d85f37ac62e191616f558359e7b4ec46ce6499167da991994ea0b944f34f2
+reinvoke-networkd: 1970/01/01 00:00:29 supplicant status query recovered
+reinvoke-dbus: start uptime=29.13
+reinvoke-bonefish: [wamp_router_impl.cpp:108][attach_session] attaching session: session [7090515283965860,default,none]
+reinvoke-bonefish: [wamp_dealer.cpp:65][attach_session] attach session: session [7090515283965860,default,none]
+reinvoke-bonefish: [wamp_broker.cpp:51][attach_session] attach session: session [7090515283965860,default,none]
+reinvoke-bonefish: [wamp_router_impl.cpp:164][process_hello_message] session [7090515283965860,default,none], hello [default, {"roles":{"callee":{}, "caller":{}, "publisher":{}, "subscriber":{}}}]
+reinvoke-bonefish: [wamp_router_impl.cpp:192][process_hello_message] session [7090515283965860,default,open], welcome [7090515283965860, {"roles":{"dealer":{"features":{"call_timeout":true, "progressive_call_results":true}}, "broker":{}}}]
+reinvoke-bonefish: [wamp_dealer.cpp:166][process_call_message] session [7090515283965860,default,open], call [1, {}, com.harman.dsp.volumeSet, [80], nil]
+reinvoke-bonefish: [wamp_dealer.cpp:496][send_error] error [call, 1, {}, wamp.error.no_such_procedure, nil, nil]
+reinvoke-mcu-interface: 1970/01/01 00:00:30 hardware initialized; outputs open
+reinvoke-mcu-interface: 1970/01/01 00:00:30 Bluetooth indicator state=off
+reinvoke-mcu-interface: 1970/01/01 00:00:30 FRONT_INDICATOR offline (amber on)
+reinvoke-bonefish: [wamp_router_impl.cpp:108][attach_session] attaching session: session [2257228500326156,default,none]
+reinvoke-bonefish: [wamp_dealer.cpp:65][attach_session] attach session: session [2257228500326156,default,none]
+reinvoke-bonefish: [wamp_broker.cpp:51][attach_session] attach session: session [2257228500326156,default,none]
+reinvoke-bonefish: [wamp_router_impl.cpp:164][process_hello_message] session [2257228500326156,default,none], hello [default, {"roles":{"publisher":{}, "subscriber":{}, "callee":{}, "caller":{}}}]
+reinvoke-bonefish: [wamp_router_impl.cpp:192][process_hello_message] session [2257228500326156,default,open], welcome [2257228500326156, {"roles":{"dealer":{"features":{"call_timeout":true, "progressive_call_results":true}}, "broker":{}}}]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [1, {}, com.harman.vui.getmcustatus]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [1, 1]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [2, {}, com.harman.vui.mutedaccontrol]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [2, 2]
+reinvoke-identifiers: start uptime=30.19
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [3, {}, com.harman.vui.muteampcontrol]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [3, 3]
+reinvoke-mcu-interface: 1970/01/01 00:00:30 apply DSP volume 80: com.harman.dsp.volumeSet: exit status 1: IDENTIFIERS_CALL_FAILED: call rejected: [wamp.error.no_such_procedure]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [4, {}, com.harman.volumeGet]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [4, 4]
+reinvoke-bonefish: [rawsocket_connection.hpp:298][handle_system_error] connection closed: asio.misc:2
+reinvoke-bonefish: [wamp_dealer.cpp:82][detach_session] detach session: session [7090515283965860,default,open]
+reinvoke-source-manager: start uptime=30.21
+reinvoke-bonefish: [wamp_dealer.cpp:87][detach_session] cleaning up session registrations
+reinvoke-bonefish: [wamp_dealer.cpp:116][detach_session] cleaning up pending caller invocations
+reinvoke-bonefish: [wamp_dealer.cpp:136][detach_session] cleaning up pending callee invocations
+reinvoke-bonefish: [wamp_broker.cpp:66][detach_session] detach session: 0xb6f34ba0
+reinvoke-source-manager: source-manager: registered com.harman.bluetooth
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [5, {}, com.harman.volumeSet]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [5, 5]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [6, {}, com.harman.volumeAdjust]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [6, 6]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [7, {}, com.harman.musicMuteSet]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [7, 7]
+reinvoke-bonefish: [wamp_router_impl.cpp:108][attach_session] attaching session: session [6404284456041962,default,none]
+reinvoke-propertyd: start uptime=30.26
+reinvoke-bonefish: [wamp_dealer.cpp:65][attach_session] attach session: session [6404284456041962,default,none]
+reinvoke-bonefish: [wamp_broker.cpp:51][attach_session] attach session: session [6404284456041962,default,none]
+reinvoke-bonefish: [wamp_router_impl.cpp:164][process_hello_message] session [6404284456041962,default,none], hello [default, {"roles":{"caller":{}, "publisher":{}, "subscriber":{}, "callee":{}}}]
+reinvoke-propertyd: propertyd: area formatted /dev/__properties__ size 32768 socket /dev/socket/property_service
+reinvoke-bonefish: [wamp_router_impl.cpp:192][process_hello_message] session [6404284456041962,default,open], welcome [6404284456041962, {"roles":{"dealer":{"features":{"call_timeout":true, "progressive_call_results":true}}, "broker":{}}}]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [6404284456041962,default,open], register [1, {}, com.harman.identifiersGet]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [6404284456041962,default,open], registered [1, 8]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [8, {}, com.harman.musicMuteToggle]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [8, 9]
+reinvoke-bonefish: [wamp_router_impl.cpp:108][attach_session] attaching session: session [8530991034268898,default,none]
+reinvoke-bonefish: [wamp_dealer.cpp:65][attach_session] attach session: session [8530991034268898,default,none]
+reinvoke-bonefish: [wamp_broker.cpp:51][attach_session] attach session: session [8530991034268898,default,none]
+reinvoke-bonefish: [wamp_router_impl.cpp:164][process_hello_message] session [8530991034268898,default,none], hello [default, {"roles":{"caller":{}, "publisher":{}, "subscriber":{}, "callee":{}}}]
+reinvoke-bonefish: [wamp_router_impl.cpp:192][process_hello_message] session [8530991034268898,default,open], welcome [8530991034268898, {"roles":{"dealer":{"features":{"call_timeout":true, "progressive_call_results":true}}, "broker":{}}}]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [6404284456041962,default,open], register [2, {}, com.harman.stateGet]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [6404284456041962,default,open], registered [2, 10]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [9, {}, com.harman.ledAnimate]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [9, 11]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [8530991034268898,default,open], register [1, {}, com.harman.source.register]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [8530991034268898,default,open], registered [1, 12]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [6404284456041962,default,open], register [3, {}, com.harman.deviceNameGet]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [6404284456041962,default,open], registered [3, 13]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [8530991034268898,default,open], register [2, {}, com.harman.source.start]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [8530991034268898,default,open], registered [2, 14]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [10, {}, com.harman.ledSet]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [10, 15]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [6404284456041962,default,open], register [4, {}, com.harman.firmwareVersion]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [6404284456041962,default,open], registered [4, 16]
+reinvoke-identifiers: IDENTIFIERS_READY 4 procedures
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [11, {}, com.harman.ledOff]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [11, 17]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [6404284456041962,default,open], publish [5, {}, com.harman.ready.identifiers, [], nil]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [8530991034268898,default,open], register [3, {}, com.harman.source.get-active]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [8530991034268898,default,open], registered [3, 18]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [12, {}, com.harman.dsp.micMute]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [12, 19]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [13, {}, com.harman.extStateUpdate]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [13, 20]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [8530991034268898,default,open], register [4, {}, com.harman.source.get-registered]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [8530991034268898,default,open], registered [4, 21]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [14, {}, com.harman.source.nowPlayingUpdate]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [14, 22]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [15, {}, com.harman.aui.adjustVolume]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [15, 23]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [8530991034268898,default,open], register [5, {}, com.harman.source.flush]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [8530991034268898,default,open], registered [5, 24]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [16, {}, com.harman.aui.toggleMute]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [16, 25]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [8530991034268898,default,open], register [6, {}, com.harman.music.pause]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [8530991034268898,default,open], registered [6, 26]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [17, {}, com.harman.volume.setDuck]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [17, 27]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [8530991034268898,default,open], register [7, {}, com.harman.music.resume]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [8530991034268898,default,open], registered [7, 28]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [18, {}, com.harman.reboot]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [18, 29]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [8530991034268898,default,open], register [8, {}, com.harman.music.stop]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [8530991034268898,default,open], registered [8, 30]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [19, {}, com.harman.timezoneSet]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [19, 31]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [8530991034268898,default,open], register [9, {}, com.harman.music.cmdPlayPause]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [8530991034268898,default,open], registered [9, 32]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [20, {}, com.harman.networkConfiguration]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [20, 33]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [8530991034268898,default,open], register [10, {}, com.harman.source.trackPositionUpdate]
+reinvoke-source-manager: source-manager: ready with 12 procedures
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [8530991034268898,default,open], registered [10, 34]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [21, {}, com.harman.vui.SetRGBLEDBrightness]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [21, 35]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [8530991034268898,default,open], register [11, {}, com.harman.source.volumeSet]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [8530991034268898,default,open], registered [11, 36]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [22, {}, com.harman.vui.setDeviceColor]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [22, 37]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [8530991034268898,default,open], register [12, {}, com.harman.music-source-manager.shutdown]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [8530991034268898,default,open], registered [12, 38]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [23, {}, com.harman.vui.getDeviceColor]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [23, 39]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [8530991034268898,default,open], publish [13, {}, com.harman.ready.music-source-manager, [], nil]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [24, {}, com.harman.vui.setmcupowermode]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [24, 40]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [2257228500326156,default,open], register [25, {}, com.harman.vui.GetHWID]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [2257228500326156,default,open], registered [25, 41]
+reinvoke-bonefish: [wamp_broker.cpp:169][process_subscribe_message] session [2257228500326156,default,open], subscribe [26, {}, com.reinvoke.dsp.session]
+reinvoke-bonefish: [wamp_broker.cpp:199][process_subscribe_message] session [2257228500326156,default,open], subscribed [26, 1]
+reinvoke-bonefish: [wamp_broker.cpp:169][process_subscribe_message] session [2257228500326156,default,open], subscribe [27, {}, com.harman.dsp.bootup]
+reinvoke-bonefish: [wamp_broker.cpp:199][process_subscribe_message] session [2257228500326156,default,open], subscribed [27, 2]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [2257228500326156,default,open], publish [28, {}, com.harman.ready.mcu-interface, [], nil]
+reinvoke-networkd: 1970/01/01 00:00:31 DHCP client started
+reinvoke-provision-windowd: 1970/01/01 00:00:31 PERSIST_WIFI_SAVED
+reinvoke-provision-windowd: 1970/01/01 00:00:31 PERSIST_WIFI_ASSOCIATED
+reinvoke-provision-windowd: reinvoke-windowd: 1970/01/01 00:00:31 control socket ready
+reinvoke-servicemanager: start uptime=31.27
+reinvoke-propertyd: propertyd: set service.servicemanager="1"
+reinvoke-libreenv: start uptime=31.31
+reinvoke-libreenv: Cannot parse config file: No such file or directory
+reinvoke-dsp-interface: 1970/01/01 00:00:31 restored DSP message pinmux 0x0138D249
+reinvoke-dsp-interface: 1970/01/01 00:00:31 downloaded image in 40121 transfers of 160484 bytes
+reinvoke-bonefish: [wamp_router_impl.cpp:108][attach_session] attaching session: session [173663057434166,default,none]
+reinvoke-bonefish: [wamp_dealer.cpp:65][attach_session] attach session: session [173663057434166,default,none]
+reinvoke-bonefish: [wamp_broker.cpp:51][attach_session] attach session: session [173663057434166,default,none]
+reinvoke-bonefish: [wamp_router_impl.cpp:164][process_hello_message] session [173663057434166,default,none], hello [default, {"roles":{"callee":{}, "caller":{}, "publisher":{}, "subscriber":{}}}]
+reinvoke-bonefish: [wamp_router_impl.cpp:192][process_hello_message] session [173663057434166,default,open], welcome [173663057434166, {"roles":{"dealer":{"features":{"call_timeout":true, "progressive_call_results":true}}, "broker":{}}}]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [173663057434166,default,open], register [1, {}, com.harman.dsp.micTestSingle]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [173663057434166,default,open], registered [1, 42]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [173663057434166,default,open], register [2, {}, com.harman.dsp.micTestPair]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [173663057434166,default,open], registered [2, 43]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [173663057434166,default,open], register [3, {}, com.harman.dsp.micTestNormal]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [173663057434166,default,open], registered [3, 44]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [173663057434166,default,open], register [4, {}, com.harman.test.dspBypassMode]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [173663057434166,default,open], registered [4, 45]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [173663057434166,default,open], register [5, {}, com.harman.dsp.volumeSet]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [173663057434166,default,open], registered [5, 46]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [173663057434166,default,open], register [6, {}, com.harman.dsp.getVer]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [173663057434166,default,open], registered [6, 47]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [173663057434166,default,open], register [7, {}, com.harman.dsp.dumpDspMemory]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [173663057434166,default,open], registered [7, 48]
+reinvoke-dsp-interface: 1970/01/01 00:00:31 registered 7 procedures, subscribed to com.harman.stateChanged
+reinvoke-bonefish: [wamp_broker.cpp:169][process_subscribe_message] session [173663057434166,default,open], subscribe [8, {}, com.harman.stateChanged]
+reinvoke-bonefish: [wamp_broker.cpp:199][process_subscribe_message] session [173663057434166,default,open], subscribed [8, 3]
+reinvoke-dsp-interface: 1970/01/01 00:00:31 readmsg id=1 code=0x04 EVENT_DSP_BOOTUP
+reinvoke-dsp-interface: 1970/01/01 00:00:31 DSP booted; mute policy owner not called, outputs unchanged
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [173663057434166,default,open], publish [9, {}, com.harman.dsp.bootup, ["dsp"], nil]
+reinvoke-bonefish: [wamp_broker.cpp:147][process_publish_message] session [2257228500326156,default,open], event [2, 8530991034268898, {}, ["dsp"], nil]
+reinvoke-bluedroid: start uptime=32.31
+reinvoke-pairing-agent: start uptime=32.32
+reinvoke-pairing-agent: pairing agent: ready, pid 1657, long press -> com.harman.bluetoothPairing
+reinvoke-bluedroid: hci0 closed; the donor stack can claim the user channel
+reinvoke-bluedroid: bluedroid: starting donor service against /data/misc/bluedroid
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [173663057434166,default,open], publish [10, {}, com.reinvoke.dsp.session, ["ready"], nil]
+reinvoke-bonefish: [wamp_broker.cpp:147][process_publish_message] session [2257228500326156,default,open], event [1, 173663057434166, {}, ["ready"], nil]
+reinvoke-bluedroid: Start Bluetooth System
+reinvoke-bluedroid: Connecting to realm: default
+reinvoke-bluedroid: transport connected
+reinvoke-bonefish: [wamp_router_impl.cpp:108][attach_session] attaching session: session [3648815945442074,default,none]
+reinvoke-bluedroid: joined realm: 3648815945442074
+reinvoke-bluedroid: BtSystemControl::BtSystemControl
+reinvoke-bonefish: [wamp_dealer.cpp:65][attach_session] attach session: session [3648815945442074,default,none]
+reinvoke-bluedroid: BtSystemControl::wamp_initialize
+reinvoke-bonefish: [wamp_broker.cpp:51][attach_session] attach session: session [3648815945442074,default,none]
+reinvoke-bonefish: [wamp_router_impl.cpp:164][process_hello_message] session [3648815945442074,default,none], hello [default, {"authmethods":[], "authid":"", "roles":{"subscriber":{}, "publisher":{}, "callee":{"features":{"call_timeout":true}}, "caller":{"features":{"call_timeout":true}}}}]
+reinvoke-bonefish: [wamp_router_impl.cpp:192][process_hello_message] session [3648815945442074,default,open], welcome [3648815945442074, {"roles":{"dealer":{"features":{"call_timeout":true, "progressive_call_results":true}}, "broker":{}}}]
+reinvoke-bluedroid: initialized wamp
+reinvoke-bonefish: [wamp_broker.cpp:169][process_subscribe_message] session [3648815945442074,default,open], subscribe [1, {}, com.harman.stateChanged]
+reinvoke-bonefish: [wamp_broker.cpp:199][process_subscribe_message] session [3648815945442074,default,open], subscribed [1, 4]
+reinvoke-bonefish: [wamp_broker.cpp:169][process_subscribe_message] session [3648815945442074,default,open], subscribe [2, {}, com.harman.music.stateChanged]
+reinvoke-bonefish: [wamp_broker.cpp:199][process_subscribe_message] session [3648815945442074,default,open], subscribed [2, 5]
+reinvoke-bonefish: [wamp_broker.cpp:169][process_subscribe_message] session [3648815945442074,default,open], subscribe [3, {}, com.harman.volumeChanged]
+reinvoke-bonefish: [wamp_broker.cpp:199][process_subscribe_message] session [3648815945442074,default,open], subscribed [3, 6]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [3648815945442074,default,open], register [4, {}, com.harman.bluetooth.stop]
+reinvoke-source-manager: source-manager: registered com.harman.bluetooth
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [3648815945442074,default,open], registered [4, 49]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [3648815945442074,default,open], register [5, {}, com.harman.bluetooth.pause]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [3648815945442074,default,open], registered [5, 50]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [3648815945442074,default,open], register [6, {}, com.harman.bluetooth.resume]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [3648815945442074,default,open], registered [6, 51]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [3648815945442074,default,open], register [7, {}, com.harman.bluetooth.next]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [3648815945442074,default,open], registered [7, 52]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [3648815945442074,default,open], register [8, {}, com.harman.bluetooth.prev]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [3648815945442074,default,open], registered [8, 53]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [3648815945442074,default,open], register [9, {}, com.harman.bluetooth.skipTo]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [3648815945442074,default,open], registered [9, 54]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [3648815945442074,default,open], register [10, {}, com.harman.bluetooth.shuffle]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [3648815945442074,default,open], registered [10, 55]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [3648815945442074,default,open], register [11, {}, com.harman.bluetooth.repeat]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [3648815945442074,default,open], registered [11, 56]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [3648815945442074,default,open], register [12, {}, com.harman.bluetoothPairing]
+reinvoke-bonefish: [wamp_dealer.cpp:345][process_register_message] session [3648815945442074,default,open], registered [12, 57]
+reinvoke-bonefish: [wamp_dealer.cpp:304][process_register_message] session [3648815945442074,default,open], register [13, {}, com.harman.deviceNameGet]
+reinvoke-bonefish: [wamp_dealer.cpp:496][send_error] error [register, 13, {}, wamp.error.procedure_already_exists, nil, nil]
+reinvoke-bonefish: [wamp_dealer.cpp:166][process_call_message] session [3648815945442074,default,open], call [14, {}, com.harman.source.register, ["com.harman.bluetooth"], nil]
+reinvoke-bonefish: [wamp_dealer.cpp:219][process_call_message] session [3648815945442074,default,open], invocation [1, 12, {}, ["com.harman.bluetooth"], nil]
+reinvoke-identifiers: IDENTIFIERS_CALL com.harman.stateGet payload=[map[]]
+reinvoke-identifiers: IDENTIFIERS_ANSWERED com.harman.stateGet
+reinvoke-identifiers: IDENTIFIERS_CALL com.harman.identifiersGet payload=[map[]]
+reinvoke-identifiers: IDENTIFIERS_ANSWERED com.harman.identifiersGet
+reinvoke-bluedroid: system state is normal
+reinvoke-bluedroid: BtSystemControl::handle_oobe_state_change
+reinvoke-bluedroid: OOBE is finished, initializing...
+reinvoke-bonefish: [wamp_dealer.cpp:166][process_call_message] session [3648815945442074,default,open], call [15, {}, com.harman.stateGet, nil, nil]
+reinvoke-bluedroid: BtSystemControl::initialize
+reinvoke-bluedroid: [BT][BluedroidCall] int err = hw_get_module(BT_HARDWARE_MODULE_ID, (hw_module_t const**)&module);
+reinvoke-bonefish: [wamp_dealer.cpp:219][process_call_message] session [3648815945442074,default,open], invocation [2, 10, {}, nil, nil]
+reinvoke-bonefish: [wamp_dealer.cpp:424][process_yield_message] session [8530991034268898,default,open], yield [1, {}, [], nil]
+reinvoke-bonefish: [wamp_dealer.cpp:465][process_yield_message] session [8530991034268898,default,open], result [14, {}, [], nil]
+reinvoke-bonefish: [wamp_dealer.cpp:166][process_call_message] session [3648815945442074,default,open], call [16, {}, com.harman.identifiersGet, nil, nil]
+reinvoke-bonefish: [wamp_dealer.cpp:219][process_call_message] session [3648815945442074,default,open], invocation [3, 8, {}, nil, nil]
+reinvoke-bonefish: [wamp_dealer.cpp:424][process_yield_message] session [6404284456041962,default,open], yield [2, {}, [], {"system":{"state":"normal"}}]
+reinvoke-bonefish: [wamp_dealer.cpp:465][process_yield_message] session [6404284456041962,default,open], result [15, {}, [], {"system":{"state":"normal"}}]
+reinvoke-bonefish: [wamp_broker.cpp:169][process_subscribe_message] session [3648815945442074,default,open], subscribe [17, {}, com.cortana.device.nameChanged]
+reinvoke-bonefish: [wamp_broker.cpp:199][process_subscribe_message] session [3648815945442074,default,open], subscribed [17, 7]
+reinvoke-bonefish: [wamp_dealer.cpp:424][process_yield_message] session [6404284456041962,default,open], yield [3, {}, [], {"mac-hex":"aabbccddeeff", "unique-hex":"aabbccddeeff"}]
+reinvoke-bonefish: [wamp_dealer.cpp:465][process_yield_message] session [6404284456041962,default,open], result [16, {}, [], {"mac-hex":"aabbccddeeff", "unique-hex":"aabbccddeeff"}]
+reinvoke-bluedroid: [BT][BluedroidCall] err = module->methods->open(module, BT_HARDWARE_MODULE_ID, &device);
+reinvoke-bluedroid: [BT][BluedroidCall] sBtInterface = bt_device->get_bluetooth_interface();
+reinvoke-bluedroid: [BT][BluedroidCall] status = (bt_status_t) sBtInterface->init(BtCallbacks::getCallbacks());
+reinvoke-propertyd: propertyd: set persist.service.bdroid.bdaddr="22:22:f9:07:7b:b9"
+reinvoke-bluedroid: [BT][BluedroidCall] status = (bt_status_t) sBtInterface->set_os_callouts(BtCallbacks::getCallouts());
+reinvoke-bluedroid: [BT][BluedroidCall] status = (bt_status_t)sBtInterface->enable(true);
+reinvoke-bluedroid: [BT][BluedroidCall] bt_property_t class_property;
+reinvoke-bluedroid: [BT][BluedroidCall] auto cod = 0x00600414;
+reinvoke-bluedroid: [BT][BluedroidCall] class_property.type = BT_PROPERTY_CLASS_OF_DEVICE;
+reinvoke-bluedroid: [BT][BluedroidCall] class_property.val = &cod;
+reinvoke-bluedroid: [BT][BluedroidCall] sBtInterface->set_adapter_property(&class_property);
+reinvoke-bluedroid: BtSystemControl::SetDiscoverableMode
+reinvoke-bluedroid: [BT][BluedroidCall] bt_property_t property;
+reinvoke-bluedroid: [BT][BluedroidCall] bt_scan_mode_t mode;
+reinvoke-bluedroid: Exiting discoverable mode
+reinvoke-bluedroid: [BT][BluedroidCall] mode = BT_SCAN_MODE_NONE;
+reinvoke-bluedroid: [BT][BluedroidCall] property.type = BT_PROPERTY_ADAPTER_SCAN_MODE;
+reinvoke-bluedroid: [BT][BluedroidCall] property.val = &mode;
+reinvoke-bluedroid: [BT][BluedroidCall] sBtInterface->set_adapter_property(&property);
+reinvoke-bluedroid: BtSystemControl::wamp_notify_mode_changed
+reinvoke-bluedroid: BtSystemControl::SetConnectableMode
+reinvoke-bluedroid: [BT][BluedroidCall] bt_property_t property;
+reinvoke-bluedroid: [BT][BluedroidCall] bt_scan_mode_t mode;
+reinvoke-bluedroid: Entering non - discoverable/non - connectable mode
+reinvoke-bluedroid: [BT][BluedroidCall] mode = BT_SCAN_MODE_NONE;
+reinvoke-bluedroid: [BT][BluedroidCall] property.type = BT_PROPERTY_ADAPTER_SCAN_MODE;
+reinvoke-bluedroid: [BT][BluedroidCall] property.val = &mode;
+reinvoke-bluedroid: [BT][BluedroidCall] sBtInterface->set_adapter_property(&property);
+reinvoke-bluedroid: tuned on bt interface
+reinvoke-bluedroid: BtSystemControl::SetLocalBtAddress
+reinvoke-bluedroid: Local address: 22:22:f9:07:7b:b9
+reinvoke-bluedroid: Local BT Device Name:
+reinvoke-bluedroid: Bonded devices list length = 0
+reinvoke-bluedroid: BtSystemControl::BondedDevices
+reinvoke-bluedroid: Bonded device list is empty
+reinvoke-bluedroid: BtSystemControl::SetLocalBtAddress
+reinvoke-bluedroid: Local address: aa:bb:cc:dd:ee:ff
+reinvoke-bluedroid: BT adapter state ON
+reinvoke-bluedroid: BtSystemControl::UpdateBtAdapterState
+reinvoke-bluedroid: Enabling A2DP SINK
+reinvoke-bluedroid: [BT][BluedroidCall] a2dp_sink_interface = (btav_interface_t* )control->sBtInterface->get_profile_interface(BT_PROFILE_ADVANCED_AUDIO_SINK_ID);
+reinvoke-bluedroid: [BT][BluedroidCall] status = a2dp_sink_interface->init(A2dpSinkCallbacks::getA2dpSinkCallbacks());
+reinvoke-bluedroid: Enabling A2DP SINK result 0
+reinvoke-bluedroid: [BT][BluedroidCall] avrcp_rc_interface = (btrc_ctrl_interface_t* )control->sBtInterface->get_profile_interface(BT_PROFILE_AV_RC_CTRL_ID);
+reinvoke-bluedroid: [BT][BluedroidCall] status = avrcp_rc_interface->init(AvrcpControlCallbacks::getAvrcpControlCallbacks());
+reinvoke-bluedroid: Enabling AVRCP Controller result 0
+reinvoke-bluedroid: [BT][BluedroidCall] avrcp_interface = (btrc_interface_t* )control->sBtInterface->get_profile_interface(BT_PROFILE_AV_RC_ID);
+reinvoke-bluedroid: [BT][BluedroidCall] status = avrcp_interface->init(AvrcpTargetCallbacks::getAvrcpTargetCallbacks());
+reinvoke-bluedroid: Enabling AVRCP target result 0
+reinvoke-bluedroid: BtSystemControl::SetLocalDeviceName(reInvoke_AABBCC)
+reinvoke-bluedroid: [BT][BluedroidCall] bt_property_t property;
+reinvoke-bluedroid: [BT][BluedroidCall] property.type = BT_PROPERTY_BDNAME;
+reinvoke-bluedroid: [BT][BluedroidCall] sBtInterface->set_adapter_property(&property);
+reinvoke-bluedroid: Set new device name to BT interface: reInvoke_AABBCC
+reinvoke-bluedroid: Local BT Device Name: reInvoke_AABBCC
+reinvoke-bluedroid: BtSystemControl::SetUnconnectedMode
+reinvoke-bluedroid: initialization done
+reinvoke-bluedroid: Setting connectable mode...
+reinvoke-bluedroid: BtSystemControl::SetConnectableMode
+reinvoke-bluedroid: [BT][BluedroidCall] bt_property_t property;
+reinvoke-bluedroid: [BT][BluedroidCall] bt_scan_mode_t mode;
+reinvoke-bluedroid: Entering non - discoverable/connectable mode
+reinvoke-bluedroid: [BT][BluedroidCall] mode = BT_SCAN_MODE_CONNECTABLE;
+reinvoke-bluedroid: [BT][BluedroidCall] property.type = BT_PROPERTY_ADAPTER_SCAN_MODE;
+reinvoke-bluedroid: [BT][BluedroidCall] property.val = &mode;
+reinvoke-bluedroid: [BT][BluedroidCall] sBtInterface->set_adapter_property(&property);
+reinvoke-bluedroid: done.
+reinvoke-mcu-interface: 1970/01/01 00:00:34 FRONT_INDICATOR online (white on)
+reinvoke-bonefish: [wamp_router_impl.cpp:108][attach_session] attaching session: session [2264775509761427,default,none]
+reinvoke-bonefish: [wamp_dealer.cpp:65][attach_session] attach session: session [2264775509761427,default,none]
+reinvoke-bonefish: [wamp_broker.cpp:51][attach_session] attach session: session [2264775509761427,default,none]
+reinvoke-bonefish: [wamp_router_impl.cpp:164][process_hello_message] session [2264775509761427,default,none], hello [default, {"roles":{"publisher":{}, "subscriber":{}, "callee":{}, "caller":{}}}]
+reinvoke-bonefish: [wamp_router_impl.cpp:192][process_hello_message] session [2264775509761427,default,open], welcome [2264775509761427, {"roles":{"dealer":{"features":{"call_timeout":true, "progressive_call_results":true}}, "broker":{}}}]
+reinvoke-dsp-interface: 1970/01/01 00:00:35 queued com.harman.dsp.volumeSet as id 0 payload 04 50
+reinvoke-bonefish: [wamp_dealer.cpp:166][process_call_message] session [2264775509761427,default,open], call [1, {}, com.harman.dsp.volumeSet, [80], nil]
+reinvoke-bonefish: [wamp_dealer.cpp:219][process_call_message] session [2264775509761427,default,open], invocation [4, 46, {}, [80], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [6404284456041962,default,open], publish [6, {}, com.harman.heartbeat.identifiers, [], nil]
+reinvoke-dsp-interface: 1970/01/01 00:00:35 completed com.harman.dsp.volumeSet
+reinvoke-dsp-interface: 1970/01/01 00:00:35 readmsg id=0 code=0x04 EVENT_NEW_DAC_GAIN
+reinvoke-bonefish: [wamp_dealer.cpp:424][process_yield_message] session [173663057434166,default,open], yield [4, {}, [], nil]
+reinvoke-bonefish: [wamp_dealer.cpp:465][process_yield_message] session [173663057434166,default,open], result [1, {}, [], nil]
+reinvoke-bonefish: [rawsocket_connection.hpp:298][handle_system_error] connection closed: asio.misc:2
+reinvoke-bonefish: [wamp_dealer.cpp:82][detach_session] detach session: session [2264775509761427,default,open]
+reinvoke-bonefish: [wamp_dealer.cpp:87][detach_session] cleaning up session registrations
+reinvoke-bonefish: [wamp_dealer.cpp:116][detach_session] cleaning up pending caller invocations
+reinvoke-bonefish: [wamp_dealer.cpp:136][detach_session] cleaning up pending callee invocations
+reinvoke-bonefish: [wamp_broker.cpp:66][detach_session] detach session: 0xb6f3a770
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [8530991034268898,default,open], publish [14, {}, com.harman.heartbeat.music-source-manager, [], nil]
+reinvoke-mcu-interface: 1970/01/01 00:00:37 CUE_PLAYED Power_On
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [6404284456041962,default,open], publish [7, {}, com.harman.heartbeat.identifiers, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [8530991034268898,default,open], publish [15, {}, com.harman.heartbeat.music-source-manager, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [2257228500326156,default,open], publish [29, {}, com.harman.heartbeat.mcu-interface, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [6404284456041962,default,open], publish [8, {}, com.harman.heartbeat.identifiers, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [8530991034268898,default,open], publish [16, {}, com.harman.heartbeat.music-source-manager, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [6404284456041962,default,open], publish [9, {}, com.harman.heartbeat.identifiers, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [8530991034268898,default,open], publish [17, {}, com.harman.heartbeat.music-source-manager, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [2257228500326156,default,open], publish [30, {}, com.harman.heartbeat.mcu-interface, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [6404284456041962,default,open], publish [10, {}, com.harman.heartbeat.identifiers, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [8530991034268898,default,open], publish [18, {}, com.harman.heartbeat.music-source-manager, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [6404284456041962,default,open], publish [11, {}, com.harman.heartbeat.identifiers, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [8530991034268898,default,open], publish [19, {}, com.harman.heartbeat.music-source-manager, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [2257228500326156,default,open], publish [31, {}, com.harman.heartbeat.mcu-interface, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [6404284456041962,default,open], publish [12, {}, com.harman.heartbeat.identifiers, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [8530991034268898,default,open], publish [20, {}, com.harman.heartbeat.music-source-manager, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [6404284456041962,default,open], publish [13, {}, com.harman.heartbeat.identifiers, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [8530991034268898,default,open], publish [21, {}, com.harman.heartbeat.music-source-manager, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [2257228500326156,default,open], publish [32, {}, com.harman.heartbeat.mcu-interface, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [6404284456041962,default,open], publish [14, {}, com.harman.heartbeat.identifiers, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [8530991034268898,default,open], publish [22, {}, com.harman.heartbeat.music-source-manager, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [6404284456041962,default,open], publish [15, {}, com.harman.heartbeat.identifiers, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [8530991034268898,default,open], publish [23, {}, com.harman.heartbeat.music-source-manager, [], nil]
+reinvoke-bonefish: [wamp_broker.cpp:111][process_publish_message] session [2257228500326156,default,open], publish [33, {}, com.harman.heartbeat.mcu-interface, [], nil]

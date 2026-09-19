@@ -19,6 +19,7 @@
 //
 // Usage: node audit.js [--json]
 'use strict';
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -46,6 +47,7 @@ function markdownFiles() {
     }
   };
   walk(path.join(repo, 'docs'));
+  walk(path.join(repo, 'tools'));
   for (const entry of fs.readdirSync(repo))
     if (entry.endsWith('.md')) out.push(path.join(repo, entry));
   return out;
@@ -56,7 +58,14 @@ function markdownFiles() {
 // the donor rootfs, because shipping is the question.
 function imageContents() {
   const names = new Set();
-  if (!fs.existsSync(runtime)) return names;
+  if (!fs.existsSync(runtime)) {
+    // Failing open here is worse than not running. Without the image every
+    // shipped-component check silently passes, and the run reports the same
+    // "findings: 0" as a real audit. A reviewer cannot tell the two apart.
+    console.error(`ground truth missing: no built runtime at ${runtime}`);
+    console.error('set AUDIT_RUNTIME_TREE to a build-a/runtime directory');
+    process.exit(2);
+  }
   const walk = dir => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
@@ -94,17 +103,24 @@ function definedFlags() {
         const pattern =
           /flag\.(?:String|Int|Bool|Duration|Float64)(?:Var)?\(\s*(?:&[\w.]+\s*,\s*)?"([a-z0-9-]+)"/g;
         for (const match of text.matchAll(pattern)) flags.add(match[1]);
-      } else if (/\.(js|mjs|sh)$/.test(entry.name)) {
-        // The host reference tools and shell helpers take flags too, and the
-        // documents cite them alongside the Go services.
-        for (const match of text.matchAll(/'--([a-z0-9-]{3,})'|"--([a-z0-9-]{3,})"/g))
-          flags.add(match[1] || match[2]);
+      } else if (/\.(js|mjs|sh|c)$/.test(entry.name) || !entry.name.includes('.')) {
+        // Host tools and shell helpers take flags too, and the documents cite
+        // them alongside the Go services. Shell writes them bare, in case
+        // arms and comparisons, not only quoted; matching only quoted forms
+        // reported thirteen flags as undefined that were defined a few lines
+        // away in a case statement.
+        for (const match of text.matchAll(/--([a-z0-9][a-z0-9-]{2,})/g))
+          flags.add(match[1]);
       }
     }
   };
   walk(path.join(repo, 'tools'));
   return flags;
 }
+
+const reviewedPath = path.join(__dirname, 'reviewed.json');
+const reviewed = fs.existsSync(reviewedPath)
+  ? JSON.parse(fs.readFileSync(reviewedPath, 'utf8')) : {};
 
 const image = imageContents();
 const paths = repoPaths();
@@ -121,28 +137,39 @@ const removed = new Map([
   ['playback_policy.go', 'deleted with the withdrawn amplifier mute policy'],
 ]);
 
+
 // Records of what happened are not claims about what is true now. A journal
 // entry saying BlueALSA was used in September is correct and must stay
-// correct; the contract saying BlueALSA is the audio path is not. Only the
-// documents that describe the current system are checked for this, so the
-// output stays small enough to act on.
+// correct; the contract saying BlueALSA is the audio path is not.
 const historical = [
   'docs/journal.md',
   'docs/acquisition/',
   'docs/corpus/',
   'docs/nand-write-decision.md',
   'docs/revival-roadmap.md',
-  'docs/release-validation.md',
 ];
-// A document may also declare itself superseded in its own opening lines.
-// That is better than a list here, because the declaration travels with the
-// file and a reader sees it.
-const declaresSuperseded = text =>
-  /describes a design that is no longer shipped|superseded|no longer shipped/i
-    .test(text.slice(0, 1200));
+
+// A document is exempt only when it says so in structured front matter:
+// `status: superseded` or `status: historical`.
+//
+// This replaces a regular expression that scanned the surrounding prose for
+// words like "replaced" or "no longer". That was unsound in both directions.
+// It accepted "BlueZ replaced Bluedroid and is the current stack" and
+// "BlueALSA remains current until migration completes", because the magic
+// word appears; and it reported "Before commit 225183e, audio ran through
+// BlueZ", because none does. A checker that a sentence asserting the opposite
+// of the fact can satisfy proves nothing, and reporting zero findings from it
+// was misleading. Front matter cannot be satisfied by accident.
+function declaredStatus(text) {
+  const matter = /^---\n([\s\S]*?)\n---/.exec(text);
+  if (!matter) return '';
+  const status = /^status:\s*(\S+)/m.exec(matter[1]);
+  return status ? status[1].toLowerCase() : '';
+}
 const isHistorical = (file, text) =>
   historical.some(prefix => file.startsWith(prefix)) ||
-  (text !== undefined && declaresSuperseded(text));
+  (text !== undefined &&
+    ['superseded', 'historical'].includes(declaredStatus(text)));
 
 for (const file of markdownFiles()) {
   const relative = path.relative(repo, file);
@@ -180,27 +207,47 @@ for (const file of markdownFiles()) {
     }
 
     // Components that were removed from the runtime.
-    // A removed component may be named correctly, as something that used to
-    // be here, or incorrectly, as something that still is. The difference is
-    // in the wording, so the wording is what decides: a mention framed as
-    // retired is accepted, and a bare mention is reported.
-    //
-    // This is a heuristic and it can be fooled by a sentence that happens to
-    // contain one of these words. It is still worth having: without it every
-    // licence line and every history note is reported forever, and a list
-    // that is mostly noise is one nobody reads.
-    const retired =
-      /no longer|replaced|kept for|retain|former|removed|withdrawn|historical|used to|earlier|until|superseded|previously|reversed|no such|not (?:in|present)/i;
-    const context = [lines[index - 1] || '', text, lines[index + 1] || ''].join(' ');
+    // Mentions of a removed component, in documents that have not declared
+    // themselves historical.
     const lowered = text.toLowerCase();
     for (const [name, why] of removed) {
       if (isHistorical(relative, whole)) continue;
       if (!lowered.includes(name)) continue;
-      if (retired.test(context)) continue;
+      // A README under tools/<name>/ describes that tool, not the device
+      // image. tools/control is host reference tooling whose backend really
+      // does drive a BlueALSA CLI, so its README naming BlueALSA is accurate
+      // and checking it against the firmware image is a category error.
+      const owner = /^tools\/([^/]+)\//.exec(relative);
+      if (owner) {
+        const dir = path.join(repo, 'tools', owner[1]);
+        let usedByTool = false;
+        const scan = d => {
+          for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+            if (usedByTool) return;
+            const full = path.join(d, e.name);
+            if (e.isDirectory()) { scan(full); continue; }
+            if (e.name.endsWith('.md') || e.name === 'node_modules') continue;
+            try {
+              if (fs.readFileSync(full, 'utf8').toLowerCase().includes(name))
+                usedByTool = true;
+            } catch { /* binary or unreadable */ }
+          }
+        };
+        try { scan(dir); } catch { /* missing */ }
+        if (usedByTool) continue;
+      }
       const shipped = image.has(name) || image.has(name + '.ko');
-      if (!shipped)
-        finding('removed-component', relative, number, name,
-          `${why}; not present in the built image, and not described as past`);
+      if (shipped) continue;
+      // A mention may be a correction, a licence obligation or a history
+      // note. The checker cannot tell, so it does not guess: it reports, and
+      // a reviewed mention is recorded in reviewed.json against the exact
+      // text that was read. Change the line and the review lapses.
+      const digest = crypto.createHash('sha256')
+        .update(`${relative}|${name}|${text.trim()}`).digest('hex').slice(0, 16);
+      if (reviewed[digest]) continue;
+      finding('removed-component', relative, number, name,
+        `${why}; not in the built image. If correct, record ${digest} in ` +
+        'tools/doc-audit/reviewed.json with a reason.');
     }
   });
 }
@@ -264,4 +311,4 @@ if (process.argv.includes('--json')) {
     console.log(`        ${item.detail}`);
   }
 }
-process.exit(0);
+process.exit(findings.length === 0 ? 0 : 1);

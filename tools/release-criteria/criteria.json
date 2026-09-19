@@ -1,8 +1,9 @@
 {
   "purpose": "Boot and flash success criteria as checks rather than prose. Prose describing a good boot has drifted repeatedly in this project: it claimed eight services when there were thirty-four, recorded the chime as failed after it played, and the ring count as unexplained after it was explained. A check cannot drift silently. If the runtime changes, the check fails and names what changed.",
   "evidence": {
-    "boot": "candidate 05.8.11 on hardware, 2026-09-18, /run/reinvoke/logs/runtime.log",
-    "flash": "reinvoke-archive/evidence/flash-05811b-2114, u2nand succeed 2026-09-18"
+    "boot": "tools/release-criteria/reference-good-boot.log, candidate 05.8.11 on hardware 2026-09-18",
+    "flash": "reinvoke-archive/evidence/flash-05811b-1732, u2nand succeed 2026-09-18",
+    "note": "An earlier revision cited flash-05811b-2114, which does not exist. The citation was written from memory rather than from the directory listing, which is the same failure the criteria exist to prevent."
   },
   "boot": [
     {

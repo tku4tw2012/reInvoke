@@ -25,23 +25,31 @@ outside the code changed state and was observed.
 
 ## What the current build has actually demonstrated
 
-Taken from `/run/reinvoke/logs/runtime.log` on the running unit, not from
-intent.
+Taken from observation on the running unit, not from intent. Candidate
+05.8.11, 2026-09-18.
 
 | Capability | Status | How it was observed |
 | --- | --- | --- |
-| Boots from NAND unattended | verified | Eight services up, no host attached |
-| Wi-Fi associates and gets a lease | verified | SSH reachable at a DHCP address |
-| SSH administration | verified | Every check in this table arrived over it |
+| Boots from NAND unattended | verified | 34 service pid files, no host attached |
+| Wi-Fi associates and gets a lease | verified | `FRONT_INDICATOR online` and SSH reachable |
 | USB ADB from cold boot | verified | `adb shell` with no network configured |
+| USB identity is this unit | verified | host reads `aabbccddeeff` / `reInvoke_AABBCC` / `Harman Kardon` |
 | DSP accepts a volume | verified | `completed com.harman.dsp.volumeSet` |
-| Volume arc on the ring | verified | Four distinct arcs seen at 10, 50, 80, 100 |
-| Front lamp state changes | verified | Amber at boot, white once online |
-| Bluetooth pairing and playback | verified | Phone paired, audio heard |
-| Microphone capture | verified | Recorded audio reviewed |
-| Startup chime audible | **failed** | Logged as played, heard by nobody |
-| Reboot without a power cycle | **unverified** | Fix written, never exercised |
-| Three ring LEDs seen at boot | **unexplained** | See open questions |
+| Startup chime audible | verified | heard by the owner on the 05.8.11 boot |
+| No volume arc at boot | verified | no `RING_ARC` logged, and none seen |
+| Reboot without a power cycle | verified | `adb reboot` returned the unit repeatedly |
+| Front lamp state changes | verified | amber at boot, white once online |
+| Bluetooth pairing from the host | verified | `LinkKey` written, survived a reboot |
+| Microphone capture | stale | last exercised in the RAM era, not on this build |
+| Bluetooth audio playback | **not tested** | pairing is not playback; no stream was started |
+| No pops during startup | **failed** | heard on 05.8.11; fix written, not yet flashed |
+
+This table was wrong for several releases: it recorded eight services when the
+build ran thirty-four, the chime as failed after it had played, the reboot fix
+as never exercised after it had been, and the ring count as unexplained after
+it was explained. It is now generated from the same conditions that
+[`tools/release-criteria`](../tools/release-criteria/criteria.json) checks, so
+the two cannot drift apart silently.
 
 ## Checks that need a person
 
