@@ -55,46 +55,47 @@ speaker and mic-mute state. Shared expander updates preserve the DSP reset bit.
 `reinvoke-dsp-interface` owns `/dev/spidev0.0`, handshake GPIOs, GPIO5
 pin-function transition, expander reset and host-loaded `dsp-img.ldr`.
 Download uses manual chip select, then restores message mode through a
-read-modify-write preserving MCU GPIO3. DSP boot does not unmute the amplifier
-or DAC. MCU transport is I2C, not an inferred UART.
+read-modify-write preserving MCU GPIO3. The DSP service itself never touches
+the amplifier or DAC mute bits; the MCU service opens them once, after the DSP
+accepts its first volume. MCU transport is I2C, not an inferred UART.
 
 The [MCU](emulation/mcu-boundary.md) and [DSP](emulation/dsp-boundary.md)
 references retain transport details. Exact part models remain unresolved.
 
-### Speaker safety and volume
+### Speaker output and volume
 
-The amplifier and DAC initialize muted. Policy opens the physical path only
-while ALSA is `RUNNING`, the active-PCM lease thread matches ALSA ownership,
-and that thread resolves to the packaged player. Loss of that authorization
-reasserts mute after a 1.5-second holdoff; shutdown requests mute directly.
-The lease identifies active playback, not nonzero or audible samples.
+The amplifier and DAC initialise muted and are opened once, after the DSP
+accepts its first volume. Nothing polls and nothing re-mutes; after that they
+change only through `muteampcontrol` and `mutedaccontrol`, and on shutdown.
+The donor does the same: its initialisation mutes both and never unmutes, and
+`system-manager`, which this runtime replaces with `/init`, is the only donor
+binary that calls `muteampcontrol`.
+
+Two earlier designs are withdrawn. One held the amplifier closed unless ALSA
+was `RUNNING` and a lease thread resolved to one packaged player, which was
+this project's invention and silenced every sound the runtime did not itself
+render, including the vendor's startup chime. The other opened the outputs
+during initialisation, which put the amplifier live for DSP bootup and the
+first gain change and was audible on this unit as pops at startup.
 
 `com.harman.volumeSet` takes `[value, "music"]`; raw
-`com.harman.dsp.volumeSet` takes one gain byte. DSP gain cannot overcome media
-volume zero. Newly acquired BlueALSA transports start at maximum volume;
-connect policy caps them at twelve without raising a quieter transport.
-Rotary control changes media volume. See [speaker control](emulation/owned-speaker-control.md).
+`com.harman.dsp.volumeSet` takes one gain byte. Rotary control changes media
+volume. See [speaker control](emulation/owned-speaker-control.md).
 
 Candidate 05.8.6 and earlier recorded the level without applying it, so the
 speaker played at whatever gain the DSP booted with and the rotary control
-moved a number that reached no hardware. Candidate 05.8.7 pushed the level to
-`com.harman.dsp.volumeSet` instead, which was audible but wrong: the donor
-carried the user's volume on the ALSA softvol control, not on DSP gain.
+moved a number that reached no hardware. 05.8.7 pushed the level to
+`com.harman.dsp.volumeSet`, which is audible and is what ships.
 
-The donor's `aui::VolumeManager` calls `add_softvol` and steps it from
+The donor carried the user's volume on an ALSA softvol control instead:
+`aui::VolumeManager` calls `add_softvol` and steps it from
 `softvol_fading_tick`, and the vendor settings database records
-`current_volume=80`. Candidate 05.8.10 moves the user volume onto the softvol
-control `music` on card 0, range 0-255, and keeps DSP gain as the fixed
-amplifier trim it is. That control sat at 255 on every earlier candidate, which
-is why playback was reported as far too loud and why a DSP gain near 3 was
-needed to compensate. Stepping it down through 160, 90 and 30 was confirmed
-audibly on hardware.
-
-The control is created lazily when the donor stack first opens `pcm.music`, so
-it is addressed by name rather than by `numid`. Writes are single ioctls, which
-makes fading free; the rotary control fades in steps of 6 every 20 ms instead of
-forking a process per detent. Fourteen detents in seven seconds previously
-forked fourteen processes and twice drove the level to zero.
+`current_volume=80`. That control does not exist in this runtime. Nothing
+defines a softvol plugin, and the default pointed at card 0, which is the
+Loopback device, so every fade failed and logged while the DSP call carried
+the level. The fade is retained behind `--softvol-control` and is off by
+default. Restoring it is open work: it would make volume changes fade rather
+than step, and move the user's level off DSP gain.
 
 ### Bluetooth audio rendering
 

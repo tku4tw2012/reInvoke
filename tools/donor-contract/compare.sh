@@ -56,14 +56,38 @@ while read -r procedure; do
 done <"${work}/donor-raw.txt"
 { grep -rhoE '"com\.(harman|cortana|reinvoke)\.[a-zA-Z0-9_.-]+"' \
   "${repo}/tools" --include='*.go' 2>/dev/null || true; } \
-  | tr -d '"' | sort -u >"${work}/ours.txt"
+  | tr -d '"' | sort -u >"${work}/ours-source.txt"
+
+# Add the procedures that shipped donor binaries answer for us.
+#
+# This runtime ships parts of the donor stack rather than reimplementing them,
+# so scanning our Go source alone counts those as gaps. It reported the nine
+# com.harman.bluetooth transport controls as unimplemented while the donor
+# Bluedroid stack we ship was registering seven of them on the device. A gap
+# list that names things already working is one nobody can act on.
+: >"${work}/donor-provided.txt"
+if [[ -n "${DONOR_SHIPPED_DIRS:-}" ]]; then
+  for shipped in ${DONOR_SHIPPED_DIRS}; do
+    [[ -d "${shipped}" ]] || continue
+    find "${shipped}" -type f -exec sh -c \
+      'file "$1" 2>/dev/null | grep -q ELF' _ {} \; -print 2>/dev/null \
+      | while read -r binary; do
+          strings "${binary}" 2>/dev/null \
+            | { grep -oE "com\.(harman|cortana)\.[a-zA-Z0-9_.-]+" || true; }
+        done >>"${work}/donor-provided.txt"
+  done
+fi
+sort -u "${work}/donor-provided.txt" -o "${work}/donor-provided.txt"
+cat "${work}/ours-source.txt" "${work}/donor-provided.txt" | sort -u >"${work}/ours.txt"
 
 printf 'donor procedures : %s\n' "$(wc -l <"${work}/donor.txt")"
 printf 'ours             : %s\n' "$(wc -l <"${work}/ours.txt")"
 printf 'unimplemented    : %s\n' \
   "$(comm -23 "${work}/donor.txt" "${work}/ours.txt" | wc -l)"
-printf 'namespace prefixes excluded : %s\n\n' \
+printf 'namespace prefixes excluded : %s\n' \
   "$(sort -u "${work}/prefixes.txt" | wc -l)"
+printf 'answered by shipped donor binaries : %s\n\n' \
+  "$(comm -12 "${work}/donor.txt" "${work}/donor-provided.txt" | wc -l)"
 
 printf 'excluded as namespace prefixes:\n'
 sort -u "${work}/prefixes.txt" | sed 's/^/    /'
