@@ -6,6 +6,9 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -342,5 +345,80 @@ func TestVolumeMaxCuePlaysOnArrivalOnly(t *testing.T) {
 	}
 	if played != 2 {
 		t.Fatalf("returning to maximum played %d times, want 2", played)
+	}
+}
+
+// TestDialFollowsTheDonorCurve proves the dial is logarithmic in amplitude and
+// still lands on the two levels measured on this unit.
+//
+// The donor carried volume on an ALSA softvol control declared with no min_dB
+// or max_dB, so it took the plugin defaults and was linear in decibels. This
+// runtime has no softvol control, and passing percent straight to DSP gain
+// made the dial linear in amplitude instead: the comfortable point sat at 5
+// of 100, so almost the whole travel was above it.
+func TestDialFollowsTheDonorCurve(t *testing.T) {
+	// The anchors. Both were measured by listening, and the curve exists to
+	// pass through them.
+	if got := dspByteForPercent(defaultVolume); got != 5 {
+		t.Fatalf("the default dial produces gain %d, want the measured 5", got)
+	}
+	if got := dspByteForPercent(100); got != 90 {
+		t.Fatalf("a full dial produces gain %d, want the measured 90", got)
+	}
+
+	// Monotonic, and never silent while the dial is up.
+	previous := 0
+	for percent := 1; percent <= 100; percent++ {
+		level := dspByteForPercent(percent)
+		if level < 1 {
+			t.Fatalf("dial %d is silent", percent)
+		}
+		if level < previous {
+			t.Fatalf("dial %d produced %d after %d", percent, level, previous)
+		}
+		previous = level
+	}
+	if dspByteForPercent(0) != 0 {
+		t.Fatal("a dial at zero should be silent")
+	}
+
+	// Logarithmic, not linear: the bottom half of the dial must cover far
+	// less than half the gain, which is what makes a knob usable.
+	if half := dspByteForPercent(50); half > 90/4 {
+		t.Fatalf("half the dial gives gain %d; the curve is too flat", half)
+	}
+}
+
+// TestPushAppliesTheCurve proves the curve is wired into the path that reaches
+// the DSP, not merely available to call.
+//
+// Testing dspByteForPercent alone passes whether or not anything uses it,
+// which is the same shape of mistake as a log line saying the outputs are open
+// while they are muted. This runs the real pushVolume against a stand-in
+// caller and reads the argument it was given.
+func TestPushAppliesTheCurve(t *testing.T) {
+	script := filepath.Join(t.TempDir(), "caller.sh")
+	record := filepath.Join(t.TempDir(), "args.txt")
+	if err := os.WriteFile(script,
+		[]byte("#!/bin/sh\nprintf '%s\\n' \"$@\" >>"+record+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	controller := newTestVolumeController(t)
+	controller.caller = script
+	controller.dspProcedure = "com.harman.dsp.volumeSet"
+
+	if err := controller.pushVolume(context.Background(), defaultVolume); err != nil {
+		t.Fatal(err)
+	}
+
+	written, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatalf("the caller was never run: %v", err)
+	}
+	// The measured comfortable gain for the default dial position.
+	if !strings.Contains(string(written), "[5]") {
+		t.Fatalf("the DSP was called with %q, want the curved gain [5]",
+			strings.TrimSpace(string(written)))
 	}
 }

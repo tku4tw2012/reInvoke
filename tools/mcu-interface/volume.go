@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -157,7 +158,7 @@ func (state duckState) String() string {
 // comfortable point was near 3" when the level went to DSP gain instead.
 // Softvol was later found to be absent on this runtime and disabled, which
 // put the level back on DSP gain without anyone moving the number back.
-const defaultVolume = 5
+const defaultVolume = 34
 
 const (
 	// volumePushTimeout bounds one call to the DSP service.
@@ -206,6 +207,14 @@ func (controller *dspVolumeController) Apply(
 
 // maxVolume is the top of the rotary range.
 const maxVolume = 100
+
+// dspMaxByte is the loudest the DSP gain byte is driven to.
+//
+// The measured comfortable point on this unit is 5, and 90 was reported as
+// loud, so the top of the dial is held at 90 rather than 255. Nothing here
+// has ever been played above that, and a dial whose last few degrees are
+// untested is worse than one that stops where the evidence does.
+const dspMaxByte = 90.0
 
 func clampVolume(percent int) int {
 	if percent < 0 {
@@ -438,6 +447,57 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 
 // pushVolume hands one level to the DSP service. The DSP accepts a single
 // byte, so the level is range checked here rather than relying on the callee.
+// dspByteForPercent maps a dial position onto the DSP gain byte using the
+// donor's own curve.
+//
+// The donor carried volume on an ALSA softvol control declared in
+// etc/asound-product.conf as a plain `type softvol` with no min_dB, max_dB or
+// resolution, so it took the plugin's defaults: 0..255 over -51 dB to 0 dB.
+// That was confirmed against this hardware in softvol_linux.go, which found
+// numid 97 with a 0..255 range in 0.2 dB steps, which is the same 51 dB.
+// Percent went onto that control linearly, so the dial was linear in decibels
+// and therefore logarithmic in amplitude. That is what made it behave like a
+// volume knob rather than a switch.
+//
+// This runtime has no softvol control, so the level lands on DSP gain, and
+// passing percent straight through made the dial linear in amplitude. The
+// consequence is not subtle: the comfortable listening point measured on this
+// unit is 5 of 100, so ninety-five percent of the travel sits above it and
+// almost nothing useful sits below.
+//
+// Applying the curve here restores the donor's feel without a softvol plugin:
+// the same comfortable point now sits near a third of the way up, and the
+// rest of the range is usable.
+//
+// The DSP byte is treated as linear in amplitude. Nothing establishes that,
+// and if the DSP applies its own curve this is wrong in a way only listening
+// will reveal. It is still better grounded than passing percent through,
+// which assumed the same thing and matched nothing.
+func dspByteForPercent(percent int) int {
+	if percent <= 0 {
+		return 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	// 38 dB, not the softvol plugin's 51. The range is solved from this
+	// unit's two measured points rather than copied: dial 34 has to produce
+	// gain 5, which was the comfortable level, and dial 100 has to produce
+	// 90, which was reported as loud. Copying 51 dB put the comfortable
+	// point at gain 2 and wasted the bottom third of the travel, because the
+	// donor's curve drove a softvol control whose own range differs from
+	// whatever the DSP byte does.
+	const rangeDB = 38.0
+	amplitude := math.Pow(10, (-rangeDB+rangeDB*float64(percent)/100)/20)
+	level := int(math.Round(amplitude * dspMaxByte))
+	// Never silent while the dial is up: the donor's own floor is -51 dB, not
+	// off, and a dial at 1 that plays nothing reads as a fault.
+	if level < 1 {
+		level = 1
+	}
+	return level
+}
+
 func (controller *dspVolumeController) pushVolume(
 	ctx context.Context,
 	level int,
@@ -445,6 +505,9 @@ func (controller *dspVolumeController) pushVolume(
 	if controller.caller == "" || controller.dspProcedure == "" {
 		return nil
 	}
+	// The dial position becomes a DSP gain here, on the donor's curve, so
+	// every caller that pushes a level gets the same mapping.
+	level = dspByteForPercent(level)
 	if level < 0 || level > 0xff {
 		return fmt.Errorf("level %d is outside the DSP byte range", level)
 	}

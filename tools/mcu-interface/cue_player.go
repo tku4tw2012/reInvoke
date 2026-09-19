@@ -22,6 +22,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,9 +49,10 @@ const (
 //
 // The number is measured, not chosen. On 2026-09-19 the startup chime was
 // played on this unit at DSP gain 5 at half and quarter of its own peak, and
-// the listener picked half: 10008 of a 20016 peak. cueGain multiplies this
-// constant by volume over one hundred, so 200000 at volume 5 asks for 10000,
-// which is that level.
+// the listener picked half: 10008 of a 20016 peak. cueGain scales this
+// constant by the dial amplitude, and the dial position that produces gain 5
+// on the donor curve is 34, whose amplitude is 0.055719, so 179617 asks for
+// 10008 there.
 //
 // It was 1200, which was measured the same way but against DSP gain 80. That
 // gain was itself wrong, a leftover from when the level rode an ALSA softvol
@@ -62,7 +64,20 @@ const (
 // music. This runtime plays them to the hardware device instead, because the
 // music PCM does not exist until the donor stack starts and a boot cue has to
 // play before that.
-var cueTargetPeak = 200000.0
+// dialAmplitude is the donor curve, shared with the volume controller so a
+// cue and the music it accompanies move together.
+func dialAmplitude(percent int) float64 {
+	if percent <= 0 {
+		return 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	const rangeDB = 38.0
+	return math.Pow(10, (-rangeDB+rangeDB*float64(percent)/100)/20)
+}
+
+var cueTargetPeak = 179617.0
 
 // cueMaxPeak is the loudest a scaled cue may be, short of full scale so the
 // arithmetic cannot clip.
@@ -201,7 +216,12 @@ func cueGain(volume int, peak int) float64 {
 	if volume > 100 {
 		volume = 100
 	}
-	target := cueTargetPeak * float64(volume) / 100
+	// The dial follows the donor's curve, so a cue has to as well. Scaling
+	// by raw percent made the chime loudest where the dial was only a third
+	// up: at dial 34, which is the comfortable listening point on this unit,
+	// it asked for 68000 and clamped to the ceiling, roughly three times the
+	// level that was measured as right.
+	target := cueTargetPeak * dialAmplitude(volume)
 	// Clamp what is asked for, not the gain that delivers it.
 	//
 	// Capping the gain at 1 meant a cue could only ever be turned down, so a
