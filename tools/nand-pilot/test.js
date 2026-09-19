@@ -129,6 +129,22 @@ try {
   // as the driver's compiled-in 0123456789ABCDEF in adb devices while every
   // file on the device reads correctly. Observed exactly that way on this unit.
   {
+    // The recovery path sets the same three strings in common.sh, and has
+    // the same ordering requirement. It went unguarded while the runtime was
+    // guarded, which is how it shipped for releases enumerating as the
+    // driver's own Android/0123456789ABCDEF.
+    {
+      const bsl = fs.readFileSync(path.join(__dirname, 'common.sh'), 'utf8');
+      const enableAt = bsl.indexOf('echo 1 >"${gadget}/enable"');
+      assert(enableAt > 0, 'common.sh never enables the gadget');
+      for (const name of ['iSerial', 'iProduct', 'iManufacturer']) {
+        const at = bsl.indexOf(`>"\${gadget}/${name}"`);
+        assert(at > 0, `common.sh never writes ${name}`);
+        assert(at < enableAt,
+          `${name} is written after the gadget is enabled; the host caches ` +
+          'string descriptors at enumeration and will not see it');
+      }
+    }
     const up = fs.readFileSync(path.join(__dirname, 'usb-adb-start.sh'), 'utf8');
     const enable = up.indexOf('> "${USB_ADB_GADGET}/enable"');
     assert(enable >= 0, 'usb-adb-start.sh never enables the gadget');
