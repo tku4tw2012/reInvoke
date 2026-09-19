@@ -97,6 +97,19 @@ the level. The fade is retained behind `--softvol-control` and is off by
 default. Restoring it is open work: it would make volume changes fade rather
 than step, and move the user's level off DSP gain.
 
+Because the level now lands on DSP gain, its scale is the DSP's and not the
+vendor's percentage. Measured on this unit on 2026-09-19 by playing an
+unattenuated cue and asking the listener: gain 3 was slightly quiet, gain 5
+was right, and `defaultVolume` is 5. The startup chime is scaled separately
+to half of its own peak at that gain, which is `cueTargetPeak` of 200000.
+
+Those two numbers only mean anything together. The build shipped
+`defaultVolume` of 80 for several releases, which was the vendor's
+`current_volume` and correct while the level rode softvol; when softvol was
+disabled the number stayed, so the unit booted at 80 on a scale where 3 is
+comfortable and 90 is loud. Nothing revealed it because music was never
+played on those builds and the chime had its own attenuation.
+
 ### Bluetooth audio rendering
 
 The donor stack calls `defaultServiceManager()` from its A2DP
