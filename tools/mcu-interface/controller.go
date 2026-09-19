@@ -4,6 +4,7 @@
 package main
 
 import (
+	"log"
 	"context"
 	"errors"
 	"fmt"
@@ -43,6 +44,7 @@ type hardware interface {
 type controller struct {
 	hardware hardware
 	sleep    func(time.Duration)
+	logf     func(string, ...interface{})
 
 	mu          sync.Mutex
 	initialized bool
@@ -54,6 +56,7 @@ func newController(hw hardware) *controller {
 	return &controller{
 		hardware: hw,
 		sleep:    time.Sleep,
+		logf:     log.Printf,
 		ampMuted: true,
 		dacMuted: true,
 	}
@@ -131,14 +134,40 @@ func (c *controller) initialize() error {
 // It is a single ordered step at a known-quiet moment, not a policy: nothing
 // polls, nothing re-mutes, and muteampcontrol/mutedaccontrol remain the only
 // other things that touch these bits.
+// outputSettleDelay is how long the outputs stay muted after whatever last
+// disturbed the audio path.
+//
+// Taken from the donor, not chosen. Its unmute path calls usleep with
+// r0 = 0x000F4240, which is 1,000,000 microseconds, immediately before the two
+// expander writes that clear the DAC and amplifier mute bits. Nothing else
+// separates those writes: the delay is in front of the pair.
+//
+// This runtime had no delay and opened the outputs as soon as the DSP accepted
+// a level, which is a gain change, which is a transient. The listener reported
+// a loud pop at every start, and the original speaker did not do that.
+const outputSettleDelay = time.Second
+
 func (c *controller) OpenOutputs() error {
+	// Outside the lock: nothing else touches these bits at startup, and
+	// holding the bus for a second would block the heartbeat.
+	c.sleep(outputSettleDelay)
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.setDACMuteLocked(false); err != nil {
 		return fmt.Errorf("unmute DAC: %w", err)
 	}
+	if c.logf != nil {
+		c.logf("OUTPUTS_DAC_OPEN")
+	}
 	if err := c.setAmpMuteLocked(false); err != nil {
 		return fmt.Errorf("unmute amplifier: %w", err)
+	}
+	// Logged either side of the amplifier, not once at the end. The listener
+	// reports two sounds at startup, a click then a pop, and a single line
+	// cannot tell which bit produced which.
+	if c.logf != nil {
+		c.logf("OUTPUTS_AMP_OPEN")
 	}
 	return nil
 }

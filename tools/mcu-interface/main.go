@@ -429,7 +429,7 @@ func main() {
 		playbackStatus: *playbackStatus,
 		logf:           log.Printf,
 	}
-	log.Print("hardware initialized; outputs open")
+	log.Print("hardware initialized; outputs muted until the DSP is ready")
 	heartbeatDone := make(chan error, 1)
 	go func() {
 		err := runMCUHeartbeat(ctx, bus, mcuHeartbeatInterval)

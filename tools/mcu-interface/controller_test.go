@@ -277,6 +277,34 @@ func TestInitializationLeavesOutputsMuted(t *testing.T) {
 
 // TestOpenOutputsUnmutesDACBeforeAmplifier proves the speaker becomes audible
 // on demand, and in the order the hardware requires.
+// TestOpenOutputsWaitsBeforeUnmuting proves the outputs are not opened into
+// whatever just disturbed the audio path.
+//
+// The donor's unmute path calls usleep(1000000) immediately before the two
+// expander writes. This runtime had no delay and unmuted the moment the DSP
+// accepted a level, which is itself a gain change, and the listener heard a
+// loud pop at every start that the original speaker did not make.
+func TestOpenOutputsWaitsBeforeUnmuting(t *testing.T) {
+	hardware := newRecordingHardware(0x00)
+	control := newController(hardware)
+	var slept time.Duration
+	control.sleep = func(d time.Duration) { slept += d }
+	control.logf = nil
+	if err := control.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	settleBefore := slept
+
+	if err := control.OpenOutputs(); err != nil {
+		t.Fatal(err)
+	}
+
+	if slept-settleBefore < time.Second {
+		t.Fatalf("OpenOutputs waited %v before unmuting, want at least 1s",
+			slept-settleBefore)
+	}
+}
+
 func TestOpenOutputsUnmutesDACBeforeAmplifier(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
 	control := newController(hardware)
