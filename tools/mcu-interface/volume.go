@@ -52,6 +52,9 @@ type dspVolumeController struct {
 	// nil and the subprocess caller is used.
 	push func(context.Context, int) error
 
+	// atMax plays the cue for reaching maximum volume, once per arrival.
+	atMax func()
+
 	// ring draws the volume arc on the LED ring. The microcontroller renders
 	// it from the level; nothing here draws segments.
 	ring interface{ ShowVolume(int) error }
@@ -200,6 +203,9 @@ func (controller *dspVolumeController) Apply(
 	_, err = controller.AdjustVolume(ctx, delta)
 	return err
 }
+
+// maxVolume is the top of the rotary range.
+const maxVolume = 100
 
 func clampVolume(percent int) int {
 	if percent < 0 {
@@ -489,7 +495,21 @@ func (controller *dspVolumeController) AdjustVolume(
 ) (volumeSnapshot, error) {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
+	was := controller.volume
 	controller.volume = clampVolume(controller.volume + delta)
+	// Volume_Max ships in the donor's own sounds directory and this plays it
+	// on arriving at the top of the range, not while sitting there, so
+	// turning further does not repeat it.
+	//
+	// No donor binary references this file by name, but none references
+	// Power_On, BT_Pairing or BT_Connected either, and those are wired. The
+	// evidence for all four is the same: the vendor shipped them in
+	// usr/share/sounds/podium with names that say when they belong. Refusing
+	// this one alone was inconsistent, not cautious.
+	if controller.volume == maxVolume && was != maxVolume &&
+		controller.atMax != nil {
+		controller.atMax()
+	}
 	if err := controller.applyLocked(ctx); err != nil {
 		return controller.snapshotLocked(), err
 	}

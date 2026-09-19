@@ -315,6 +315,9 @@ func main() {
 		// is why no volume animation exists in the lights directory while
 		// every other cue does. Without this the dial moves silently.
 		media.ring = appearance
+		// The cue for reaching the top of the range. Rendered asynchronously
+		// so a rotary sweep is never waiting on audio.
+		media.atMax = func() { cues.PlayAsync(ctx, "Volume_Max") }
 	}
 	// Open the speaker, then play Harman's own startup chime from the
 	// installed rootfs.

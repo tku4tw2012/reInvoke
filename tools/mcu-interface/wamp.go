@@ -843,9 +843,17 @@ func mediaVolumeState(snapshot volumeSnapshot) map[string]interface{} {
 			"mute":   mute,
 			"volume": uint64(snapshot.Volume),
 		},
+		// System sounds reach the speaker through the same DSP gain as music,
+		// so they play at the music level and this reports it.
+		//
+		// It reported a fixed 70 until 05.8.13. That number is in none of the
+		// 205 defaults recovered from the vendor's caldata/FENV.bin, which
+		// carries current_volume and no system equivalent, so it was invented
+		// and then published over a compatibility interface as though it
+		// meant something.
 		"system": map[string]interface{}{
-			"mute":   uint64(0),
-			"volume": uint64(70),
+			"mute":   mute,
+			"volume": uint64(snapshot.Volume),
 		},
 	}
 }

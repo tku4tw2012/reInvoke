@@ -294,3 +294,53 @@ func TestRingIsDrawnOnlyForAVolumeChange(t *testing.T) {
 		t.Fatalf("one change drew the ring %d times, want 1", drawn)
 	}
 }
+
+// TestVolumeMaxCuePlaysOnArrivalOnly proves the cue for reaching the top of
+// the range fires when it is reached and not while sitting there.
+//
+// Volume_Max ships in the donor's sounds directory and was installed by every
+// build without anything ever playing it. No donor binary names it, but none
+// names Power_On, BT_Pairing or BT_Connected either, and those are wired from
+// their filenames; the evidence for all four is identical.
+func TestVolumeMaxCuePlaysOnArrivalOnly(t *testing.T) {
+	controller := newTestVolumeController(t)
+	controller.push = func(context.Context, int) error { return nil }
+	played := 0
+	controller.atMax = func() { played++ }
+	ctx := context.Background()
+
+	if _, err := controller.SetVolume(ctx, maxVolume-2); err != nil {
+		t.Fatal(err)
+	}
+	if played != 0 {
+		t.Fatalf("cue played %d times below maximum", played)
+	}
+
+	if _, err := controller.AdjustVolume(ctx, 5); err != nil {
+		t.Fatal(err)
+	}
+	if played != 1 {
+		t.Fatalf("cue played %d times on reaching maximum, want 1", played)
+	}
+
+	// Still turning up at the top must not repeat it.
+	for i := 0; i < 3; i++ {
+		if _, err := controller.AdjustVolume(ctx, 5); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if played != 1 {
+		t.Fatalf("cue repeated while sitting at maximum: %d plays", played)
+	}
+
+	// Leaving and returning plays it again.
+	if _, err := controller.AdjustVolume(ctx, -10); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := controller.AdjustVolume(ctx, 20); err != nil {
+		t.Fatal(err)
+	}
+	if played != 2 {
+		t.Fatalf("returning to maximum played %d times, want 2", played)
+	}
+}
