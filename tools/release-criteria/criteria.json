@@ -1,0 +1,153 @@
+{
+  "purpose": "Boot and flash success criteria as checks rather than prose. Prose describing a good boot has drifted repeatedly in this project: it claimed eight services when there were thirty-four, recorded the chime as failed after it played, and the ring count as unexplained after it was explained. A check cannot drift silently. If the runtime changes, the check fails and names what changed.",
+  "evidence": {
+    "boot": "candidate 05.8.11 on hardware, 2026-09-18, /run/reinvoke/logs/runtime.log",
+    "flash": "reinvoke-archive/evidence/flash-05811b-2114, u2nand succeed 2026-09-18"
+  },
+  "boot": [
+    {
+      "id": "mcu-hardware-init",
+      "pattern": "hardware initialized",
+      "expect": "present",
+      "why": "The MCU service reached the end of DAC initialisation. Nothing else in the boot works without it."
+    },
+    {
+      "id": "front-indicator-offline",
+      "pattern": "FRONT_INDICATOR offline",
+      "expect": "present",
+      "why": "The front lamp is driven at boot, before the network is up."
+    },
+    {
+      "id": "front-indicator-online",
+      "pattern": "FRONT_INDICATOR online",
+      "expect": "present",
+      "why": "Wi-Fi associated and the lamp followed. Proves the network path, not just the lamp."
+    },
+    {
+      "id": "dsp-bootup",
+      "pattern": "EVENT_DSP_BOOTUP",
+      "expect": "present",
+      "why": "The DSP loaded its firmware and announced itself over SPI."
+    },
+    {
+      "id": "dsp-accepted-volume",
+      "pattern": "completed com.harman.dsp.volumeSet",
+      "expect": "present",
+      "why": "A level actually reached the DSP. Without it the speaker plays at whatever gain the DSP powered up with, which is inaudible in practice."
+    },
+    {
+      "id": "startup-chime-rendered",
+      "pattern": "CUE_PLAYED Power_On",
+      "expect": "present",
+      "why": "The chime rendered. This line is NOT proof of sound: it was logged for weeks while the speaker was silent, because the cue ran before the DSP was up. Necessary, not sufficient. The listener check is the proof."
+    },
+    {
+      "id": "chime-not-skipped",
+      "pattern": "CUE_SKIPPED",
+      "expect": "absent",
+      "why": "A skipped cue means the DSP never accepted a level within the timeout."
+    },
+    {
+      "id": "no-volume-arc-at-boot",
+      "pattern": "RING_ARC",
+      "expect": "absent",
+      "why": "The ring follows volume changes, as the donor did. Drawing it on every apply attempt made the boot illumination count a readout of DSP latency."
+    },
+    {
+      "id": "identifiers-present",
+      "pattern": "fork/exec /bin/reinvoke-identifiers",
+      "expect": "absent",
+      "why": "Omitting the Bluedroid config produced a complete-looking build with no identifiers binary. Every volume apply failed and the chime never played."
+    },
+    {
+      "id": "softvol-not-failing",
+      "pattern": "fade softvol",
+      "expect": "absent",
+      "why": "No softvol plugin exists on this runtime and the default pointed at the Loopback card, so the fade failed on every volume change."
+    }
+  ],
+  "device": [
+    {
+      "id": "service-count",
+      "check": "pid-count",
+      "minimum": 30,
+      "why": "Thirty-four on a healthy 05.8.11 boot. A build missing Bluedroid showed twenty-eight and reported success everywhere else."
+    },
+    {
+      "id": "usb-serial",
+      "check": "gadget-string",
+      "attribute": "iSerial",
+      "reject": "0123456789ABCDEF",
+      "why": "The gadget driver ships this default. A unit still reporting it has never been configured, and adb -s cannot address one of several."
+    },
+    {
+      "id": "usb-product",
+      "check": "gadget-string",
+      "attribute": "iProduct",
+      "reject": "Android",
+      "why": "The gadget driver ships the product string Android. A unit reporting it has never been configured, so several speakers are indistinguishable in adb devices and in dmesg."
+    },
+    {
+      "id": "usb-manufacturer",
+      "check": "gadget-string",
+      "attribute": "iManufacturer",
+      "reject": "Android",
+      "why": "The gadget driver ships the manufacturer string Android. android_bind writes placeholders into all three descriptor strings and exposes the attributes so the product replaces them; two of the three were replaced for a while and this one was missed."
+    }
+  ],
+  "flash": [
+    {
+      "id": "staging-withholds-08",
+      "check": "file-absent",
+      "path": "08_IMAGE",
+      "why": "A device that has not entered recovery asks for 0x08 and resumes its normal boot once answered. Serving it cost twelve consecutive failed entries; withholding it reached iROM on the next attempt."
+    },
+    {
+      "id": "size-record-matches",
+      "check": "07-matches-83",
+      "why": "07_IMAGE is a four-byte little-endian size of 83_IMAGE. The known-good copy carries the size of 82_IMAGE instead, which does not apply."
+    },
+    {
+      "id": "irom-bootstrap",
+      "pattern": "USB_Boot",
+      "expect": "present",
+      "source": "console",
+      "why": "The iROM took the bootstrap. Subclass is NOT the signal: successful traces include both FE and FF, and treating FF as a gate caused a live flash to be reported as a failure."
+    },
+    {
+      "id": "uboot-prompt",
+      "pattern": "MV88DE3100",
+      "expect": "present",
+      "source": "console",
+      "why": "The U-Boot prompt. The console driver waits for this before sending anything, so without it nothing can be written."
+    },
+    {
+      "id": "write-command-sent",
+      "pattern": "sent l2nand 83",
+      "expect": "present",
+      "source": "arm",
+      "why": "The write command reached the device."
+    },
+    {
+      "id": "write-succeeded",
+      "pattern": "u2nand succeed",
+      "expect": "present",
+      "source": "arm",
+      "why": "The only line that means NAND was written. Repeated 0x08 requests before it are normal and do not indicate failure."
+    }
+  ],
+  "listener": [
+    {
+      "id": "chime-audible",
+      "why": "A person hears the startup chime. No log line establishes this: CUE_PLAYED was logged for weeks while the speaker was silent."
+    },
+    {
+      "id": "ring-swirl-only",
+      "why": "A person sees the boot swirl and no volume arc."
+    },
+    {
+      "id": "no-startup-pops",
+      "why": "A person hears no pops during startup. Opening the outputs during initialisation put the amplifier live for DSP bootup and the first gain change, which was audible on this unit."
+    }
+  ]
+}
