@@ -66,12 +66,12 @@ func TestDecodeWAVAcceptsTheDonorShape(t *testing.T) {
 // rather than played as if they were something else.
 func TestDecodeWAVRefusesWhatItCannotPlay(t *testing.T) {
 	cases := map[string][]byte{
-		"not a riff":     []byte("this is not audio at all"),
-		"empty":          {},
-		"24 bit":         buildWAV(1, 22050, 24, pcm16(1, 2, 3)),
-		"four channels":  buildWAV(4, 22050, 16, pcm16(1, 2, 3, 4)),
-		"absurd rate":    buildWAV(1, 5, 16, pcm16(1, 2)),
-		"no data chunk":  buildWAV(1, 22050, 16, nil)[:36],
+		"not a riff":    []byte("this is not audio at all"),
+		"empty":         {},
+		"24 bit":        buildWAV(1, 22050, 24, pcm16(1, 2, 3)),
+		"four channels": buildWAV(4, 22050, 16, pcm16(1, 2, 3, 4)),
+		"absurd rate":   buildWAV(1, 5, 16, pcm16(1, 2)),
+		"no data chunk": buildWAV(1, 22050, 16, nil)[:36],
 	}
 	for name, data := range cases {
 		if _, err := decodeWAV(data); err == nil {
@@ -116,24 +116,56 @@ func TestScaleSamplesAttenuatesExactly(t *testing.T) {
 // the same level. The donor's own cues range from 5 percent of full scale to
 // 100 percent, so a single gain would make some inaudible and others painful.
 func TestCueGainNormalisesByPeak(t *testing.T) {
-	quiet := cueGain(100, 1703)  // S_301_d_micoff, 5 percent of full scale
-	loud := cueGain(100, 32767)  // S_311_d_pluggedin, mastered to full scale
+	quiet := cueGain(100, 1703) // S_301_d_micoff, 5 percent of full scale
+	loud := cueGain(100, 32767) // S_311_d_pluggedin, mastered to full scale
 	quietPeak := 1703 * quiet
 	loudPeak := 32767 * loud
 	if diff := quietPeak - loudPeak; diff > 1 || diff < -1 {
 		t.Fatalf("normalised peaks differ: %.1f vs %.1f", quietPeak, loudPeak)
 	}
 
-	// Volume scales the target.
-	if half := cueGain(50, 32767); half >= cueGain(100, 32767) {
+	// Volume scales the target, below the level where the clamp takes over.
+	// Above that the samples are already as loud as they may safely be and
+	// only the DSP carries further volume.
+	below := int(cueMaxPeak*100/cueTargetPeak) / 2
+	if half := cueGain(below, 32767); half >= cueGain(below*2, 32767) {
 		t.Fatal("halving the volume did not lower the gain")
 	}
 	if cueGain(0, 32767) != 0 {
 		t.Fatal("volume zero should be silent")
 	}
-	// A cue quieter than the target is never amplified.
-	if g := cueGain(100, 10); g > 1 {
-		t.Fatalf("gain %v would amplify a very quiet cue", g)
+	// Scaling never asks for more than a sample can hold, at any volume or
+	// any source peak, so boosting a quiet cue cannot clip.
+	for _, volume := range []int{1, 5, 20, 50, 100} {
+		for _, peak := range []int{10, 1703, 20016, 32767} {
+			if scaled := float64(peak) * cueGain(volume, peak); scaled > 32767 {
+				t.Fatalf("volume %d on a %d peak asks for %.0f", volume, peak, scaled)
+			}
+		}
+	}
+}
+
+// TestCueGainLiftsAQuietCue proves normalisation works upward as well as down.
+//
+// The gain was capped at one in two places, so a donor cue mastered at five
+// percent of full scale stayed there while a mastered one was brought down to
+// meet it. That is attenuation, not normalisation, and it only looked right
+// while the target sat below every cue's own peak.
+func TestCueGainLiftsAQuietCue(t *testing.T) {
+	const quietPeak = 1703 // S_301_d_micoff, 5 percent of full scale
+	gain := cueGain(5, quietPeak)
+	if gain <= 1 {
+		t.Fatalf("gain %v leaves a five percent cue where it was", gain)
+	}
+	lifted := float64(quietPeak) * gain
+	if lifted > 32767 {
+		t.Fatalf("lifting a quiet cue asks for %.0f", lifted)
+	}
+	// And the samples must actually move, not just the number.
+	samples := pcm16(quietPeak, -quietPeak)
+	scaleSamples(samples, gain)
+	if samplePeak(samples) <= quietPeak {
+		t.Fatal("scaleSamples ignored a gain above one")
 	}
 }
 
@@ -186,10 +218,17 @@ func TestPlayRendersThroughTheConfiguredPlayer(t *testing.T) {
 	if len(rendered) != 6 {
 		t.Fatalf("renderer received %d bytes, want 6", len(rendered))
 	}
-	// The loudest sample must have been brought down to the target.
+	// The loudest sample must sit at whatever was asked for, which at full
+	// volume is the clamp rather than the target: cueTargetPeak is calibrated
+	// against the DSP gain this unit boots at, and at volume 100 it asks for
+	// far more than a sample can hold.
+	want := cueTargetPeak
+	if want > cueMaxPeak {
+		want = cueMaxPeak
+	}
 	peak := samplePeak(rendered)
-	if peak > int(cueTargetPeak)+1 || peak < int(cueTargetPeak)-1 {
-		t.Fatalf("rendered peak %d, want about %v", peak, cueTargetPeak)
+	if peak > int(want)+1 || peak < int(want)-1 {
+		t.Fatalf("rendered peak %d, want about %v", peak, want)
 	}
 }
 

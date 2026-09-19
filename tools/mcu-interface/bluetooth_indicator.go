@@ -21,11 +21,11 @@ type bluetoothIndicatorController interface {
 }
 
 type bluetoothStateWatcher struct {
-	path           string
-	indicator      bluetoothIndicatorController
+	path      string
+	indicator bluetoothIndicatorController
 	// cues plays the donor's pairing and connected sounds on the same state
 	// change that drives the rear indicator.
-	cues *cuePlayer
+	cues           *cuePlayer
 	interval       time.Duration
 	readFile       func(string) ([]byte, error)
 	logf           func(string, ...interface{})

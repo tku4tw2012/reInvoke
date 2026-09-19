@@ -42,9 +42,9 @@ type networkIndicatorState struct {
 }
 
 var (
-	networkOnline      = networkIndicatorState{"online", "on", "white"}
+	networkOnline       = networkIndicatorState{"online", "on", "white"}
 	networkProvisioning = networkIndicatorState{"wifi-setup", "fast-blink", "amber"}
-	networkOffline     = networkIndicatorState{"offline", "on", "amber"}
+	networkOffline      = networkIndicatorState{"offline", "on", "amber"}
 )
 
 // provisioningMarkerPath exists while the setup access point is open. The

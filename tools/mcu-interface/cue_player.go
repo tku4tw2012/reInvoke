@@ -46,16 +46,27 @@ const (
 // all of them would make some inaudible and others painful, so each cue is
 // peak-normalised instead and the user's volume scales that.
 //
-// The number comes from measurement on this unit, not from a rule. Played at
-// 5% of full scale the boot cue was reported as far too loud; peak-normalised
-// to roughly 2.7% it was acceptable. 1200 at volume 100 puts the usual
-// listening setting of 80 just under that measured point.
+// The number is measured, not chosen. On 2026-09-19 the startup chime was
+// played on this unit at DSP gain 5 at half and quarter of its own peak, and
+// the listener picked half: 10008 of a 20016 peak. cueGain multiplies this
+// constant by volume over one hundred, so 200000 at volume 5 asks for 10000,
+// which is that level.
+//
+// It was 1200, which was measured the same way but against DSP gain 80. That
+// gain was itself wrong, a leftover from when the level rode an ALSA softvol
+// control, and correcting it to 5 made the old constant sixteen times too
+// quiet. The two numbers have to move together: this one only means anything
+// relative to the gain the DSP is running at.
 //
 // The donor needed none of this: it rendered cues through the same softvol as
 // music. This runtime plays them to the hardware device instead, because the
 // music PCM does not exist until the donor stack starts and a boot cue has to
 // play before that.
-var cueTargetPeak = 1200.0
+var cueTargetPeak = 200000.0
+
+// cueMaxPeak is the loudest a scaled cue may be, short of full scale so the
+// arithmetic cannot clip.
+const cueMaxPeak = 29000.0
 
 type cuePlayer struct {
 	directory string
@@ -137,7 +148,14 @@ func decodeWAV(data []byte) (wavPCM, error) {
 // sign flip, which is exactly the click a speaker should never be asked to
 // reproduce.
 func scaleSamples(samples []byte, gain float64) {
-	if gain >= 1 {
+	// Gains above one are applied, not ignored.
+	//
+	// This used to return early on any gain of one or more, which quietly
+	// undid half of the normalisation: cueGain could ask for a quiet cue to
+	// be brought up and nothing here would do it. The clamp below is what
+	// keeps that safe, and cueGain never asks for more than a sample can
+	// hold anyway.
+	if gain == 1 {
 		return
 	}
 	if gain <= 0 {
@@ -184,11 +202,21 @@ func cueGain(volume int, peak int) float64 {
 		volume = 100
 	}
 	target := cueTargetPeak * float64(volume) / 100
-	gain := target / float64(peak)
-	if gain > 1 {
-		return 1
+	// Clamp what is asked for, not the gain that delivers it.
+	//
+	// Capping the gain at 1 meant a cue could only ever be turned down, so a
+	// donor cue mastered at 5 percent of full scale stayed at 5 percent while
+	// one mastered at 100 percent was brought down to meet it. That is not
+	// normalisation, it is attenuation, and it only looked correct while the
+	// target happened to sit below every cue's own peak.
+	//
+	// Clamping the target keeps the arithmetic safe instead: the scaled peak
+	// is the target, and the target never exceeds what a sample can hold, so
+	// boosting a quiet cue cannot clip.
+	if target > cueMaxPeak {
+		target = cueMaxPeak
 	}
-	return gain
+	return target / float64(peak)
 }
 
 // Play renders one named cue. A cue already playing is cancelled first: these

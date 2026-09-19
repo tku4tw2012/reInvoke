@@ -140,7 +140,21 @@ func (state duckState) String() string {
 // here because the level was being applied to DSP gain, where the comfortable
 // point was around 3; on the softvol control this is a percentage of the
 // vendor's own scale.
-const defaultVolume = 80
+// defaultVolume is the level a unit starts at with nothing stored.
+//
+// Measured on this unit, 2026-09-19, by playing an unattenuated cue through
+// the DSP and asking the listener: gain 3 was slightly quiet and gain 5 was
+// right. That is the level music plays at, because music reaches the DSP
+// without the attenuation the cue player applies to its own files.
+//
+// It was 80 for several releases, which was correct only for a control that
+// no longer exists. Candidate d75dccf adopted the vendor's own current_volume
+// of 80 while volume rode an ALSA softvol control, where the number is a
+// percentage of the vendor's scale. That commit said so plainly: "the
+// comfortable point was near 3" when the level went to DSP gain instead.
+// Softvol was later found to be absent on this runtime and disabled, which
+// put the level back on DSP gain without anyone moving the number back.
+const defaultVolume = 5
 
 const (
 	// volumePushTimeout bounds one call to the DSP service.

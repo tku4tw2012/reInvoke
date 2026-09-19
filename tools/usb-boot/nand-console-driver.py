@@ -78,7 +78,6 @@ def run(
     seen = bytearray()
     attempted = False
     sent = False
-    nudged = 0.0
     recording_error: str | None = None
 
     def recording_failed(message: str, cause: OSError | None = None) -> None:
@@ -156,9 +155,17 @@ def run(
                     sock.sendall(command.encode() + b"\r\n")
                     sent = True
                     say(f"sent {command}")
-                elif not attempted and time.monotonic() - nudged > 3:
-                    nudged = time.monotonic()
-                    sock.sendall(b"\r\n")
+                # Nothing is sent while waiting. This used to nudge the
+                # device with a newline every three seconds, which puts bytes
+                # into the recovery handshake at moments nobody chose. The
+                # tooling that was reliable for the whole RAM-boot era never
+                # did it: uboot-console.py forwards what an operator writes
+                # and nothing else. Of the runs recorded here, the only one
+                # that reached iROM without a single unsolicited byte reached
+                # it in two attempts; the runs that nudged took nine, or never
+                # arrived at all. That is correlation rather than proof, but
+                # the nudge buys nothing, and seize-then-flash.sh probes
+                # deliberately once the console is already talking.
         except OSError as exc:
             # Reconnect rather than exit: the write may already be running on
             # the device, and the confirmation only arrives on the console.
