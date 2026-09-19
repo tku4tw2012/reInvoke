@@ -97,11 +97,23 @@ the level. The fade is retained behind `--softvol-control` and is off by
 default. Restoring it is open work: it would make volume changes fade rather
 than step, and move the user's level off DSP gain.
 
-Because the level now lands on DSP gain, its scale is the DSP's and not the
-vendor's percentage. Measured on this unit on 2026-09-19 by playing an
-unattenuated cue and asking the listener: gain 3 was slightly quiet, gain 5
-was right, and `defaultVolume` is 5. The startup chime is scaled separately
-to half of its own peak at that gain, which is `cueTargetPeak` of 200000.
+Because the level lands on DSP gain, the dial carries the donor's curve
+itself. That control was declared in `etc/asound-product.conf` as a plain
+`type softvol` with no `min_dB`, `max_dB` or `resolution`, so it took the
+plugin defaults of 0..255 over 51 dB, which this project confirmed against
+the hardware at numid 97 in 0.2 dB steps. Percent went onto it linearly, so
+the dial was linear in decibels and logarithmic in amplitude.
+
+The curve here is anchored to this unit rather than copied: its range is
+solved so that dial 34 produces gain 5, measured as comfortable on
+2026-09-19, and dial 100 produces 90, reported as loud. Copying the plugin's
+own 51 dB put the comfortable point at gain 2. `defaultVolume` is 34 and the
+startup chime follows the same curve, with `cueTargetPeak` set so it renders
+at the peak measured as right at that position.
+
+Passing percent straight through, as builds before 05.8.13 did, made the dial
+linear in amplitude: the comfortable point sat at 5 of 100, so almost the
+whole travel was above it.
 
 Those two numbers only mean anything together. The build shipped
 `defaultVolume` of 80 for several releases, which was the vendor's
