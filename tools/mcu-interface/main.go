@@ -316,24 +316,46 @@ func main() {
 		// every other cue does. Without this the dial moves silently.
 		media.ring = appearance
 	}
-	// Harman's own startup chime, from the installed rootfs. Identified by ear
-	// against the other candidates in that image.
+	// Open the speaker, then play Harman's own startup chime from the
+	// installed rootfs.
 	//
-	// It waits for the DSP to accept a volume first. The DSP sits between the
-	// DAC and the speaker, and it registers its WAMP procedures several
-	// seconds after this service starts. A cue rendered before that plays
-	// through whatever gain the DSP powered up with: on this unit the
-	// amplifier and DAC were open, the samples were scaled correctly, the
-	// renderer exited cleanly, and nothing was audible.
+	// Both wait for the DSP to accept a volume, and they are in one sequence
+	// so the order is fixed rather than a race between two goroutines woken
+	// by the same signal.
+	//
+	// The outputs are opened here because the donor's initialisation leaves
+	// them muted and its system-manager, which this runtime replaces with
+	// init, is what called muteampcontrol afterwards. Opening them during
+	// initialisation instead put the amplifier live for DSP bootup and for
+	// the first gain change, and both were audible on this unit as pops.
+	//
+	// The chime waits for the same signal because the DSP sits between the
+	// DAC and the speaker. Rendered earlier it plays through whatever gain
+	// the DSP powered up with: the renderer exits cleanly, the log says the
+	// cue played, and nothing is audible.
 	if media != nil {
 		go func() {
 			if !media.WaitApplied(ctx, dspReadyTimeout) {
-				log.Printf("CUE_SKIPPED Power_On: DSP did not accept a volume")
+				// Open them anyway. A speaker that is silent with no way back
+				// except a WAMP call is worse than one pop nobody is there to
+				// hear, and the chime is skipped because there is no DSP to
+				// carry it.
+				log.Print("DSP did not accept a volume; opening outputs anyway")
+				if err := control.OpenOutputs(); err != nil {
+					log.Printf("open outputs: %v", err)
+				}
+				log.Print("CUE_SKIPPED Power_On: DSP did not accept a volume")
 				return
+			}
+			if err := control.OpenOutputs(); err != nil {
+				log.Printf("open outputs: %v", err)
 			}
 			cues.PlayAsync(ctx, "Power_On")
 		}()
 	} else {
+		if err := control.OpenOutputs(); err != nil {
+			log.Printf("open outputs: %v", err)
+		}
 		cues.PlayAsync(ctx, "Power_On")
 	}
 

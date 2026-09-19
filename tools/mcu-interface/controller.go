@@ -106,22 +106,39 @@ func (c *controller) initialize() error {
 
 	c.sleep(2 * time.Second)
 
-	// Open the outputs and leave them open.
+	// The outputs stay muted here, as the donor leaves them.
 	//
-	// The mute above is adopted from the donor, whose own log line at this
-	// point reads "MCU init io expander. mute amp and dac!!!". The donor mutes
-	// both while it brings the IO expander up. It does not keep them muted.
-	// Staying muted afterwards was this project's invention: the amplifier was
-	// held closed until a process holding the ALSA device passed an ownership
-	// test, which meant no sound the runtime did not itself render could reach
-	// the speaker. The amplifier and DAC now follow the explicit mute
-	// procedures and nothing else.
+	// The donor's own log line at this point reads "MCU init io expander.
+	// mute amp and dac!!!", and its initialisation contains no unmute: the
+	// only UnMuting AMP/DAC sites in that binary are the muteampcontrol and
+	// mutedaccontrol WAMP handlers and a power path. Its system-manager is
+	// what calls muteampcontrol, so the DSP powers up behind a muted
+	// amplifier.
+	//
+	// An earlier revision of this comment claimed the donor "does not keep
+	// them muted". That was asserted, not checked, and it is wrong. Opening
+	// the outputs here put the amplifier live for DSP bootup and for the
+	// first gain change, which was audible on this unit as more than one pop
+	// during startup. OpenOutputs is called once the DSP has accepted a
+	// level instead.
 	c.initialized = true
-	if err := c.setAmpMuteLocked(false); err != nil {
-		return fmt.Errorf("unmute amplifier: %w", err)
-	}
+	return nil
+}
+
+// OpenOutputs unmutes the DAC and then the amplifier, once.
+//
+// This runtime ships no system-manager, so nothing else would ever open them.
+// It is a single ordered step at a known-quiet moment, not a policy: nothing
+// polls, nothing re-mutes, and muteampcontrol/mutedaccontrol remain the only
+// other things that touch these bits.
+func (c *controller) OpenOutputs() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if err := c.setDACMuteLocked(false); err != nil {
 		return fmt.Errorf("unmute DAC: %w", err)
+	}
+	if err := c.setAmpMuteLocked(false); err != nil {
+		return fmt.Errorf("unmute amplifier: %w", err)
 	}
 	return nil
 }

@@ -242,9 +242,19 @@ calibration, host-loaded DSP code and reviewed indicators. They are
 checksum-gated dependencies. Persistent MCU firmware remains in place and is
 never upgraded by reInvoke. Bonefish supplies compatibility, not product policy.
 
-The runtime excludes vendor `system-manager`, Bluedroid, `audio-ui`,
+The runtime excludes vendor `system-manager`, `audio-ui`,
 `music-source-manager`, Cortana, OTA updater, crash-dump writers and flash
-utilities. Normal operation needs neither cloud services nor SSH.
+utilities. Normal operation needs neither cloud services nor SSH. The donor
+Bluedroid stack is shipped and supervised; this list said otherwise until
+05.8.11, which was stale rather than a change of intent.
+
+`system-manager` is excluded because it is the vendor's service supervisor:
+it reads `/etc/podium/podium.conf` and starts the router and daemons, which
+`/init` does here instead. It also carried one responsibility unrelated to
+supervision. It is the only donor binary that calls
+`com.harman.vui.muteampcontrol`, so it, and not `mcu-interface`, is what
+opened the amplifier after startup. That duty has to be placed deliberately
+in this runtime; see the amplifier note under "Speaker output".
 
 Two of those exclusions carry contracts this runtime partially answers.
 `audio-ui` owned the system state, registering `com.harman.stateGet` and

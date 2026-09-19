@@ -153,8 +153,10 @@ func TestLiveExpanderValueIsPreservedByInitialization(t *testing.T) {
 	if !sawWrite {
 		t.Fatal("initialization never wrote the expander output")
 	}
-	if last&ampMuteMask != 0 || last&dacMuteMask == 0 {
-		t.Fatalf("initialization left outputs muted: expander = %#x", last)
+	// Initialization leaves them muted, as the donor does. OpenOutputs is
+	// what opens them, once the DSP is ready.
+	if last&ampMuteMask == 0 {
+		t.Fatalf("initialization left the amplifier open: expander = %#x", last)
 	}
 }
 
@@ -247,16 +249,16 @@ func TestShutdownMutesAmplifierBeforeDAC(t *testing.T) {
 	}
 }
 
-// TestInitializationLeavesOutputsOpen proves the speaker is audible once the
-// hardware is initialised, without any process having to claim ownership of
-// the audio device first.
+// TestInitializationLeavesOutputsMuted proves the amplifier is not live while
+// the DSP powers up.
 //
-// This replaces a policy that muted the amplifier whenever ALSA was not
-// running and reopened it only for an approved renderer. That was this
-// project's invention, not donor behaviour, and it silenced every sound the
-// runtime did not itself play. The donor mutes both only while it brings the
-// IO expander up, which is what initialize still does.
-func TestInitializationLeavesOutputsOpen(t *testing.T) {
+// The donor's initialisation mutes both and never unmutes: the only
+// UnMuting AMP/DAC sites in that binary are its muteampcontrol and
+// mutedaccontrol handlers and a power path, and its system-manager is what
+// calls muteampcontrol afterwards. Opening them during initialisation put the
+// amplifier live for DSP bootup and for the first gain change, which was
+// audible on this unit as more than one pop during startup.
+func TestInitializationLeavesOutputsMuted(t *testing.T) {
 	hardware := newRecordingHardware(0x00)
 	control := newController(hardware)
 	control.sleep = func(time.Duration) {}
@@ -265,9 +267,32 @@ func TestInitializationLeavesOutputsOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if !control.ampMuted {
+		t.Fatal("initialization left the amplifier open")
+	}
+	if !control.dacMuted {
+		t.Fatal("initialization left the DAC open")
+	}
+}
+
+// TestOpenOutputsUnmutesDACBeforeAmplifier proves the speaker becomes audible
+// on demand, and in the order the hardware requires.
+func TestOpenOutputsUnmutesDACBeforeAmplifier(t *testing.T) {
+	hardware := newRecordingHardware(0x00)
+	control := newController(hardware)
+	control.sleep = func(time.Duration) {}
+	if err := control.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	start := len(hardware.operations)
+
+	if err := control.OpenOutputs(); err != nil {
+		t.Fatal(err)
+	}
+
 	var last byte
 	var sawWrite bool
-	for _, operation := range hardware.operations {
+	for _, operation := range hardware.operations[start:] {
 		if operation.kind == "write" &&
 			operation.address == expanderAddress &&
 			operation.register == expanderOutput {
@@ -276,15 +301,14 @@ func TestInitializationLeavesOutputsOpen(t *testing.T) {
 		}
 	}
 	if !sawWrite {
-		t.Fatal("initialization never wrote the expander output")
+		t.Fatal("OpenOutputs never wrote the expander output")
 	}
 	if last&ampMuteMask != 0 {
-		t.Fatalf("amplifier left muted: expander = %#x", last)
+		t.Fatalf("amplifier still muted: expander = %#x", last)
 	}
-	// The DAC bit is an enable line, the inverse of the amplifier bit:
-	// writeDACMuteLocked clears it to mute and sets it to unmute.
+	// The DAC bit is an enable line, the inverse of the amplifier bit.
 	if last&dacMuteMask == 0 {
-		t.Fatalf("DAC left muted: expander = %#x", last)
+		t.Fatalf("DAC still muted: expander = %#x", last)
 	}
 	if control.ampMuted || control.dacMuted {
 		t.Fatalf("controller still reports muted: amp=%v dac=%v",

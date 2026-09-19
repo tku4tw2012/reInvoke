@@ -56,9 +56,22 @@ flowchart TB
   DSP["Owned DSP service"] -. "SPI firmware/control" .-> BoardDSP["Board DSP"]
 ```
 
-There is no automatic speaker muting. The amplifier and DAC are opened once
-the DAC is configured and stay open; they change only through the
-`muteampcontrol` and `mutedaccontrol` procedures, and mute again on shutdown.
+There is no automatic speaker muting. The amplifier and DAC are opened once,
+when the DSP accepts its first volume, and then stay open; they change only
+through the `muteampcontrol` and `mutedaccontrol` procedures, and mute again
+on shutdown. Nothing polls and nothing re-mutes.
+
+Initialisation leaves them muted, which is what the donor does: its own log
+line there reads `MCU init io expander. mute amp and dac!!!` and its
+initialisation contains no unmute. The only `UnMuting AMP`/`UnMuting DAC`
+sites in that binary are the `muteampcontrol` and `mutedaccontrol` handlers
+and a power path, and `system-manager` is the only donor binary that calls
+`muteampcontrol`. This runtime replaces `system-manager` with `/init`, so the
+step it performed is performed here instead.
+
+Opening them during initialisation was tried in 05.8.11 and reverted: it put
+the amplifier live for DSP bootup and for the first gain change, both of which
+were audible on this unit as pops during startup.
 
 An earlier design polled ALSA every 100 ms and authorized physical unmute only
 while a lease thread matched `owner_pid` and `/proc/<tid>/exe` resolved to one
