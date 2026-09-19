@@ -108,25 +108,40 @@ The donor never had this. Its `mcu-interface` subscribed to
 draw. The runtime now matches that: the ring is written when the level changes
 and not when it is merely asserted or retried, so a normal boot draws none.
 
-### Whether Bluetooth pairing survives a reboot
+### Bluetooth pairing, tested host-to-speaker
 
-Unverified, and the evidence suggests it does not.
+Tested from the Ubuntu host rather than a phone, because the host is on both
+ends of this project and a phone is not.
 
-The persistence service saves and restores bonds from `/usr/var/lib/bluetooth`
-in BlueZ's `bluetooth/<adapter>/<device>/info` layout. That was correct when
-this runtime used BlueZ. It now uses the donor Bluedroid stack, which keeps
-bonds in `/persist/data1/misc/bluedroid/bt_config.conf` instead, so the
-persistence service is watching a directory nothing writes.
+Established on 05.8.11:
 
-Observed on the running 05.8.11 unit: `/usr/var/lib/bluetooth` is empty, and
-`bt_config.conf` is zero bytes and dated 2018, which is the factory file. The
-persist partition itself is mounted read-write and is writable, so the store
-has somewhere to go; nothing has put anything there.
+| Fact | Evidence |
+| --- | --- |
+| Bluedroid stores bonds in `/home/galois_rwdata/misc/bluedroid/bt_config.conf` | bind mount of mtdblock11, written during the boot under test |
+| The speaker advertises `Advanced Audio Sink` and AVRCP **only while the pairing window is open** | `sdptool browse` returned GATT alone with the window shut, and the audio services with it open |
+| Pairing inside the window stores a real bond | `bt_config.conf` grew 778 to 1219 bytes with a `[the-paired-host]` section carrying `LinkKey` |
+| The bond survives a reboot | 1218 bytes and the same section after `adb reboot` |
 
-This has not been tested. The test is small and needs a person: pair a phone,
-confirm audio, power cycle, and see whether it reconnects without pairing
-again. Until then, treat "Bluetooth pairing and playback: verified" in the
-table above as belonging to the BlueZ era, not to this build.
+An earlier revision of this section said pairing was not persisted at all.
+That was wrong twice over: it read `/persist/data1/misc/bluedroid`, which is
+not the path Bluedroid uses, and the one pairing attempt behind it was made
+after the window had already closed, which is why it failed with
+`br-connection-unknown`. The correction is recorded rather than quietly
+replaced because this is the same failure the audit exists to catch: a claim
+that was checked carelessly and then written down as fact.
+
+Still unestablished:
+
+* **Reconnection after a reboot.** The speaker kept its bond; the host did not
+  keep its own, so there was nothing to reconnect from. Whether that is a
+  BlueZ-side artefact of pairing over LE (`bluetoothctl` resolved only the
+  `0x1800`/`0x1801` GATT services) or a real defect is unknown.
+* **Whether audio flows.** No stream was ever started. Pairing is not playback.
+
+The persistence service is a separate matter and the earlier note about it
+stands: it saves and restores BlueZ-format bonds from `/usr/var/lib/bluetooth`,
+which is empty, because Bluedroid does not use that path. That code is
+vestigial, not load-bearing, and Bluetooth pairing persists without it.
 
 ### Donor claims in code comments that cite no evidence
 
