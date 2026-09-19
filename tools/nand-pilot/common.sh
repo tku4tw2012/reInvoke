@@ -44,6 +44,7 @@ configure_adb() {
   if [ "$(${BB} cat "${gadget}/enable" 2>/dev/null)" = 1 ] &&
      [ "$(${BB} cat "${gadget}/functions" 2>/dev/null)" = "${usb_functions}" ] &&
      [ "$(${BB} cat "${gadget}/iProduct" 2>/dev/null)" = "$1" ] &&
+     [ "$(${BB} cat "${gadget}/iSerial" 2>/dev/null)" = "$1" ] &&
      [ "$(${BB} cat "${gadget}/idProduct" 2>/dev/null)" = 0d02 ]; then
     return 0
   fi
@@ -51,8 +52,21 @@ configure_adb() {
   if [ "${usb_functions}" = acm,adb ]; then
     echo 1 >"${gadget}/f_acm/instances" || return 1
   fi
+  # Identity before enable. The host reads the string descriptors once, at
+  # enumeration, so anything written afterwards changes sysfs and nothing
+  # else. Without this the recovery path enumerated as the gadget driver's
+  # compiled-in Android/0123456789ABCDEF, which is what an unconfigured
+  # device reports.
+  #
+  # The serial is the build string, not the unit's MAC: the BSL loads no
+  # Wi-Fi driver, so mlan0 does not exist here and there is nothing
+  # unit-unique to read. Two speakers running the same BSL are therefore
+  # still indistinguishable in recovery. The runtime does not have this
+  # limitation and uses the MAC.
   echo 0d02 >"${gadget}/idProduct" &&
     echo "$1" >"${gadget}/iProduct" &&
+    echo "Harman Kardon" >"${gadget}/iManufacturer" &&
+    echo "$1" >"${gadget}/iSerial" &&
     echo "${usb_functions}" >"${gadget}/functions" &&
     echo 1 >"${gadget}/enable" || return 1
   ${BB} test "$(${BB} cat "${gadget}/enable")" = 1 &&

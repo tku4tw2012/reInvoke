@@ -63,8 +63,19 @@ pilot_check_writable /usr/var/lib/bluetooth /run/reinvoke /data/local/tmp /tmp |
   replace(text.slice(hardwareStart, hardwareEnd), `pilot_load_modules || pilot_fatal "kernel/radio compatibility failed; early ADB remains supervised"
 
 `);
+  // Apply /etc/hostname, which nothing else does any more.
+  //
+  // The donor set it from /etc/init.d/hostname.sh, and this build removes
+  // /etc/init.d. The image still carries /etc/hostname, but BusyBox here is
+  // built without the hostname applet, so the file was read by nobody and
+  // the kernel reported "(none)" in logs and over SSH. Writing the sysctl
+  // needs no applet. Verified on hardware before shipping.
   replace('  . "${runtime_root}/etc/runtime.conf"\n',
     '  . "${runtime_root}/etc/runtime.conf"\n' +
+    '  if ${BB} test -s /etc/hostname; then\n' +
+    '    ${BB} head -n 1 /etc/hostname > /proc/sys/kernel/hostname ||\n' +
+    '      log "hostname not applied; continuing"\n' +
+    '  fi\n' +
     '  pilot_ssh_start || log "SSH fallback unavailable; runtime continuing"\n' +
     '  pilot_persistence_start || log "Persistent settings unavailable; runtime continuing"\n' +
     '  pilot_usb_adb_up || log "USB ADB unavailable; runtime continuing"\n');
