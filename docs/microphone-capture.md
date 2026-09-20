@@ -10,10 +10,30 @@ raw ALSA access. Audio and configuration remain volatile; the service writes
 neither to NAND. Wake-word recognition and assistant behavior are consumer
 work, not capture features.
 
-The implemented gate polls MCU-owned state. Native capture/mic-mute acceptance
-is open; the measurements below are from RAM boots. See the
-[current native ledger](native-nand-platform.md#current-result), not indicator
-changes or Bluetooth connection, for candidate acceptance.
+The implemented gate polls MCU-owned state. The measurements below are from RAM
+boots, but capture has now been exercised on a NAND boot as well: on 2.2.7 a
+four second capture returned 192,000 samples with 191,998 non-zero at
+-34.7 dBFS, a DSP mute returned 192,000 samples with peak 0, and unmuting
+returned signal at -42.1 dBFS. The two unmuted levels differ because they
+followed the room, which is what distinguishes live capture from a fixed
+pattern. No noise had to be made for this; the ambient floor was enough.
+
+The mute for that test was driven straight into the DSP over
+`/run/reinvoke/dsp-mic-control.sock`, which takes `1\n` to mute and `0\n` to
+unmute and answers `OK\n`. Two things follow, both verified by reading the
+code rather than assumed:
+
+* `microphoneMuteController` never reads DSP state back, and `dsp-interface`
+  contains no LED code at all. The red ring is driven only by
+  `ledPlayer.SetMicrophoneMuted`, which only the button path calls.
+* So a mute placed directly on the DSP zeroes the samples and leaves the ring
+  dark. The indicator is a parallel assumption about the DSP's state, not a
+  reading of it.
+
+Nothing in normal operation reaches that socket except the MCU service, and it
+is mode 0600 and root-owned, so the mismatch cannot arise from use. It is
+recorded because an indicator that cannot disagree with reality is a different
+guarantee from one that merely does not, and only the second is true here.
 
 ## Audio source
 

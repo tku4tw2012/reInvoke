@@ -208,3 +208,44 @@ dependency refcounting returned `EBUSY` for `udc_core` with two users, and
 the device open. What panicked was the *re-insert*, and with no pstore or
 `last_kmsg` on this unit there is no log saying why. So teardown is supported
 and reload is not: bring USB ADB back with a reboot.
+
+### What the module does on the way out
+
+Read out of the shipped `g_android.ko` with `objdump`, so this is the binary
+that runs, not the source it was built from. `cleanup_module` makes exactly
+three calls, in this order:
+
+```
+usb_composite_unregister    →  unbind, which does device_destroy for the
+                               device android_bind created
+class_destroy               →  tears down the android_usb class
+kfree                       →  releases _android_dev
+```
+
+`init_module` creates a *second* device: it calls `device_create` and
+`device_create_file` for `android0` directly. **Nothing destroys that one.**
+The only other `device_destroy` call sites in the module are in `android_bind`'s
+error path and in `android_usb_unbind`, and both concern the bind-time device.
+This asymmetry is the vendor's, inherited from upstream `android.c` of this
+era; it is not something the two build patches introduced.
+
+So an unload leaves an `android0` device behind whose class has been destroyed
+and whose module text has been freed.
+
+*Inference, not yet observed:* the leaked device holds a reference to the old
+class, so its sysfs name is never released, and the re-insert's
+`class_create(THIS_MODULE, "android_usb")` collides with it. This unit runs
+`panic_on_oops=1` and `panic=1`, which turns the resulting warning into a panic
+and reboots one second later, taking the evidence with it.
+
+That prediction is cheap to test and has not been tested: set
+`panic_on_oops=0` first. If the panic is an escalated warning the kernel
+survives, `insmod` fails with an ordinary error, and `dmesg` holds the trace.
+If it panics anyway, the cause is something harder and the guess above is
+wrong. Either result is worth more than the current silence. The cost of being
+wrong is one reboot, because the unit boots from NAND and nothing writes NAND
+at runtime.
+
+Fixing it means adding the missing `device_destroy` to `cleanup` and rebuilding
+with the toolchain and ABI corrections above. That has not been done, because
+the only thing it buys is reloading USB ADB without a reboot.

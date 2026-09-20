@@ -41,7 +41,7 @@ Taken from observation on the running unit, not from intent. Version 2.2.7,
 | Reboot without a power cycle | verified | `adb reboot` returned the unit repeatedly |
 | Front lamp state changes | verified | amber at boot, white once online |
 | Bluetooth pairing from the host | verified | `LinkKey` written, survived a reboot |
-| Microphone capture | stale | last exercised in the RAM era, not on this build |
+| Microphone capture | verified | 2.2.7: 192,000 samples, 191,998 non-zero at −34.7 dBFS; DSP mute gave 192,000 samples, peak 0 |
 | Bluetooth audio playback | verified | host paired over A2DP, PCM reached `RUNNING`, chords heard |
 | Music at the shipped volume | verified | 2.2.7, heard clearly at the shipped dial |
 | No pops at startup | verified | 05.8.13, heard by the owner; the donor's one second settle |
