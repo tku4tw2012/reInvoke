@@ -57,10 +57,22 @@ assert(versionAt < writeAt,
 
 // The prompt must not be detected by matching its text. It stalled at "MV88D"
 // for about fifty seconds on the 05.8.12 write while the device was live.
-const detector = code(flashText.slice(0, versionAt));
+const detector = code(flashText.slice(0, writeAt));
 assert(!/MV88DE3100"/.test(detector),
   'the prompt is being detected by matching text again; it arrives chunked');
-assert(/poke/.test(detector), 'the prompt detector no longer probes');
+
+// Nor by the console merely growing. The boot script prints on its own, so
+// "bigger after I poked it" is satisfied by output that has nothing to do
+// with the poke. That reported a live prompt on the 05.8.13 write, sent
+// l2nand into a mid-line console, and nothing wrote for three minutes.
+assert(/u-boot/i.test(detector),
+  'the probe no longer waits for a reply only a prompt can produce');
+
+// And the write must be acknowledged, not assumed. The device prints that it
+// is erasing before it writes a byte; that is the receipt.
+const writeStep = code(flashText.slice(writeAt));
+assert(/erase nand/i.test(writeStep),
+  'the write is sent without confirming the device took it');
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'seize-'));
 const required = ['06_IMAGE', '07_IMAGE', '09_IMAGE', '79_IMAGE', '81_IMAGE',

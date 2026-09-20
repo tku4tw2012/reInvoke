@@ -57,34 +57,62 @@ say "waiting for a prompt; nothing is written until one answers"
 while [[ ! -s "${console}" ]]; do sleep 2; done
 say "console has output; probing for a prompt"
 
-# Probe until something answers. A device mid-boot ignores a newline; a device
-# sitting at a prompt echoes and redraws. This is what finds the prompt, and
-# it does not care where the USB transfers were chopped.
+# Probe until the device answers with something only a prompt produces.
+#
+# Growth alone is not an answer. The console is still printing its own boot
+# script while the device is not yet listening, so "the log got bigger after I
+# poked it" is satisfied by output that has nothing to do with the poke. That
+# is what happened on the 05.8.13 write: this reported a live prompt at
+# 21:03:38, sent l2nand, and nothing wrote for three minutes because the
+# command landed mid-line and was swallowed. The write only ran after the same
+# command was sent again by hand.
+#
+# So the test is a command whose reply is unmistakable. `version` prints the
+# U-Boot banner, and nothing else on this console says "U-Boot". Asking for it
+# and waiting for that word proves the device parsed a command, not merely
+# that bytes arrived.
+attempts=0
 while true; do
-  before="$(size)"
-  poke
-  sleep 2
-  if [[ "$(size)" -gt "${before}" ]]; then
-    say "a newline was answered; a prompt is live"
+  attempts=$((attempts + 1))
+  marked="$(size)"
+  send "version"
+  sleep 3
+  # Only look at what arrived after this probe, so an earlier banner in the
+  # log cannot satisfy a later one.
+  if tail -c +$((marked + 1)) "${console}" | grep -aqi "u-boot"; then
+    say "the device answered version after ${attempts} probe(s); it is listening"
     break
   fi
-  sleep 3
+  sleep 2
 done
-
-# Confirm with something that must produce output. Answering a newline could
-# be an echo; a version string could not.
-before="$(size)"
-send "version"
-sleep 3
-if [[ "$(size)" -le "${before}" ]]; then
-  say "prompt did not answer version; holding, not writing"
-  exit 1
-fi
-say "prompt answered version; it is live"
 tail -c 400 "${console}" | tr -cd '\11\12\15\40-\176' | tail -4 | tee -a "${report}"
 
+# Send the write, and confirm the device took it.
+#
+# A command can be sent to a live prompt and still be swallowed: on the
+# 05.8.13 write the first l2nand landed while the console was mid-line and
+# produced nothing at all. Sending it and assuming is how that went unnoticed
+# for three minutes.
+#
+# The device prints "Erase NAND chip" before it writes a byte, so that is the
+# receipt. Resending is safe while nothing has started; once erasing begins
+# this stops and watches.
 say "writing NAND: l2nand 83"
-send "l2nand 83"
+for attempt in 1 2 3; do
+  send "l2nand 83"
+  waited=0
+  while [[ "${waited}" -lt 10 ]]; do
+    if grep -aqiE "erase nand|writing NAND" "${console}"; then break 2; fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  say "l2nand produced nothing after ${attempt} attempt(s); resending"
+done
+if ! grep -aqiE "erase nand|writing NAND" "${console}"; then
+  say "the device never acknowledged l2nand; holding, not assuming"
+  exit 1
+fi
+say "the device acknowledged the write"
 
 # The write takes minutes and prints progress the whole way, so silence is the
 # failure signal rather than elapsed time.
