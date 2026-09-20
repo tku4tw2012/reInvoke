@@ -26,8 +26,31 @@ const path = require('node:path');
 const repo = path.resolve(__dirname, '../..');
 const archive = process.env.REINVOKE_ARCHIVE ||
   path.resolve(repo, '../reinvoke-archive');
-const runtime = process.env.AUDIT_RUNTIME_TREE || path.join(archive,
-  'build/artifacts/reinvoke-native-05.8.11-20260918/main/build-a/runtime');
+// The newest built runtime, resolved rather than named.
+//
+// This was a hardcoded path to one build, and it went stale the moment the
+// next one was made: the audit spent two releases reporting no findings
+// while checking a runtime two builds old, which is the exact failure it
+// exists to catch. A build that removes a component would still have been
+// judged against an image that still had it.
+function newestRuntime() {
+  const root = path.join(archive, 'build/artifacts');
+  if (!fs.existsSync(root)) return '';
+  // Ordered by the build date in the artifact name, not by mtime. Directory
+  // timestamps move when anything touches them, and sorting on those picked
+  // a build from ten days earlier.
+  const candidates = fs.readdirSync(root)
+    .map(name => ({ name, date: (/(\d{8})/.exec(name) || [])[1] }))
+    .filter(entry => entry.date)
+    .map(entry => ({
+      ...entry,
+      runtime: path.join(root, entry.name, 'main/build-a/runtime'),
+    }))
+    .filter(entry => fs.existsSync(entry.runtime))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.name.localeCompare(a.name));
+  return candidates.length ? candidates[0].runtime : '';
+}
+const runtime = process.env.AUDIT_RUNTIME_TREE || newestRuntime();
 const donor = process.env.AUDIT_DONOR_ROOTFS ||
   path.join(archive, 'extracted/phase3/stockroot/rootfs');
 
@@ -297,6 +320,9 @@ if (process.argv.includes('--json')) {
   console.log(JSON.stringify({ findings, counts: byKind }, null, 2));
 } else {
   console.log(`ground truth:`);
+  // Name the image. An audit that does not say what it checked against
+  // cannot be trusted when it reports nothing.
+  console.log(`  runtime             : ${path.relative(archive, runtime) || '(none)'}`);
   console.log(`  built image entries : ${image.size}`);
   console.log(`  repository paths    : ${paths.size}`);
   console.log(`  flags defined       : ${flags.size}`);

@@ -6,7 +6,12 @@ umask 022
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "${here}/../.." && pwd)"
 archive="$(realpath "${1:-${repo}/../reinvoke-archive}")"
-output="${2:-${archive}/build/artifacts/reinvoke-native-05-20260913/main}"
+# The output directory is required rather than defaulted. It used to fall back
+# to one named artifact from 2026-09-13, which every later build silently
+# inherited if the argument was forgotten, and which refuses to overwrite
+# itself, so the failure arrived as a confusing refusal rather than a missing
+# argument.
+output="${2:?OUTPUT_DIR is required, for example ${archive}/build/artifacts/reinvoke-<version>-<date>/main}"
 [[ -n "${PILOT_PRIVATE_CONFIG:-}" ]] || { echo "PILOT_PRIVATE_CONFIG is required" >&2; exit 1; }
 [[ -n "${PILOT_PERSISTENCE_CONFIG:-}" ]] || { echo "PILOT_PERSISTENCE_CONFIG is required" >&2; exit 1; }
 # Required, not optional. build.js treats an unset value as "no Bluedroid", so
