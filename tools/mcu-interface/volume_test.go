@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,13 +198,45 @@ func TestFadeDescendsAndStopsExactly(t *testing.T) {
 
 // Percent maps onto the control's own 0..255 range; the ends must be exact so
 // zero is silent and full is full.
-func TestSoftvolPercentMapping(t *testing.T) {
-	for _, c := range []struct{ percent, want int }{
-		{0, 0}, {100, softvolMax}, {50, 127}, {-5, 0}, {150, softvolMax},
-	} {
-		if got := softvolForPercent(c.percent); got != c.want {
-			t.Errorf("softvolForPercent(%d) = %d, want %d", c.percent, got, c.want)
+// TestSoftvolTrimsWithoutMovingTheCalibration proves the softvol control fills
+// in between DSP gain steps and does not become the level itself.
+//
+// The donor mapped percent straight onto this control. That cannot be done
+// here: the level measured as comfortable on this unit is DSP gain 5 with the
+// control at 255, so moving the dial onto the control would need the DSP to
+// make up 33.6 dB at the default position, which is gain 239 against a
+// measured loud point of 90.
+func TestSoftvolTrimsWithoutMovingTheCalibration(t *testing.T) {
+	// Silence stays silence, and nothing asks for more than the control has.
+	if got := softvolForPercent(0); got != 0 {
+		t.Fatalf("a dial at zero gave softvol %d", got)
+	}
+	for percent := 1; percent <= 100; percent++ {
+		got := softvolForPercent(percent)
+		if got < 0 || got > softvolMax {
+			t.Fatalf("dial %d asked for softvol %d", percent, got)
 		}
+	}
+
+	// The measured anchor must be untouched: at the default dial the DSP byte
+	// is exactly what was calibrated, so there is nothing to trim.
+	if got := softvolForPercent(defaultVolume); got != softvolMax {
+		t.Fatalf("the default dial trims softvol to %d; the calibration moved",
+			got)
+	}
+
+	// The combination has to rise with the dial. Trimming is only useful if
+	// the result is still monotonic.
+	previous := math.Inf(-1)
+	for percent := 1; percent <= 100; percent++ {
+		gain := float64(dspByteForPercent(percent))
+		trim := float64(softvolForPercent(percent))
+		level := 20*math.Log10(gain/dspMaxByte) +
+			(-softvolRangeDB + softvolRangeDB*trim/softvolMax)
+		if level < previous-0.01 {
+			t.Fatalf("dial %d is quieter than the step below it", percent)
+		}
+		previous = level
 	}
 }
 

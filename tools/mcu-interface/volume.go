@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -368,8 +369,14 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			if controller.logf != nil {
-				controller.logf("fade softvol to %d: %v", level, err)
+			// The control is created by ALSA when the donor stack first opens
+			// pcm.music, so before that happens the element is simply not
+			// there. That is the normal state of early boot, not a fault, and
+			// logging it as one buried the log in repeats. The DSP byte
+			// carries the level either way; this only trims between its
+			// steps.
+			if !errors.Is(err, os.ErrNotExist) && controller.logf != nil {
+				controller.logf("trim softvol to %d: %v", level, err)
 			}
 		}
 		send := controller.push

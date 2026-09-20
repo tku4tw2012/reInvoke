@@ -6,6 +6,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"sync"
 	"syscall"
@@ -38,6 +39,10 @@ const (
 	ctlElemWrite = (ctlDirRead|ctlDirWrite)<<30 | ctlStructSize<<16 | 'U'<<8 | 0x13
 
 	softvolMax = 255
+
+	// The plugin's own range, confirmed against this hardware at numid 97 in
+	// 0.2 dB steps: 255 steps of 0.2 dB is 51 dB.
+	softvolRangeDB = 51.0
 
 	// snd_ctl_elem_id field offsets. Addressing by name rather than numeric id
 	// matters here: the control does not exist until the donor stack first
@@ -118,13 +123,48 @@ func (c *softvolControl) Write(value int) error {
 	return nil
 }
 
-// softvolForPercent maps a 0..100 user level onto the control's range.
+// softvolForPercent fills in the gap between two DSP gain bytes.
+//
+// It does not carry the user's level. The donor's design did, mapping percent
+// straight onto this control, and that cannot work here: the level measured
+// as comfortable on this unit is DSP gain 5 with this control at 255, so
+// putting the dial on the control would need the DSP to make up 33.6 dB at
+// the default position, which is gain 239 against a measured loud point of
+// 90. The arithmetic is in docs/current-product-contract.md.
+//
+// What this control is good for is resolution. The DSP byte is coarse where
+// it is actually used: 5 to 6 is 1.58 dB and 4 to 5 is 1.94 dB, so a single
+// step is a clearly audible jump. This control moves in 0.2 dB, about eight
+// steps for one DSP step.
+//
+// So the DSP byte is chosen to be at or just above the level the dial asks
+// for, and this attenuates the small remainder. At the default dial the two
+// agree exactly and this returns 255, which is what was measured.
 func softvolForPercent(percent int) int {
 	if percent <= 0 {
 		return 0
 	}
-	if percent >= 100 {
+	wanted := dialAmplitude(percent) * dspMaxByte
+	byteSent := float64(dspByteForPercent(percent))
+	if byteSent <= 0 || wanted <= 0 {
 		return softvolMax
 	}
-	return percent * softvolMax / 100
+	// The DSP rounds, so it can land slightly below what was asked for. There
+	// is no headroom above 0 dB here, so in that case leave the control open
+	// and accept the DSP's own value.
+	if byteSent <= wanted {
+		return softvolMax
+	}
+	trimDB := 20 * math.Log10(wanted/byteSent)
+	if trimDB < -softvolRangeDB {
+		trimDB = -softvolRangeDB
+	}
+	value := int(math.Round((softvolRangeDB + trimDB) * softvolMax / softvolRangeDB))
+	if value < 0 {
+		value = 0
+	}
+	if value > softvolMax {
+		value = softvolMax
+	}
+	return value
 }

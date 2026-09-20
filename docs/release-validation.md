@@ -42,10 +42,16 @@ Taken from observation on the running unit, not from intent. Version 2.2.7,
 | Front lamp state changes | verified | amber at boot, white once online |
 | Bluetooth pairing from the host | verified | `LinkKey` written, survived a reboot |
 | Microphone capture | stale | last exercised in the RAM era, not on this build |
-| Bluetooth audio playback | **not tested** | pairing is not playback; no stream was started |
-| Music at the shipped volume | **not tested** | no stream has ever been played on a NAND build |
+| Bluetooth audio playback | verified | host paired over A2DP, PCM reached `RUNNING`, chords heard |
+| Music at the shipped volume | verified | 2.2.7, heard clearly at the shipped dial |
 | No pops at startup | verified | 05.8.13, heard by the owner; the donor's one second settle |
 | Dial carries the donor curve | verified | dial 34 sent the DSP `payload 04 05`, the measured gain |
+
+Two rows in this table claimed no stream had ever been played on a NAND
+build. That was this project's own record being read rather than the owner's
+memory, and the owner corrected it: music had been played on earlier NAND
+builds. What is recorded here is the playback observed on 2.2.7; it is not a
+claim about being the first.
 
 This table was wrong for several releases: it recorded eight services when the
 build ran thirty-four, the chime as failed after it had played, the reboot fix
