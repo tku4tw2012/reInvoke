@@ -32,13 +32,23 @@ const ADBD_SHA256 =
   '62593dfe9580443dca064e28c38cb647f1b719fe275666d5fb4b615781864ed6';
 
 // Load order is a dependency order, not a preference.
+//
+// g_android.ko moved on 2026-09-20 from the 09-17 build to the 09-18 one. The
+// fix adding android_destroy_device() to cleanup() had been written into
+// android.c and compiled, but the artifact directory the build pinned still
+// held the module from the day before, so every reload test ran against a
+// binary that never contained the fix. Verified before the pin moved: the new
+// cleanup_module calls usb_composite_unregister, device_remove_file,
+// device_destroy, class_destroy, kfree, in that order; the init_module
+// relocation is still at 0xbc and .gnu.linkonce.this_module is still 0x144,
+// which docs/usb-adb.md requires; the other five modules are byte-identical.
 const GADGET_MODULES = [
   ['udc-core.ko', 'b1084820b97c93a0c0e9952c37db0029025f12f7b4dad328a444062b334d74a6'],
   ['mv_udc.ko', 'b9428e32b06ce79304a4e3373aa8963a173894a2fb9eaf5a85a2d1f68a81cfe4'],
   ['libcomposite.ko', '9f4e0e72301d51676a2b7f2fb150a309443145263b0780fce180993795c0eed8'],
   ['u_serial.ko', '8adf7716bdaf689cca143dd72f2496d4964e78c7eef013bb99287189c7819574'],
   ['usb_f_acm.ko', '02eea4de20ecd0eb641b6c403c233888406be0ab07dfe46838e2ffc37778db4c'],
-  ['g_android.ko', 'd10d33d8cd2d4dedc6e020a4b931343374bb1ab4dac303a6a6d224df7b0460c2'],
+  ['g_android.ko', 'ca992709094548f5252e4799432bd125eaef6529bc3eb95251afd2ab6085ea28'],
 ];
 
 function validateUsbAdb(value) {
@@ -102,9 +112,14 @@ function installUsbAdb(privateConfig, root, scriptSource) {
 
   // Teardown is shipped so USB ADB can be stopped without a reflash. Bring-up
   // lives in the init script itself, sourced the way the network payload is.
-  const from = path.join(scriptSource, 'usb-adb-down.sh');
-  fs.writeFileSync(path.join(target, 'usb-adb-down.sh'), fs.readFileSync(from), { mode: 0o755 });
-  fs.chmodSync(path.join(target, 'usb-adb-down.sh'), 0o755);
+  // The reload test ships beside it: it is the only way to find out whether
+  // the cleanup() fix in this build's g_android actually lets the module go
+  // back in, and it cannot report over ADB because it removes ADB.
+  for (const script of ['usb-adb-down.sh', 'usb-adb-reload-test.sh']) {
+    const from = path.join(scriptSource, script);
+    fs.writeFileSync(path.join(target, script), fs.readFileSync(from), { mode: 0o755 });
+    fs.chmodSync(path.join(target, script), 0o755);
+  }
   return config;
 }
 

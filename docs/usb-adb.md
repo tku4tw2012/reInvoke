@@ -201,51 +201,84 @@ not.
 
 ## Unloading
 
-`rmmod g_android` followed by `insmod` panics this unit. The unload itself is
-safe, and the kernel refuses the genuinely dangerous ones on its own: module
-dependency refcounting returned `EBUSY` for `udc_core` with two users, and
-`f_adb` sets `.owner = THIS_MODULE` so the VFS holds a reference while adbd has
-the device open. What panicked was the *re-insert*, and with no pstore or
-`last_kmsg` on this unit there is no log saying why. So teardown is supported
-and reload is not: bring USB ADB back with a reboot.
+`rmmod g_android` followed by `insmod` panicked this unit on every candidate up
+to and including 2.2.7. The unload itself is safe, and the kernel refuses the
+genuinely dangerous ones on its own: module dependency refcounting returned
+`EBUSY` for `udc_core` with two users, and `f_adb` sets `.owner = THIS_MODULE`
+so the VFS holds a reference while adbd has the device open. What panicked was
+the *re-insert*, and with no pstore or `last_kmsg` on this unit there was no
+log saying why.
 
-### What the module does on the way out
+2.2.8 ships a module that should fix it, and a test that says whether it did.
+Until that test has been run, treat reload as unproven and bring USB ADB back
+with a reboot.
 
-Read out of the shipped `g_android.ko` with `objdump`, so this is the binary
-that runs, not the source it was built from. `cleanup_module` makes exactly
-three calls, in this order:
+### The asymmetry, and the fix that was never shipped
+
+Read out of `g_android.ko` with `objdump`, so this is about binaries rather
+than the source they came from.
+
+The module built on 2026-09-17, which every candidate up to and including 2.2.7
+shipped, has a `cleanup_module` that makes exactly three calls:
 
 ```
-usb_composite_unregister    →  unbind, which does device_destroy for the
-                               device android_bind created
+usb_composite_unregister    →  unbind, which destroys the device android_bind
+                               created
 class_destroy               →  tears down the android_usb class
 kfree                       →  releases _android_dev
 ```
 
-`init_module` creates a *second* device: it calls `device_create` and
-`device_create_file` for `android0` directly. **Nothing destroys that one.**
-The only other `device_destroy` call sites in the module are in `android_bind`'s
-error path and in `android_usb_unbind`, and both concern the bind-time device.
-This asymmetry is the vendor's, inherited from upstream `android.c` of this
-era; it is not something the two build patches introduced.
+`init_module` creates a *second* device: `device_create` and
+`device_create_file` for `android0`. Nothing destroyed that one. An unload
+therefore left a device behind whose class had been destroyed and whose module
+text had been freed, which is the state a re-insert walked into. The asymmetry
+is the vendor's, inherited from upstream `android.c` of this era.
 
-So an unload leaves an `android0` device behind whose class has been destroyed
-and whose module text has been freed.
+`android_destroy_device()` was added to `cleanup()` in `android.c` on
+2026-09-18 and compiled the same minute. It was never packaged. The artifact
+directory the build pinned still held the module from the day before, so every
+reload attempt afterwards ran against a binary that did not contain the fix,
+and the conclusion that "the panic persisted" was drawn from it. The module
+hash guard in `usb-adb-config.js` did not catch this and could not have: the
+pin and the artifact agreed with each other. Both were simply a day old.
 
-*Inference, not yet observed:* the leaked device holds a reference to the old
-class, so its sysfs name is never released, and the re-insert's
-`class_create(THIS_MODULE, "android_usb")` collides with it. This unit runs
-`panic_on_oops=1` and `panic=1`, which turns the resulting warning into a panic
-and reboots one second later, taking the evidence with it.
+2.2.8 ships the 09-18 module. Verified before the pin moved:
 
-That prediction is cheap to test and has not been tested: set
-`panic_on_oops=0` first. If the panic is an escalated warning the kernel
-survives, `insmod` fails with an ordinary error, and `dmesg` holds the trace.
-If it panics anyway, the cause is something harder and the guess above is
-wrong. Either result is worth more than the current silence. The cost of being
-wrong is one reboot, because the unit boots from NAND and nothing writes NAND
-at runtime.
+| check | 09-17 | 09-18 |
+| --- | --- | --- |
+| `cleanup_module` calls | unregister, class_destroy, kfree | unregister, `device_remove_file`, `device_destroy`, class_destroy, kfree |
+| `init_module` relocation | `0xbc` | `0xbc` |
+| `.gnu.linkonce.this_module` | `0x144` | `0x144` |
+| vermagic | `3.8.13-yocto-standard SMP preempt mod_unload ARMv7` | identical |
+| other five modules | — | byte-identical |
 
-Fixing it means adding the missing `device_destroy` to `cleanup` and rebuilding
-with the toolchain and ABI corrections above. That has not been done, because
-the only thing it buys is reloading USB ADB without a reboot.
+### Testing it
+
+The fix has not run on hardware. `usb-adb-reload-test.sh` ships beside the
+modules to find out, and it cannot report over ADB because removing
+`g_android` is removing ADB. So it writes to `/persist`, which is yaffs2 on
+`mtdblock11` and survives a reboot, and syncs before each step that could stop
+the machine.
+
+It first sets `panic_on_oops=0` and `panic=0`. This unit ships with both at 1,
+which turns a recoverable warning into a panic and a reboot one second later,
+taking the evidence with it. With them off, a failure that is only a warning
+leaves the kernel alive and the trace readable.
+
+```sh
+/opt/reinvoke/usb-adb/usb-adb-reload-test.sh
+```
+
+Three outcomes, all informative:
+
+* ADB comes back on its own. The transport was rebuilt from nothing and the
+  fix works. `RESULT: reloaded` is in the log.
+* ADB does not come back but the unit stays up. The reload failed without
+  taking the kernel with it, and the oops trace is in the log. Power cycle and
+  read it.
+* The unit reboots anyway. It was a genuine panic rather than an escalated
+  warning, the explanation above is wrong, and the log holds everything up to
+  the `insmod`.
+
+Until one of those is observed, treat reload as unproven and keep bringing USB
+ADB back with a reboot.
