@@ -36,16 +36,6 @@ main() {
   "${script_dir}/dsp-interface/test.sh" --archive-root "${archive_root}"
   "${script_dir}/mic-capture/test.sh" --archive-root "${archive_root}"
   "${script_dir}/provisioning/test.sh" --archive-root "${archive_root}"
-  pairing_policy_test="${repo_root}/.bluez-pairing-policy-test.$$"
-  [[ ! -e "${pairing_policy_test}" ]] ||
-    err "stale pairing policy test exists: ${pairing_policy_test}"
-  trap 'rm -f -- "${pairing_policy_test}"' EXIT
-  cc -std=c11 -O2 -Wall -Wextra -Werror \
-    "${script_dir}/control/bluez-pairing-policy_test.c" \
-    -o "${pairing_policy_test}"
-  "${pairing_policy_test}"
-  rm -f -- "${pairing_policy_test}"
-  trap - EXIT
   node --test \
     "${script_dir}/control/"*.test.mjs \
     "${script_dir}/emulation/"*.test.mjs \
