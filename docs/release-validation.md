@@ -43,6 +43,8 @@ Taken from observation on the running unit, not from intent. Candidate
 | Microphone capture | stale | last exercised in the RAM era, not on this build |
 | Bluetooth audio playback | **not tested** | pairing is not playback; no stream was started |
 | Music at the shipped volume | **not tested** | no stream has ever been played on a NAND build |
+| No pops at startup | verified | 05.8.13, heard by the owner; the donor's one second settle |
+| Dial carries the donor curve | verified | dial 34 sent the DSP `payload 04 05`, the measured gain |
 | No pops during startup | **failed** | heard on 05.8.11; fix written, not yet flashed |
 
 This table was wrong for several releases: it recorded eight services when the
