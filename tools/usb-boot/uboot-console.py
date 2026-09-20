@@ -6,6 +6,7 @@ received bytes to a log file, and forwards commands written to a FIFO.
 """
 import os
 import select
+import stat
 import socket
 import sys
 import time
@@ -43,8 +44,17 @@ def negotiate(data, sock):
 
 
 def main():
+    # Existence is not the test. A previous run that wrote to the path while
+    # nothing held it open leaves an ordinary file behind, and this used to
+    # skip the mkfifo on that basis. The open below then succeeds against a
+    # regular file, every command written lands on disk, and the device is
+    # never sent anything -- silently, because the write succeeds.
+    if os.path.exists(FIFO) and not stat.S_ISFIFO(os.stat(FIFO).st_mode):
+        os.unlink(FIFO)
     if not os.path.exists(FIFO):
         os.mkfifo(FIFO)
+    if not stat.S_ISFIFO(os.stat(FIFO).st_mode):
+        raise SystemExit(f"{FIFO} is not a FIFO and could not be replaced")
 
     # Open the FIFO before the socket. Arming happens before yellow mode, so
     # the helper's relay port does not exist yet and the connect below will be
