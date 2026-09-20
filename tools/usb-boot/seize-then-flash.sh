@@ -40,6 +40,16 @@ report="${evidence}/flash-report.txt"
 
 say() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "${report}"; }
 
+# The device's own console is the only evidence that the iROM took the
+# bootstrap and that U-Boot answered. It was being written to /tmp and left
+# there, so seize-05813-2100 -- the run that put firmware on the unit in hand
+# -- archived no console at all and the release criteria reported four
+# failures against a flash that worked. Keep it with the report.
+keep_console() {
+  [[ -s "${console}" ]] && cp "${console}" "${evidence}/console.raw" || true
+}
+trap keep_console EXIT
+
 send() {
   printf '\r\n'   >"${fifo}"
   sleep 0.3

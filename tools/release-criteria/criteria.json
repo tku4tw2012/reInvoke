@@ -124,10 +124,13 @@
     },
     {
       "id": "write-command-sent",
-      "pattern": "sent l2nand 83",
+      "pattern": [
+        "sent l2nand 83",
+        "writing NAND: l2nand 83"
+      ],
       "expect": "present",
       "source": "arm",
-      "why": "The write command reached the device."
+      "why": "The write command reached the device. The single-stage arm logs \"sent l2nand 83\"; the two-stage seize logs \"writing NAND: l2nand 83\". Naming only the first reported the 05.8.13 flash, which worked, as a failure."
     },
     {
       "id": "write-succeeded",

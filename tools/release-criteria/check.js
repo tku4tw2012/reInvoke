@@ -24,6 +24,7 @@ const criteria = JSON.parse(
 
 let failures = 0;
 let passes = 0;
+let unevidenced = 0;
 
 function report(id, ok, detail, why) {
   if (ok) {
@@ -36,11 +37,27 @@ function report(id, ok, detail, why) {
   if (why) console.log(`        ${why}`);
 }
 
+// A criterion whose log was never captured is not a criterion that was
+// violated. Calling it FAIL says the device misbehaved when the truth is that
+// nobody wrote the evidence down, which is what seize-05813-2100 looked like.
+// It is still not a pass.
+function noEvidence(id, source, why) {
+  unevidenced += 1;
+  console.log(`  NO-EVIDENCE  ${id}  no ${source} log in this directory`);
+  if (why) console.log(`        ${why}`);
+}
+
 function matchLog(text, entry) {
-  const found = text.includes(entry.pattern);
+  // The same event is worded differently by the single-stage arm and the
+  // two-stage seize, so a criterion may name more than one acceptable string.
+  // Matching on only the older wording reported the 05.8.13 flash as failing.
+  const patterns = [].concat(entry.pattern);
+  const hit = patterns.find(pattern => text.includes(pattern));
+  const found = hit !== undefined;
   const want = entry.expect === 'present';
   report(entry.id, found === want,
-    `${entry.expect} "${entry.pattern}"${found ? ' (found)' : ' (not found)'}`,
+    `${entry.expect} "${found ? hit : patterns.join('" or "')}"` +
+      `${found ? ' (found)' : ' (not found)'}`,
     found === want ? null : entry.why);
 }
 
@@ -72,14 +89,36 @@ function checkDevice() {
 
 function checkFlash(evidenceDir, stagingDir) {
   console.log(`flash evidence: ${evidenceDir}`);
-  const read = name => {
-    try { return fs.readFileSync(path.join(evidenceDir, name), 'latin1'); }
-    catch { return ''; }
+  const read = names => {
+    for (const name of [].concat(names)) {
+      try { return fs.readFileSync(path.join(evidenceDir, name), 'latin1'); }
+      catch { /* try the next name */ }
+    }
+    return '';
   };
-  const sources = { arm: read('arm.log'), console: read('console.raw') };
+  // The two-stage seize writes seize.log and flash-report.txt where the older
+  // single-stage arm wrote arm.log and console.raw. Naming only the old pair
+  // made this report four failures against seize-05813-2100, the run that put
+  // the firmware on the unit in hand: a check that fails on success is as
+  // misleading as one that passes on failure.
+  const sources = {
+    arm: read(['arm.log', 'flash-report.txt', 'seize.log']),
+    // Only console.raw. seize.log is the tool's own narration -- it says
+    // "Marvell 88DE3006" from a USB descriptor, which is not the device
+    // saying it -- so accepting it here would pass the console criteria
+    // without the console ever having been read.
+    console: read('console.raw'),
+  };
+  if (!sources.arm && !sources.console) {
+    console.log('  no readable log in this evidence directory');
+  }
   for (const entry of criteria.flash) {
     if (entry.pattern) {
-      matchLog(sources[entry.source] || '', entry);
+      if (!sources[entry.source]) {
+        noEvidence(entry.id, entry.source, entry.why);
+      } else {
+        matchLog(sources[entry.source], entry);
+      }
     } else if (entry.check === 'file-absent') {
       const there = fs.existsSync(path.join(stagingDir, entry.path));
       report(entry.id, !there, `${entry.path} ${there ? 'present' : 'absent'}`,
@@ -103,10 +142,13 @@ else {
   process.exit(2);
 }
 
-console.log(`\n${passes} passed, ${failures} failed`);
+console.log(`\n${passes} passed, ${failures} failed` +
+  (unevidenced ? `, ${unevidenced} with no evidence captured` : ''));
 if (criteria.listener.length) {
   console.log('\nNot checkable here, a person has to confirm:');
   for (const entry of criteria.listener)
     console.log(`  - ${entry.id}: ${entry.why}`);
 }
-process.exit(failures === 0 ? 0 : 1);
+// Missing evidence is not success. A run that captured no console proves
+// nothing about the console, so it must not exit clean.
+process.exit(failures === 0 && unevidenced === 0 ? 0 : 1);
