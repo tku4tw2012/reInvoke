@@ -238,6 +238,42 @@ func TestSoftvolTrimsWithoutMovingTheCalibration(t *testing.T) {
 		}
 		previous = level
 	}
+
+	// Everything above is satisfied by a control pinned at 255, so none of it
+	// shows the trim doing any work. The point of the trim is that the DSP
+	// byte is coarse: one step near the bottom of the dial is over a decibel,
+	// and the control resolves 0.2 dB. Measure how far the realised level
+	// lands from the curve the dial asks for, with the trim and without it.
+	//
+	// The claim is about the average, not the worst case. The control can
+	// only attenuate, so it can correct a byte that rounded up and can do
+	// nothing for one that rounded down. The worst case is dial 1 to 6, where
+	// the byte is pinned at 1 against an ideal of 1.18 to 1.47 and there is
+	// nothing below it to trim; that is the quietest end of the travel.
+	sumWithTrim, sumWithout, trimmed := 0.0, 0.0, 0
+	for percent := 1; percent <= 100; percent++ {
+		wanted := 20 * math.Log10(dialAmplitude(percent))
+		coarse := 20 * math.Log10(float64(dspByteForPercent(percent))/dspMaxByte)
+		trim := softvolForPercent(percent)
+		if trim != softvolMax {
+			trimmed++
+		}
+		fine := coarse +
+			(-softvolRangeDB + softvolRangeDB*float64(trim)/softvolMax)
+		sumWithTrim += math.Abs(fine - wanted)
+		sumWithout += math.Abs(coarse - wanted)
+	}
+	if trimmed == 0 {
+		t.Fatal("the control sat at 255 for every dial position; nothing was trimmed")
+	}
+	// Measured at 45 of the 100 positions corrected, 0.469 dB mean error down
+	// to 0.311 dB. Requiring a fifth off leaves room for the curve to move
+	// without turning this into a change detector.
+	if sumWithTrim > sumWithout*0.8 {
+		t.Fatalf(
+			"trimming left the dial %.3f dB from its curve on average against %.3f dB untrimmed; it is not buying resolution",
+			sumWithTrim/100, sumWithout/100)
+	}
 }
 
 // countingRing records every arc the controller asks the microcontroller to

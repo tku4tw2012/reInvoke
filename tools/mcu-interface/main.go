@@ -70,8 +70,8 @@ func main() {
 	)
 	softvolControl := flag.String(
 		"softvol-control",
-		"",
-		"ALSA softvol control to fade the user volume on; empty disables it",
+		"music",
+		"ALSA softvol control trimmed between DSP gain steps; empty disables it",
 	)
 	musicVolumeState := flag.String(
 		"music-volume-state",
