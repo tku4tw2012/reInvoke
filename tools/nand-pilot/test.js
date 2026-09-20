@@ -136,7 +136,25 @@ try {
       'docs/versions.md no longer maps the installed build to its old name');
   }
   assert.equal(lib.CANDIDATE, '2.2.8');
-  assert.equal(lib.BUILD_ID, 'reInvoke-2.2.8-20260919');
+  // Not a copy of the constant, which only forces an edit in two places when
+  // the date moves. The date is stamped into /etc/nand-pilot/build-id on the
+  // device, and 2.2.8 was first assembled carrying the previous day left over
+  // from the version rename, so check it is a real calendar date that has
+  // actually happened and that the version in it is the one being built.
+  {
+    const parts = /^reInvoke-(\d+\.\d+\.\d+)-(\d{4})(\d{2})(\d{2})$/
+      .exec(lib.BUILD_ID);
+    assert(parts, `BUILD_ID ${lib.BUILD_ID} is not reInvoke-VERSION-YYYYMMDD`);
+    assert.equal(parts[1], lib.CANDIDATE,
+      `BUILD_ID ${lib.BUILD_ID} names a different version than ${lib.CANDIDATE}`);
+    const [year, month, day] = [+parts[2], +parts[3], +parts[4]];
+    const stamped = new Date(Date.UTC(year, month - 1, day));
+    assert(stamped.getUTCFullYear() === year &&
+      stamped.getUTCMonth() === month - 1 && stamped.getUTCDate() === day,
+      `BUILD_ID ${lib.BUILD_ID} is not a real date`);
+    assert(stamped.getTime() <= Date.now(),
+      `BUILD_ID ${lib.BUILD_ID} is dated in the future`);
+  }
   assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-2.2.8');
   assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-2.2.8');
   // The bootstrap no longer launches an early USB ADB daemon. That launcher

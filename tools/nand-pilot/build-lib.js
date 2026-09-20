@@ -17,8 +17,13 @@ const pins = {
 // Builds are ERA.MILESTONE.ITERATION; see docs/versions.md for what each
 // era means and for the mapping from the older names. The unit in hand runs
 // 2.2.7, which was built and flashed as 05.8.13 before this scheme existed.
+// The date is part of what lands in /etc/nand-pilot/build-id on the device,
+// so it has to be bumped with the build; 2.2.8 was first assembled with a
+// date a day stale, left over from the version rename, which would have
+// stamped the device with a day it was not built on. build.sh now refuses
+// when the output directory carries a different date.
 const CANDIDATE = '2.2.8';
-const BUILD_ID = `reInvoke-${CANDIDATE}-20260919`;
+const BUILD_ID = `reInvoke-${CANDIDATE}-20260920`;
 const BLUETOOTH_NAME = `reInvoke-${CANDIDATE}`;
 const BUNDLE_NAME = `83_IMAGE.reinvoke-${CANDIDATE}`;
 const BB_SHA256 = '5fc83ab6cd37841b8d73e07bf3cd8af47ae5af56c93fe085b2db91e0d1f4207b';

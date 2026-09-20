@@ -26,6 +26,19 @@ chmod 0700 "${output}"
 output="$(realpath "${output}")"
 [[ ! -e "${output}/rootfs.squashfs" && ! -e "${output}/build-a" && ! -e "${output}/build-b" ]] ||
   { echo "Refusing to overwrite a previous build" >&2; exit 1; }
+# The date inside BUILD_ID is what lands in /etc/nand-pilot/build-id on the
+# device. It is a constant, so it goes stale silently: 2.2.8 was first built
+# carrying the previous day, left over from the version rename. When the
+# output path names a date, hold the two to each other.
+build_id_date="$(node -e 'process.stdout.write(require("./tools/nand-pilot/build-lib.js").BUILD_ID.split("-").pop())')"
+if [[ "${output}" =~ ([^0-9]|^)(20[0-9]{6})([^0-9]|$) ]]; then
+  output_date="${BASH_REMATCH[2]}"
+  [[ "${output_date}" == "${build_id_date}" ]] || {
+    echo "BUILD_ID is dated ${build_id_date} but the output directory says ${output_date}" >&2
+    echo "Bump BUILD_ID in tools/nand-pilot/build-lib.js or name the output to match" >&2
+    exit 1
+  }
+fi
 for tool in node fakeroot unsquashfs mksquashfs cpio gzip readelf strings nice; do
   command -v "${tool}" >/dev/null || { echo "Missing ${tool}" >&2; exit 1; }
 done
