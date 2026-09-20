@@ -33,8 +33,13 @@ ADB. It is built and tested offline, not yet installed.
 
 The [native guide](docs/native-nand-platform.md#current-result) owns the result
 ledger and artifact pins. See the [product contract](docs/current-product-contract.md),
-[remaining work](docs/revival-roadmap.md#remaining-work) and
+[remaining work](docs/revival-roadmap.md#remaining-work),
+[version history](docs/versions.md) and
 [documentation index](docs/README.md).
+
+Builds are numbered `ERA.MILESTONE.ITERATION`: era `1` needed a host to boot,
+era `2` boots from NAND alone. Earlier builds used several other conventions
+and [version history](docs/versions.md) maps them.
 
 ## System overview
 

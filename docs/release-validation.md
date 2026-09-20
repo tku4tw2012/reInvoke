@@ -25,8 +25,9 @@ outside the code changed state and was observed.
 
 ## What the current build has actually demonstrated
 
-Taken from observation on the running unit, not from intent. Candidate
-05.8.11, 2026-09-18.
+Taken from observation on the running unit, not from intent. Version 2.2.7,
+2026-09-19, which was built and flashed as `05.8.13`; see
+[version history](versions.md) for the mapping.
 
 | Capability | Status | How it was observed |
 | --- | --- | --- |

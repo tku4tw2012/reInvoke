@@ -14,9 +14,12 @@ const pins = {
   capture: { path: 'evidence/nand-restored-ram-inspection-20260909/restored-main-256MiB.bin', bytes: 268435456,
     sha256: '2fac4159fe23aa25581c29f6c90033af3a1126a02593db0bd47e2c10d2c09f19' },
 };
-const CANDIDATE = '05.8.13';
-const BUILD_ID = `reInvoke-NAND-${CANDIDATE}-20260919`;
-const BLUETOOTH_NAME = `reInvoke-NAND-${CANDIDATE}`;
+// Builds are ERA.MILESTONE.ITERATION; see docs/versions.md for what each
+// era means and for the mapping from the older names. The unit in hand runs
+// 2.2.7, which was built and flashed as 05.8.13 before this scheme existed.
+const CANDIDATE = '2.2.8';
+const BUILD_ID = `reInvoke-${CANDIDATE}-20260919`;
+const BLUETOOTH_NAME = `reInvoke-${CANDIDATE}`;
 const BUNDLE_NAME = `83_IMAGE.reinvoke-${CANDIDATE}`;
 const BB_SHA256 = '5fc83ab6cd37841b8d73e07bf3cd8af47ae5af56c93fe085b2db91e0d1f4207b';
 const ADB_SHA256 = '62593dfe9580443dca064e28c38cb647f1b719fe275666d5fb4b615781864ed6';

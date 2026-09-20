@@ -107,10 +107,38 @@ try {
   assert.equal(invoke('. "$1"; pilot_select_kernel 3.8.13-unreviewed', [kernel]).status, 1);
   const bootstrap = fs.readFileSync(path.join(__dirname, 'bootstrap.sh'), 'utf8');
   const bsl = fs.readFileSync(path.join(__dirname, 'bsl-init.sh'), 'utf8');
-  assert.equal(lib.CANDIDATE, '05.8.13');
-  assert.equal(lib.BUILD_ID, 'reInvoke-NAND-05.8.13-20260919');
-  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-NAND-05.8.13');
-  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-05.8.13');
+  // The scheme itself, not just this build's number. Builds are
+  // ERA.MILESTONE.ITERATION and docs/versions.md explains what the parts
+  // mean and maps the six older naming conventions this replaced. A build
+  // number that stops matching that shape leaves the mapping unreadable.
+  {
+    const parts = /^(\d+)\.(\d+)\.(\d+)$/.exec(lib.CANDIDATE);
+    assert(parts, `CANDIDATE ${lib.CANDIDATE} is not ERA.MILESTONE.ITERATION`);
+    // Era 1 needed a host to boot and era 2 boots from NAND. Nothing ships
+    // from era 1 any more, and an era beyond 2 does not exist yet, so a
+    // number outside that range means the old zero-padded naming has crept
+    // back rather than that a new era began.
+    const era = Number(parts[1]);
+    assert(era === 2,
+      `CANDIDATE ${lib.CANDIDATE} is not in era 2; see docs/versions.md`);
+    assert(!/^0/.test(parts[1]) && !/^0\d/.test(parts[2]),
+      `CANDIDATE ${lib.CANDIDATE} is zero-padded like the old scheme`);
+  }
+  {
+    const versions = fs.readFileSync(
+      path.join(__dirname, '../../docs/versions.md'), 'utf8');
+    assert(versions.includes(lib.CANDIDATE),
+      `docs/versions.md does not mention ${lib.CANDIDATE}`);
+    // The unit in hand runs 2.2.7, built as 05.8.13. Losing that pairing
+    // means nobody can tell what is installed.
+    assert(/2\.2\.7[\s\S]{0,400}05\.8\.13|05\.8\.13[\s\S]{0,400}2\.2\.7/
+      .test(versions),
+      'docs/versions.md no longer maps the installed build to its old name');
+  }
+  assert.equal(lib.CANDIDATE, '2.2.8');
+  assert.equal(lib.BUILD_ID, 'reInvoke-2.2.8-20260919');
+  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-2.2.8');
+  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-2.2.8');
   // The bootstrap no longer launches an early USB ADB daemon. That launcher
   // was written for booting from RAM over USB, where the boot ROM had already
   // put the port in device mode. Booting from NAND there is no gadget until

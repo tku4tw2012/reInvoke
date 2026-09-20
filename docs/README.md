@@ -13,6 +13,7 @@ RAM measurements and vendor evidence are separate scopes.
 | Page                                                 | Purpose                                                      |
 | ---------------------------------------------------- | ------------------------------------------------------------ |
 | [Project overview](../README.md)                     | Goal, architecture, hardware and build boundary              |
+| [Version history](versions.md)                       | Build numbering, and what every earlier name maps to         |
 | [Product contract](current-product-contract.md)      | Service ownership, policy and interfaces                     |
 | [Native NAND platform](native-nand-platform.md)      | Current results, artifact identities and installation limits |
 | [Revival roadmap](revival-roadmap.md#remaining-work) | Milestones and remaining engineering gates                   |
