@@ -134,38 +134,30 @@ Entry is genuinely unreliable and often needs several attempts. With the
 seizer running there is no window to miss, so simply repeat. Many failed
 attempts before one takes is normal and not a fault.
 
-### Telling a working attempt from a failed one, while it is happening
+### What the helper reports during entry
 
-The advice above is the vendor's and is about the operator's hands. It says
-nothing about how to know, within seconds, whether the attempt took. Five
-runs recorded under the two-stage tooling give a signal that does, and it is
-counted from the helper's own log rather than judged by feel.
+`arm-seize.sh` logs each appearance of the device with its USB subclass, and
+each image request it refuses. Two lines matter:
 
-| run | `0x08` refusals | `subclass=0xFF` | outcome |
-| --- | --- | --- | --- |
-| seize-228-1623 | 2 | yes | seized |
-| seize-229-2326 | 2 | yes | seized |
-| seize-2210-1014 | 2 | yes | seized |
-| seize-228-1608 | 6 | never | fell through to a normal boot |
-| seize-2210-0959 | 6 | never | fell through to a normal boot |
-
-Every attempt that worked refused `0x08` **exactly twice** and then saw the
-device reappear at `subclass=0xFF`, which the helper logs as
-`Device is in iROM mode. Starting Phase 1.` Every attempt that failed kept
-being asked for `0x08` and never reached `0xFF`.
-
-So a third request for `0x08` means that attempt is already lost. There is
-nothing to wait for and nothing to fix on the host: release, let it boot, and
-try again. Watch for it with:
-
-```sh
-grep -ac 'type=0x08' <evidence>/seize.log     # 2 is the working number
-grep -ac 'subclass=0xFF' <evidence>/seize.log # 0 means it never reached iROM
+```
+Device is already past iROM. Going directly to Phase 2.   <- subclass FE
+Device is in iROM mode (subclass=0xFF). Starting Phase 1.  <- the useful one
 ```
 
-What the operator did differently between those runs is **not established**.
-The counts are what was observed; the cause is not. This is a way to tell a
-lost attempt quickly, not an explanation of why entry is unreliable.
+Only after the second does the device ask for the real chain -- `0x09`,
+`0x02`, `0x03`, `0x05`, `0x79` -- and only then is there a bootloader of ours
+running with a console on it.
+
+An earlier revision of this section presented a table of `0x08` refusal
+counts across five runs, and claimed a third refusal meant the attempt was
+already lost. That is withdrawn. The counts were real, but every one of those
+runs was taken while this tooling was itself being changed, and attributing
+the difference to the device rather than to the harness is exactly the
+mistake this page exists to prevent. The iROM side of this is deterministic;
+what varied across those runs was the host.
+
+What is safe to say: watch for the `subclass=0xFF` line. Until it appears,
+nothing of ours is running on the device.
 
 ## Why attempts fail
 
