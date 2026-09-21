@@ -69,8 +69,13 @@ command -v pilot_failure >/dev/null 2>&1 || pilot_failure() {
 # failure was observed; a step that cannot be observed at all is worse.
 usb_adb_record() {
   log "$*"
-  ${BB} test -d "${PILOT_STATE}/logs" &&
-    echo "reinvoke-usb-adb: $*" >>"${PILOT_STATE}/logs/runtime.log" 2>/dev/null
+  # Create the directory rather than skipping when it is absent. init brings
+  # USB ADB up five lines before it creates /run/reinvoke/logs, so a test for
+  # the directory was false exactly at boot, which is the one time this
+  # record is worth having. Verified on 2.2.11: the manual verbs recorded and
+  # the boot did not.
+  ${BB} mkdir -p "${PILOT_STATE}/logs" 2>/dev/null
+  echo "reinvoke-usb-adb: $*" >>"${PILOT_STATE}/logs/runtime.log" 2>/dev/null
   return 0
 }
 
