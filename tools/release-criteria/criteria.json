@@ -52,7 +52,8 @@
       "id": "no-volume-arc-at-boot",
       "pattern": "RING_ARC",
       "expect": "absent",
-      "why": "The ring follows volume changes, as the donor did. Drawing it on every apply attempt made the boot illumination count a readout of DSP latency."
+      "why": "The ring follows volume changes, as the donor did. Drawing it on every apply attempt made the boot illumination count a readout of DSP latency. Scoped to the startup sequence: the runtime log keeps growing, so without a bound this also failed for a dial the owner turned minutes later, which is the ring doing its job.",
+      "until": "CUE_PLAYED Power_On"
     },
     {
       "id": "identifiers-present",

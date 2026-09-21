@@ -64,7 +64,23 @@ function matchLog(text, entry) {
 function checkBoot(logPath) {
   const text = fs.readFileSync(logPath, 'utf8');
   console.log(`boot log: ${logPath}`);
-  for (const entry of criteria.boot) matchLog(text, entry);
+  for (const entry of criteria.boot) {
+    // "At boot" has to mean during the startup sequence. The runtime log is
+    // append-only and lives as long as the unit is up, so an unbounded
+    // "absent" criterion eventually fails for ordinary use: a dial turned
+    // minutes after boot wrote RING_ARC, which is the ring working.
+    let scoped = text;
+    if (entry.until) {
+      const end = text.indexOf(entry.until);
+      if (end < 0) {
+        report(entry.id, false, `no "${entry.until}" in the log to bound it`,
+          entry.why);
+        continue;
+      }
+      scoped = text.slice(0, end + entry.until.length);
+    }
+    matchLog(scoped, entry);
+  }
 }
 
 function adb(command) {
