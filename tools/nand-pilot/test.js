@@ -184,6 +184,38 @@ try {
       'patch-runtime.js no longer strips -d from the inherited router line');
   }
 
+  // A default that never takes effect is worse than no default. common.sh is
+  // sourced first and sets PILOT_STATE to /run/nand-pilot, so usb-adb-start's
+  // own ":-/run/reinvoke" was dead: the boot record went to a second
+  // runtime.log holding nothing else, and four wrong explanations were given
+  // for why it was missing from the log everyone reads.
+  {
+    const common = fs.readFileSync(
+      path.join(__dirname, 'common.sh'), 'utf8');
+    const usbAdb = fs.readFileSync(
+      path.join(__dirname, 'usb-adb-start.sh'), 'utf8');
+    const defaultOf = (text, name) => {
+      const found = new RegExp(`^${name}=\\$\\{${name}:-([^}]+)\\}`, 'm')
+        .exec(text);
+      return found && found[1];
+    };
+    const commonState = defaultOf(common, 'PILOT_STATE');
+    const usbAdbState = defaultOf(usbAdb, 'PILOT_STATE');
+    assert(commonState, 'common.sh no longer defaults PILOT_STATE');
+    assert(usbAdbState, 'usb-adb-start.sh no longer defaults PILOT_STATE');
+    assert.equal(usbAdbState, commonState,
+      `usb-adb-start.sh defaults PILOT_STATE to ${usbAdbState} while ` +
+      `common.sh, which is sourced first, sets ${commonState}`);
+
+    // And the runtime log is a separate thing from pilot state, because init
+    // redirects supervised services into /run/reinvoke/logs/runtime.log.
+    assert(/RUNTIME_LOG=\$\{RUNTIME_LOG:-\/run\/reinvoke\/logs\/runtime\.log\}/
+      .test(usbAdb),
+      'usb-adb-start.sh no longer targets the runtime log the services use');
+    assert(!/PILOT_STATE\}\/logs/.test(usbAdb),
+      'usb-adb-start.sh writes a log under PILOT_STATE again');
+  }
+
   assert.equal(lib.CANDIDATE, '2.2.11');
   // Not a copy of the constant, which only forces an edit in two places when
   // the date moves. The date is stamped into /etc/nand-pilot/build-id on the

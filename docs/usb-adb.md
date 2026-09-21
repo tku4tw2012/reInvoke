@@ -214,41 +214,40 @@ not.
 
 ## Where the bring-up record goes
 
-`usb_adb_record` writes to `/run/reinvoke/logs/runtime.log` and to
-`/dev/kmsg`. The second destination is there because the first has never
-worked at boot, and four explanations for that were offered and all four
-were wrong.
+`usb_adb_record` writes to the runtime log and to `/dev/kmsg`.
 
-The kernel buffer settled what the log file could not. On 2.2.11:
+The second destination is what found the bug. The record appeared to vanish
+at boot across three builds, and four explanations were offered and all four
+were wrong: the directory exists by then, nothing truncates the file, the
+variables are set, and the call site is reached. Adding an independent
+destination settled it in one boot:
 
 ```
 [   29.307748] reinvoke-usb-adb: ready: state=CONFIGURED
 ```
 
-So `pilot_usb_adb_up` does run at boot, does reach its success path, and
-does call the record. What fails is only the write to `runtime.log`.
+The line was never lost. It was in `/run/nand-pilot/logs/runtime.log`, a
+second file containing nothing else.
 
-What was ruled out, each by observation rather than reasoning: the logs
-directory exists by then, because `start_autonomous_runtime` is defined near
-line 298 but invoked at 596, after the `mkdir` at 575. Nothing truncates the
-file; the only two references to it in init are appends. `PILOT_STATE` and
-`BB` are both set. The call site is reached, which the kernel line proves.
-And running the same function by hand in the same shell, with the same
-variables, writes correctly.
+There are two state directories and they are not interchangeable.
+`PILOT_STATE` is the pilot's own, set by `common.sh` to `/run/nand-pilot`,
+and `adb-transport` and the pid files belong there because `common.sh` reads
+and writes them there. The runtime services log somewhere else: init
+redirects each supervised service into `/run/reinvoke/logs/runtime.log`.
 
-One observation is unexplained: `mount` reports **two** tmpfs mounts on
-`/run`. A write at 29.3 seconds and a write now may therefore be going to
-different filesystems, with the earlier one hidden beneath the later mount.
-That is consistent with everything above, and it is **not confirmed**: the
-attempt to read the lower mount produced nothing, and what performs the
-second mount was not found. init contains no mount commands at all.
+`usb-adb-start.sh` carried its own `PILOT_STATE=${PILOT_STATE:-/run/reinvoke}`
+default, which never took effect, because `common.sh` is sourced first and had
+already set the variable. A default that cannot apply is worse than none: it
+reads as the value in force and is not.
 
-This is recorded as an open question rather than fixed. The record is
-available from `dmesg` and the runtime is unaffected either way; USB ADB
-comes up at boot regardless, which is what the line was only ever
-describing.
+Nothing else was affected. Nothing reads `usb-adbd.pid`, and `adb-transport`
+was consistent with `common.sh` because both used the same variable. Only the
+log record named a path of its own.
 
-## Unloading
+The defaults are now held equal by a test, and the runtime log is a separate
+variable from pilot state so the two cannot drift back together.
+
+## Unloading## Unloading
 
 `rmmod g_android` followed by `insmod` panicked this unit on every candidate up
 to and including 2.2.7. The unload itself is safe, and the kernel refuses the

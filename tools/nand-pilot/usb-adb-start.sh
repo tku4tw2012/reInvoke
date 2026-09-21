@@ -34,7 +34,24 @@
 # a standalone teardown script used to sit beside this one with its own copy
 # of the sequence, and two copies of an ordering this fussy will drift.
 BB=${BB:-/bin/busybox}
-PILOT_STATE=${PILOT_STATE:-/run/reinvoke}
+PILOT_STATE=${PILOT_STATE:-/run/nand-pilot}
+
+# Two state directories, and they are not interchangeable.
+#
+# PILOT_STATE is the pilot's own, set by common.sh to /run/nand-pilot, and it
+# is where adb-transport and the pid files belong because common.sh writes
+# and reads them there.
+#
+# The runtime services write their logs somewhere else: init redirects each
+# supervised service into /run/reinvoke/logs/runtime.log. A record that is
+# meant to sit alongside those has to go there and not into PILOT_STATE.
+#
+# This default said /run/reinvoke, which never took effect because common.sh
+# is sourced first and had already set it. The result was that the boot
+# record landed in /run/nand-pilot/logs/runtime.log, a second file holding
+# nothing else, while four wrong explanations were offered for why it was
+# "missing" from the log everyone reads.
+RUNTIME_LOG=${RUNTIME_LOG:-/run/reinvoke/logs/runtime.log}
 # Whether init is above us.
 #
 # Two earlier attempts at this both failed silently, which is worse than
@@ -83,8 +100,8 @@ usb_adb_record() {
   # runtime creates, survives whatever the logger does to runtime.log, and is
   # readable afterwards with dmesg. If the line is in one and not the other,
   # that difference is itself the evidence this needs.
-  ${BB} mkdir -p "${PILOT_STATE}/logs" 2>/dev/null
-  echo "reinvoke-usb-adb: $*" >>"${PILOT_STATE}/logs/runtime.log" 2>/dev/null
+  ${BB} mkdir -p "${RUNTIME_LOG%/*}" 2>/dev/null
+  echo "reinvoke-usb-adb: $*" >>"${RUNTIME_LOG}" 2>/dev/null
   echo "reinvoke-usb-adb: $*" >/dev/kmsg 2>/dev/null
   return 0
 }
