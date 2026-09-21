@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/binary"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -112,56 +113,72 @@ func TestScaleSamplesAttenuatesExactly(t *testing.T) {
 	}
 }
 
-// TestCueGainNormalisesByPeak proves a quiet cue and a mastered one end up at
-// the same level. The donor's own cues range from 5 percent of full scale to
-// 100 percent, so a single gain would make some inaudible and others painful.
-func TestCueGainNormalisesByPeak(t *testing.T) {
-	quiet := cueGain(100, 1703) // S_301_d_micoff, 5 percent of full scale
-	loud := cueGain(100, 32767) // S_311_d_pluggedin, mastered to full scale
-	quietPeak := 1703 * quiet
-	loudPeak := 32767 * loud
-	if diff := quietPeak - loudPeak; diff > 1 || diff < -1 {
-		t.Fatalf("normalised peaks differ: %.1f vs %.1f", quietPeak, loudPeak)
+// TestCueGainKeepsTheDonorsRelativeLevels proves two cues mastered at
+// different levels stay that far apart after scaling.
+//
+// This replaced peak normalisation, which drove every cue to a common peak.
+// Measured from the shipped files, Power_On peaks at 20016 and Volume_Max at
+// 10505: a deliberate 5.6 dB gap between the startup fanfare and the blip
+// that says the dial will go no further. Normalising erased it and lifted
+// Volume_Max by 9.5 dB at the top of the dial, which was audible as a loud
+// bing on reaching full volume.
+func TestCueGainKeepsTheDonorsRelativeLevels(t *testing.T) {
+	const powerOn = 20016.0
+	const volumeMax = 10505.0
+	mastered := 20 * math.Log10(powerOn/volumeMax)
+
+	for _, volume := range []int{10, 34, 58, 80, 100} {
+		loud := powerOn * cueGain(volume, int(powerOn))
+		quiet := volumeMax * cueGain(volume, int(volumeMax))
+		if quiet <= 0 || loud <= 0 {
+			t.Fatalf("dial %d rendered silence", volume)
+		}
+		got := 20 * math.Log10(loud/quiet)
+		if math.Abs(got-mastered) > 0.01 {
+			t.Fatalf(
+				"dial %d put the two cues %.2f dB apart; the donor mastered them %.2f dB apart",
+				volume, got, mastered)
+		}
 	}
 
-	// Volume scales the target, below the level where the clamp takes over.
-	// Above that the samples are already as loud as they may safely be and
-	// only the DSP carries further volume.
-	below := int(cueMaxPeak*100/cueTargetPeak) / 2
-	if half := cueGain(below, 32767); half >= cueGain(below*2, 32767) {
-		t.Fatal("halving the volume did not lower the gain")
+	// The anchor is the one level that was measured on hardware: Power_On at
+	// dial 34 peaked at 10008 and was judged right.
+	if got := powerOn * cueGain(cueReferenceDial, int(powerOn)); math.Abs(got-10008) > 1 {
+		t.Fatalf("the measured chime level moved to %.0f", got)
 	}
+
 	if cueGain(0, 32767) != 0 {
 		t.Fatal("volume zero should be silent")
 	}
-	// Scaling never asks for more than a sample can hold, at any volume or
-	// any source peak, so boosting a quiet cue cannot clip.
-	for _, volume := range []int{1, 5, 20, 50, 100} {
-		for _, peak := range []int{10, 1703, 20016, 32767} {
+	if half, full := cueGain(20, 20016), cueGain(40, 20016); half >= full {
+		t.Fatal("lowering the dial did not lower the gain")
+	}
+
+	// One gain for every cue still must not clip the loudest one.
+	for _, volume := range []int{1, 5, 20, 34, 50, 80, 100} {
+		for _, peak := range []int{10, 1703, 10505, 20016} {
 			if scaled := float64(peak) * cueGain(volume, peak); scaled > 32767 {
-				t.Fatalf("volume %d on a %d peak asks for %.0f", volume, peak, scaled)
+				t.Fatalf("dial %d on a %d peak asks for %.0f", volume, peak, scaled)
 			}
 		}
 	}
 }
 
-// TestCueGainLiftsAQuietCue proves normalisation works upward as well as down.
+// TestCueGainStillLiftsAQuietCue proves the shared gain rises above one, so a
+// quietly mastered cue is not stuck at its file level.
 //
-// The gain was capped at one in two places, so a donor cue mastered at five
-// percent of full scale stayed there while a mastered one was brought down to
-// meet it. That is attenuation, not normalisation, and it only looked right
-// while the target sat below every cue's own peak.
-func TestCueGainLiftsAQuietCue(t *testing.T) {
-	const quietPeak = 1703 // S_301_d_micoff, 5 percent of full scale
-	gain := cueGain(5, quietPeak)
+// The gain was once capped at one, which meant a cue could only be attenuated.
+// Sharing a gain between cues must not bring that back.
+func TestCueGainStillLiftsAQuietCue(t *testing.T) {
+	const quietPeak = 10505 // Volume_Max as shipped
+	gain := cueGain(100, quietPeak)
 	if gain <= 1 {
-		t.Fatalf("gain %v leaves a five percent cue where it was", gain)
+		t.Fatalf("gain %v leaves a quiet cue where it was", gain)
 	}
 	lifted := float64(quietPeak) * gain
 	if lifted > 32767 {
 		t.Fatalf("lifting a quiet cue asks for %.0f", lifted)
 	}
-	// And the samples must actually move, not just the number.
 	samples := pcm16(quietPeak, -quietPeak)
 	scaleSamples(samples, gain)
 	if samplePeak(samples) <= quietPeak {
@@ -218,14 +235,11 @@ func TestPlayRendersThroughTheConfiguredPlayer(t *testing.T) {
 	if len(rendered) != 6 {
 		t.Fatalf("renderer received %d bytes, want 6", len(rendered))
 	}
-	// The loudest sample must sit at whatever was asked for, which at full
-	// volume is the clamp rather than the target: cueTargetPeak is calibrated
-	// against the DSP gain this unit boots at, and at volume 100 it asks for
-	// far more than a sample can hold.
-	want := cueTargetPeak
-	if want > cueMaxPeak {
-		want = cueMaxPeak
-	}
+	// The loudest sample is the source peak times the shared gain for this
+	// dial position. It is no longer a fixed target: that was the whole point
+	// of dropping per-cue normalisation.
+	const sourcePeak = 20000 // the loudest sample in the WAV written above
+	want := float64(sourcePeak) * cueGain(100, sourcePeak)
 	peak := samplePeak(rendered)
 	if peak > int(want)+1 || peak < int(want)-1 {
 		t.Fatalf("rendered peak %d, want about %v", peak, want)

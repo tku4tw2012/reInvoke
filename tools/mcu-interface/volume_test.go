@@ -15,6 +15,12 @@ import (
 	"time"
 )
 
+// measuredDial is the dial position whose loudness was measured on this unit:
+// gain 5 was judged comfortable there. Tests that check the curve must anchor
+// on it rather than on defaultVolume, which is a separate decision and has
+// moved since.
+const measuredDial = 34
+
 func newTestVolumeController(t *testing.T) *dspVolumeController {
 	t.Helper()
 	controller, err := newDSPVolumeController("/run/reinvoke/test.sock")
@@ -220,7 +226,10 @@ func TestSoftvolTrimsWithoutMovingTheCalibration(t *testing.T) {
 
 	// The measured anchor must be untouched: at the default dial the DSP byte
 	// is exactly what was calibrated, so there is nothing to trim.
-	if got := softvolForPercent(defaultVolume); got != softvolMax {
+	// measuredDial is where the level was actually judged by ear, which is not
+	// the same thing as where the dial starts. The default moved to 40 to
+	// match the donor's recovered constant; the measurement stayed at 34.
+	if got := softvolForPercent(measuredDial); got != softvolMax {
 		t.Fatalf("the default dial trims softvol to %d; the calibration moved",
 			got)
 	}
@@ -428,7 +437,7 @@ func TestVolumeMaxCuePlaysOnArrivalOnly(t *testing.T) {
 func TestDialFollowsTheDonorCurve(t *testing.T) {
 	// The anchors. Both were measured by listening, and the curve exists to
 	// pass through them.
-	if got := dspByteForPercent(defaultVolume); got != 5 {
+	if got := dspByteForPercent(measuredDial); got != 5 {
 		t.Fatalf("the default dial produces gain %d, want the measured 5", got)
 	}
 	if got := dspByteForPercent(100); got != 90 {
@@ -477,7 +486,7 @@ func TestPushAppliesTheCurve(t *testing.T) {
 	controller.caller = script
 	controller.dspProcedure = "com.harman.dsp.volumeSet"
 
-	if err := controller.pushVolume(context.Background(), defaultVolume); err != nil {
+	if err := controller.pushVolume(context.Background(), measuredDial); err != nil {
 		t.Fatal(err)
 	}
 

@@ -40,32 +40,12 @@ const (
 	cueTimeout = 15 * time.Second
 )
 
-// cueTargetPeak is the sample value a cue is scaled to reach at full volume.
+// The cue levels below are measured from the shipped files, not chosen.
 //
-// The donor's own cues vary enormously in level: S_301_d_micoff peaks at 5% of
-// full scale while S_311_d_pluggedin is mastered to 100%. Applying one gain to
-// all of them would make some inaudible and others painful, so each cue is
-// peak-normalised instead and the user's volume scales that.
-//
-// The number is measured, not chosen. On 2026-09-19 the startup chime was
-// played on this unit at DSP gain 5 at half and quarter of its own peak, and
-// the listener picked half: 10008 of a 20016 peak. cueGain scales this
-// constant by the dial amplitude, and the dial position that produces gain 5
-// on the donor curve is 34, whose amplitude is 0.055719, so 179617 asks for
-// 10008 there.
-//
-// It was 1200, which was measured the same way but against DSP gain 80. That
-// gain was itself wrong, a leftover from when the level rode an ALSA softvol
-// control, and correcting it to 5 made the old constant sixteen times too
-// quiet. The two numbers have to move together: this one only means anything
-// relative to the gain the DSP is running at.
-//
-// The donor needed none of this: it rendered cues through the same softvol as
-// music. This runtime plays them to the hardware device instead, because the
-// music PCM does not exist until the donor stack starts and a boot cue has to
-// play before that.
-// dialAmplitude is the donor curve, shared with the volume controller so a
-// cue and the music it accompanies move together.
+// Power_On 20016, BT_Pairing 12958, BT_Connected 10806, Volume_Max 10505.
+// That 5.6 dB spread is the donor's own mastering and it is meaningful: the
+// startup fanfare is supposed to be louder than the blip that says the dial
+// will not go further. One shared gain keeps it.
 func dialAmplitude(percent int) float64 {
 	if percent <= 0 {
 		return 0
@@ -77,7 +57,16 @@ func dialAmplitude(percent int) float64 {
 	return math.Pow(10, (-rangeDB+rangeDB*float64(percent)/100)/20)
 }
 
-var cueTargetPeak = 179617.0
+// cueReferenceDial and cueReferenceGain anchor the curve where the level was
+// measured: on 2026-09-19 Power_On at dial 34 peaked at 10008 and was judged
+// right, and that file peaks at 20016.
+const cueReferenceDial = 34
+const cueReferenceGain = 10008.0 / 20016.0
+
+// cueLoudestPeak is the loudest of the shipped cues, which is what the gain
+// ceiling has to be computed against so that holding one gain for every cue
+// still cannot clip the loudest one.
+const cueLoudestPeak = 20016.0
 
 // cueMaxPeak is the loudest a scaled cue may be, short of full scale so the
 // arithmetic cannot clip.
@@ -207,8 +196,16 @@ func samplePeak(samples []byte) int {
 	return peak
 }
 
-// cueGain scales a cue so its loudest sample lands at the target for this
-// volume, whatever level the file was mastered at.
+// cueGain scales every cue by the same amount for a given dial position, so
+// the levels the donor mastered into the files survive.
+//
+// It used to scale each cue to a common target peak, which is normalisation,
+// and normalisation throws away exactly the information the donor put there.
+// Measured on the shipped files: Power_On peaks at 20016 and Volume_Max at
+// 10505, a deliberate 5.6 dB gap between a startup fanfare and a "that is as
+// loud as it goes" blip. Driving both to one peak erased that gap and lifted
+// Volume_Max by 9.5 dB at the top of the dial, which the owner heard as a
+// loud bing on reaching full volume.
 func cueGain(volume int, peak int) float64 {
 	if volume <= 0 || peak <= 0 {
 		return 0
@@ -216,27 +213,19 @@ func cueGain(volume int, peak int) float64 {
 	if volume > 100 {
 		volume = 100
 	}
-	// The dial follows the donor's curve, so a cue has to as well. Scaling
-	// by raw percent made the chime loudest where the dial was only a third
-	// up: at dial 34, which is the comfortable listening point on this unit,
-	// it asked for 68000 and clamped to the ceiling, roughly three times the
-	// level that was measured as right.
-	target := cueTargetPeak * dialAmplitude(volume)
-	// Clamp what is asked for, not the gain that delivers it.
-	//
-	// Capping the gain at 1 meant a cue could only ever be turned down, so a
-	// donor cue mastered at 5 percent of full scale stayed at 5 percent while
-	// one mastered at 100 percent was brought down to meet it. That is not
-	// normalisation, it is attenuation, and it only looked correct while the
-	// target happened to sit below every cue's own peak.
-	//
-	// Clamping the target keeps the arithmetic safe instead: the scaled peak
-	// is the target, and the target never exceeds what a sample can hold, so
-	// boosting a quiet cue cannot clip.
-	if target > cueMaxPeak {
-		target = cueMaxPeak
+	// Anchored where the level was actually measured: at dial 34 Power_On
+	// peaked at 10008 and was judged right, and that file peaks at 20016, so
+	// the gain at that point is 0.5. Everything else follows the dial curve
+	// from there, which keeps the cue tracking the same decibels as music.
+	gain := cueReferenceGain *
+		dialAmplitude(volume) / dialAmplitude(cueReferenceDial)
+	// The ceiling has to be one gain for all cues, not a per-cue target,
+	// or the relative levels come straight back apart at the top. Hold it
+	// where the loudest shipped cue still fits.
+	if maximum := cueMaxPeak / cueLoudestPeak; gain > maximum {
+		gain = maximum
 	}
-	return target / float64(peak)
+	return gain
 }
 
 // Play renders one named cue. A cue already playing is cancelled first: these

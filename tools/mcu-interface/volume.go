@@ -139,27 +139,14 @@ func (state duckState) String() string {
 	return "none"
 }
 
-// defaultVolume is the vendor's own starting level, recovered from its
-// settings store rather than guessed: caldata/FENV.bin id 0x26, named
-// current_volume in LibreEnv's table, holds 80. Earlier candidates guessed
-// here because the level was being applied to DSP gain, where the comfortable
-// point was around 3; on the softvol control this is a percentage of the
-// vendor's own scale.
-// defaultVolume is the level a unit starts at with nothing stored.
+// defaultVolume is where the dial starts when nothing has been saved.
 //
-// Measured on this unit, 2026-09-19, by playing an unattenuated cue through
-// the DSP and asking the listener: gain 3 was slightly quiet and gain 5 was
-// right. That is the level music plays at, because music reaches the DSP
-// without the attenuation the cue player applies to its own files.
-//
-// It was 80 for several releases, which was correct only for a control that
-// no longer exists. Candidate d75dccf adopted the vendor's own current_volume
-// of 80 while volume rode an ALSA softvol control, where the number is a
-// percentage of the vendor's scale. That commit said so plainly: "the
-// comfortable point was near 3" when the level went to DSP gain instead.
-// Softvol was later found to be absent on this runtime and disabled, which
-// put the level back on DSP gain without anyone moving the number back.
-const defaultVolume = 34
+// 34 was measured by ear on this unit as comfortable. 40 is the same point
+// the donor chose: audio-ui calls VolumeManager::set_default_volume_level
+// with 55, which on its 51 dB softvol is 22.95 dB below maximum, and 40 on
+// the 38 dB curve here is 22.8 dB below maximum. The two agree to 0.15 dB,
+// which is a good reason to take the recovered constant over the preference.
+const defaultVolume = 40
 
 const (
 	// volumePushTimeout bounds one call to the DSP service.
@@ -205,6 +192,10 @@ func (controller *dspVolumeController) Apply(
 	_, err = controller.AdjustVolume(ctx, delta)
 	return err
 }
+
+// dspVolumeComplaintEvery is how many consecutive failures pass between
+// complaints once the opening race has stopped being a plausible excuse.
+const dspVolumeComplaintEvery = 10
 
 // maxVolume is the top of the rotary range.
 const maxVolume = 100
@@ -343,6 +334,9 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 	drawn := controller.displayLevel()
 
 	var retry <-chan time.Time
+	// pending counts consecutive failed applies, so the opening race can be
+	// reported differently from a failure that is not going away.
+	pending := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -430,14 +424,32 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 				drawn = shown
 			}
 			controller.markApplied()
+			pending = 0
 			continue
 		}
 		if ctx.Err() != nil {
 			return
 		}
+		// The same line used to be written for the opening race as for a real
+		// failure. On every boot that put an error in the log that reads like
+		// a fault and is not one: the DSP registers its procedures about five
+		// seconds after this service starts, the retry lands, and the
+		// amplifier is still muted throughout. Anyone reading the log later
+		// chases it. Say what is happening instead, and only call it a
+		// failure once retrying has stopped explaining it.
 		if controller.logf != nil {
-			controller.logf("apply DSP volume %d: %v", level, err)
+			switch {
+			case pending == 0:
+				controller.logf(
+					"DSP has not registered volumeSet yet; holding %d and retrying",
+					level)
+			case pending%dspVolumeComplaintEvery == 0:
+				controller.logf(
+					"apply DSP volume %d still failing after %d attempts: %v",
+					level, pending, err)
+			}
 		}
+		pending++
 		// The DSP service registers its procedures after this one starts, so
 		// the first assertions lose a race nobody can hear. Keep trying; each
 		// attempt re-reads the level, so a retry cannot apply a stale one.
