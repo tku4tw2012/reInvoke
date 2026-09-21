@@ -361,5 +361,38 @@ the other five have byte-identical `.text` to the set already validated on
 hardware, and the `init_module` relocation and `.gnu.linkonce.this_module`
 size are unchanged.
 
-Whether this makes reload work is unproven until the test runs again.
+### Tested again, and it moved the failure
+
+2.2.9 was flashed and the test re-run on 2026-09-21. Evidence in
+`evidence/reload-test-229-20260921T*`.
+
+The unload is now clean. `rmmod` returns 0 and the
+`sysfs: kobject android0 without dirent` warning is gone, which is the
+devt collision fixed: `android0` is no longer destroyed by the cleanup of
+function 0. The unit also stayed fully responsive throughout -- the owner
+confirmed the top tap still lit and the dial still moved the ring -- so
+only the USB gadget was lost, not the runtime.
+
+That exposed the next failure underneath:
+
+```
+insmod: can't insert g_android.ko: File exists
+  kobject_add_internal  <- device_add <- device_register
+  <- mass_storage_function_init [g_android]
+```
+
+`mass_storage_function_init()` calls `fsg_common_init()`, which registers
+the LUN device, and then links it into the function's own directory as
+`lun`. `mass_storage_function_cleanup()` freed the config and released
+neither, so both outlived the module and the next `device_register()`
+found the name taken.
+
+A fifth fix follows: cleanup drops the sysfs link and calls
+`fsg_common_put()`, and `android_cleanup_functions()` now runs
+`f->cleanup(f)` before destroying `f->dev`, because a function cannot
+remove entries from a device directory that has already gone.
+
+Whether that is the last one is unproven. Each fix so far has revealed
+the next, which is what a teardown path that was never exercised looks
+like.
 

@@ -56,6 +56,18 @@ const ADBD_SHA256 =
 //  - acm_function_cleanup() dereferenced f->config without checking it, and
 //    adb/ffs freed f->config without clearing it.
 //
+// A fifth fix followed on 2026-09-21, after the first four were tested on
+// hardware. They made the unload clean -- the "kobject android0 without
+// dirent" warning is gone and rmmod returns 0 -- and that exposed the next
+// failure underneath: insmod returned EEXIST with a kobject_add_internal
+// warning from inside mass_storage_function_init. fsg_common_init()
+// registers the LUN device and init links it in as "lun", but cleanup only
+// freed the config, so both outlived the module and the next load found the
+// name taken. Cleanup now drops the link and the common block, and the
+// cleanup loop runs f->cleanup(f) before destroying f->dev, because a
+// function cannot remove entries from a device directory that has already
+// gone.
+//
 // Verified before the pin moved: the init_module relocation is still at 0xbc
 // and .gnu.linkonce.this_module is still 0x144, which docs/usb-adb.md
 // requires; vermagic and intree match; and the five untouched modules have
@@ -66,7 +78,7 @@ const GADGET_MODULES = [
   ['libcomposite.ko', '9f4e0e72301d51676a2b7f2fb150a309443145263b0780fce180993795c0eed8'],
   ['u_serial.ko', '8adf7716bdaf689cca143dd72f2496d4964e78c7eef013bb99287189c7819574'],
   ['usb_f_acm.ko', '02eea4de20ecd0eb641b6c403c233888406be0ab07dfe46838e2ffc37778db4c'],
-  ['g_android.ko', '549b1f65f7a7e1c755f78afbd82a0b8ffe3abf7c56b9d6fae15398a5c1ff3444'],
+  ['g_android.ko', 'a1d7926292a18bbc53dfc22781ea6c24147a245db375d93cac1e961ad2c5350c'],
 ];
 
 function validateUsbAdb(value) {
