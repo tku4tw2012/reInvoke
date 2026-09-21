@@ -69,13 +69,23 @@ command -v pilot_failure >/dev/null 2>&1 || pilot_failure() {
 # failure was observed; a step that cannot be observed at all is worse.
 usb_adb_record() {
   log "$*"
-  # Create the directory rather than skipping when it is absent. init brings
-  # USB ADB up five lines before it creates /run/reinvoke/logs, so a test for
-  # the directory was false exactly at boot, which is the one time this
-  # record is worth having. Verified on 2.2.11: the manual verbs recorded and
-  # the boot did not.
+  # Two destinations, because one of them has already failed once for a
+  # reason that was never established.
+  #
+  # runtime.log is where the boot record belongs, and calling this by hand
+  # writes there correctly. At boot it produced nothing, across two builds,
+  # and every explanation offered for that turned out to be wrong: the
+  # directory does exist by then, nothing truncates the file, the variables
+  # are set, and the call site is reached. Rather than guess a fourth time,
+  # also write somewhere that cannot depend on any of it.
+  #
+  # /dev/kmsg is the kernel ring buffer. It exists before any filesystem this
+  # runtime creates, survives whatever the logger does to runtime.log, and is
+  # readable afterwards with dmesg. If the line is in one and not the other,
+  # that difference is itself the evidence this needs.
   ${BB} mkdir -p "${PILOT_STATE}/logs" 2>/dev/null
   echo "reinvoke-usb-adb: $*" >>"${PILOT_STATE}/logs/runtime.log" 2>/dev/null
+  echo "reinvoke-usb-adb: $*" >/dev/kmsg 2>/dev/null
   return 0
 }
 
