@@ -183,6 +183,19 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
     '        echo "reinvoke-${service_name}: start uptime=$(${BB} cut -d\' \' -f1 /proc/uptime)" \\',
     '          >>/run/reinvoke/logs/runtime.log',
   ].join('\n'));
+  // The router must not run with its debug switch. -d makes bonefish log
+  // every message that crosses it, and with three services publishing a
+  // lifecycle heartbeat every ten seconds that was 302 KB an hour on an idle
+  // unit, 476 KB of a 502 KB log. It fills the 16 MB /run tmpfs in about two
+  // and a half days, and nothing reads it: no release criterion and no audit
+  // parses a bonefish line.
+  //
+  // Patched here because the line is inherited from the pinned RC12 init.
+  // Editing the RAM-boot launcher alone left it in the NAND image, which the
+  // payload check caught.
+  replace('"${runtime_bin}/bonefish" -r default -t 9999 -w 9998 -d',
+    '"${runtime_bin}/bonefish" -r default -t 9999 -w 9998');
+
   // Nothing waits on a socket that no longer exists.
   replace([
     '  runtime_logger_attempt=0',
