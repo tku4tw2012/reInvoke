@@ -117,14 +117,36 @@ Leave USB connected throughout and cycle mains power only. Unplug mains, hold
 the Reset pinhole, restore mains while still holding it, then press MicOff
 exactly four times within five seconds. Yellow indicates the mode is armed.
 
-**Keep holding Reset until the U-Boot console appears, then release.** This is
-the vendor instruction in `Instructions.pdf` (Process 2, step 7) shipped in the
-`invoke-flashing` bundle, and it agrees with [U-Boot access](uboot-access.md).
+### How long to hold Reset
 
-An earlier revision of this file said to release at yellow and claimed that
-holding longer "makes no difference; measured on this unit". That claim was
-introduced in a tooling commit that contains no such measurement. It is
-withdrawn: nothing here ever tested it, and it contradicts the vendor source.
+`Instructions.pdf` (Process 2, step 7) in the `invoke-flashing` bundle says to
+keep holding Reset until the U-Boot console appears. That is the vendor's
+instruction and it is recorded here as such.
+
+It has never been tested on this unit, and the timestamps say the question it
+answers is already settled before a long hold could matter. In all three
+successful seizes the device appeared on USB at `subclass=0xFE` and reached
+`subclass=0xFF` a fixed nine to ten seconds later:
+
+| seize | first `0xFE` | first `0xFF` | gap |
+| --- | --- | --- | --- |
+| 228-1623 | 16:24:00 | 16:24:10 | 10s |
+| 229-2326 | 23:28:22 | 23:28:32 | 10s |
+| 2210-1014 | 10:18:21 | 10:18:30 | 9s |
+
+The operator reports the same thing from the other side: yellow goes out
+whether the attempt took or not, and continuing to hold past the first few
+seconds of boot changes nothing that can be observed. Both accounts agree that
+whatever decides the outcome has happened by about ten seconds in.
+
+So: enter service mode, and release when you like. This page previously
+carried an instruction to hold for the whole attempt, repeated from the vendor
+document as though it had been measured here. It had not been.
+
+The reverse claim was also once in this file -- that holding longer "makes no
+difference; measured on this unit" -- and was withdrawn for citing a
+measurement that did not exist. Neither direction has been instrumented. What
+is measured is the nine to ten seconds above.
 
 If the device instead disconnects repeatedly for more than ten seconds, the
 vendor remedy is to unplug mains, wait ten seconds and restore mains, leaving
