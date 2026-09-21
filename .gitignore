@@ -58,3 +58,19 @@ tools/hci-down/hci-down
 tools/pairing-agent/pairing-agent
 tools/identifiers/identifiers
 usb_boot_arm.log
+
+# Compiled output. Three x86-64 binaries reached history this way, 9 MB in
+# all, carrying the builder's home directory in their embedded paths: each
+# tool is named for its directory, so `go build` with no -o drops the binary
+# beside its source and a broad `git add` takes it.
+#
+# Named exactly rather than by shape. A pattern like /tools/*/[a-z]*[a-z]
+# also matches native-ram-entry and native-ram-init, which are scripts that
+# belong here; it only looked safe because tracked files are never ignored,
+# so it would have hidden them the next time they were added fresh.
+/status
+/tools/source-manager/source-manager
+/tools/nand-pilot/persistence/persistence
+/tools/nand-pilot/status/status
+/tools/propertyd/propertyd
+/tools/keep-helper-free/keep-helper-free
