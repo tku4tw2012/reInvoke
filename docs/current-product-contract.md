@@ -269,6 +269,30 @@ Reset at power-on is a different recovery action. reInvoke has no implemented
 factory reset; 04's settings layer does not implement a reset or reflash
 migration operation. No assistant action is assigned yet.
 
+## Where things live on the device
+
+Adopted from the donor rather than invented, because the donor had already
+answered this and two different answers had drifted into place here.
+
+| kind | location | donor precedent |
+| --- | --- | --- |
+| identity | flat in `/etc` | `/etc/version`, `/etc/distro_version`, `/etc/build.info` |
+| product config and manifests | `/etc/reinvoke/` | `/etc/podium/`, named for the vendor's platform |
+| helper scripts init sources | `/usr/libexec/reinvoke/` | `/usr/libexec/dbus-daemon-launch-helper` |
+| runtime state | `/run/reinvoke/` | flat `/run/dnsmasq.pid`; the directory is ours |
+
+**reinvoke** is the product. **nand-pilot** is one subsystem of it, the part
+that boots and writes NAND, and it remains the name of the builder's source
+directory because that is what it builds. It should not name files that
+describe the whole image, and it did: `/etc/nand-pilot/build-id` sat beside
+`/etc/reinvoke-release`, `/usr/libexec/nand-pilot` beside `/run/reinvoke`.
+
+Two facts about the build appear twice, in `/etc/reinvoke-release` and in
+`/etc/reinvoke/build-id`. That is not a defect to tidy away: the donor does
+the same, shipping `/etc/distro_version` and `/etc/version.txt` with
+identical contents, because a human-readable banner and a machine-readable
+token have different readers.
+
 ## Dependency and build boundary
 
 Included donor assets are native boot/kernel payloads, SD8887 firmware and
