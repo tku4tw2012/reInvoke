@@ -214,40 +214,42 @@ not.
 
 ## Where the bring-up record goes
 
-`usb_adb_record` writes to the runtime log and to `/dev/kmsg`.
+`usb_adb_record` calls `log`, which reaches the pilot's `boot.log` through
+`pilot_log`, and writes a copy to `/dev/kmsg`.
 
-The second destination is what found the bug. The record appeared to vanish
-at boot across three builds, and four explanations were offered and all four
-were wrong: the directory exists by then, nothing truncates the file, the
-variables are set, and the call site is reached. Adding an independent
-destination settled it in one boot:
+That is all it needs to do, and it is worth recording what it cost to learn.
+The record was believed missing for three builds. It was never missing:
 
 ```
-[   29.307748] reinvoke-usb-adb: ready: state=CONFIGURED
+29.29 runtime: ready: state=CONFIGURED
 ```
 
-The line was never lost. It was in `/run/nand-pilot/logs/runtime.log`, a
-second file containing nothing else.
+It had been in `/run/nand-pilot/boot.log` since the first of those builds,
+written by the `log` call that was already there. The searches were for
+"usb", and `pilot_log` writes the prefix "runtime:". The wrong file was read,
+then the wrong string.
 
-There are two state directories and they are not interchangeable.
-`PILOT_STATE` is the pilot's own, set by `common.sh` to `/run/nand-pilot`,
-and `adb-transport` and the pid files belong there because `common.sh` reads
-and writes them there. The runtime services log somewhere else: init
-redirects each supervised service into `/run/reinvoke/logs/runtime.log`.
+Four explanations were offered along the way for why the line was absent from
+`runtime.log` and all four were wrong: the directory exists by then, nothing
+truncates the file, the variables are set, and the call site is reached. A
+fifth, that `/run` was mounted twice, was also wrong; `/proc/self/mountinfo`
+shows one mount and the duplicate line in `/proc/mounts` is a quirk of this
+kernel.
 
-`usb-adb-start.sh` carried its own `PILOT_STATE=${PILOT_STATE:-/run/reinvoke}`
-default, which never took effect, because `common.sh` is sourced first and had
-already set the variable. A default that cannot apply is worse than none: it
-reads as the value in force and is not.
+The real defect was small and real: `usb-adb-start.sh` carried
+`PILOT_STATE=${PILOT_STATE:-/run/reinvoke}` while `common.sh`, sourced first,
+sets `/run/nand-pilot`. That default could never apply, so it read as the
+value in force while not being it. The extra `runtime.log` it opened held one
+line and nothing else ever wrote there.
 
-Nothing else was affected. Nothing reads `usb-adbd.pid`, and `adb-transport`
-was consistent with `common.sh` because both used the same variable. Only the
-log record named a path of its own.
+Both state directories are this project's own; neither name appears in the
+donor, whose services kept their state flat in `/run`. `PILOT_STATE` holds
+boot progression, the entry evidence and the transports init owns;
+`/run/reinvoke` holds the runtime services' pids, sockets and logs. The split
+is real but it is ours, and collapsing it to one name is worth doing when
+something else is already being changed.
 
-The defaults are now held equal by a test, and the runtime log is a separate
-variable from pilot state so the two cannot drift back together.
-
-## Unloading## Unloading
+## Unloading## Unloading## Unloading
 
 `rmmod g_android` followed by `insmod` panicked this unit on every candidate up
 to and including 2.2.7. The unload itself is safe, and the kernel refuses the

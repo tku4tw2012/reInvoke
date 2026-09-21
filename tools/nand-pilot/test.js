@@ -184,11 +184,10 @@ try {
       'patch-runtime.js no longer strips -d from the inherited router line');
   }
 
-  // A default that never takes effect is worse than no default. common.sh is
-  // sourced first and sets PILOT_STATE to /run/nand-pilot, so usb-adb-start's
-  // own ":-/run/reinvoke" was dead: the boot record went to a second
-  // runtime.log holding nothing else, and four wrong explanations were given
-  // for why it was missing from the log everyone reads.
+  // The two state directories are deliberate and must agree on their name.
+  // usb-adb-start.sh once defaulted PILOT_STATE to /run/reinvoke while
+  // common.sh, which is sourced first, set /run/nand-pilot. A default that
+  // cannot apply reads as the value in force and is not.
   {
     const common = fs.readFileSync(
       path.join(__dirname, 'common.sh'), 'utf8');
@@ -199,21 +198,16 @@ try {
         .exec(text);
       return found && found[1];
     };
-    const commonState = defaultOf(common, 'PILOT_STATE');
-    const usbAdbState = defaultOf(usbAdb, 'PILOT_STATE');
-    assert(commonState, 'common.sh no longer defaults PILOT_STATE');
-    assert(usbAdbState, 'usb-adb-start.sh no longer defaults PILOT_STATE');
-    assert.equal(usbAdbState, commonState,
-      `usb-adb-start.sh defaults PILOT_STATE to ${usbAdbState} while ` +
-      `common.sh, which is sourced first, sets ${commonState}`);
+    assert.equal(defaultOf(usbAdb, 'PILOT_STATE'),
+      defaultOf(common, 'PILOT_STATE'),
+      'usb-adb-start.sh and common.sh disagree on where pilot state lives');
 
-    // And the runtime log is a separate thing from pilot state, because init
-    // redirects supervised services into /run/reinvoke/logs/runtime.log.
-    assert(/RUNTIME_LOG=\$\{RUNTIME_LOG:-\/run\/reinvoke\/logs\/runtime\.log\}/
-      .test(usbAdb),
-      'usb-adb-start.sh no longer targets the runtime log the services use');
-    assert(!/PILOT_STATE\}\/logs/.test(usbAdb),
-      'usb-adb-start.sh writes a log under PILOT_STATE again');
+    // And nothing here should open a log of its own. log() already reaches
+    // the pilot's boot.log, which is where a record made by init belongs;
+    // writing a second runtime.log created a file holding one line while
+    // three builds were spent believing the record was missing.
+    assert(!/logs\/runtime\.log/.test(usbAdb),
+      'usb-adb-start.sh writes its own runtime.log again; log() already logs');
   }
 
   assert.equal(lib.CANDIDATE, '2.2.11');
