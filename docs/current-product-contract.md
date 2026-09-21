@@ -293,6 +293,22 @@ the same, shipping `/etc/distro_version` and `/etc/version.txt` with
 identical contents, because a human-readable banner and a machine-readable
 token have different readers.
 
+### Builder paths in shipped binaries
+
+`reinvoke-status` and `reinvoke-identifiers` carry the builder's absolute home
+directory in their embedded paths, three and five occurrences respectively.
+`reinvoke-mcu-interface` carries none.
+
+Both are built with `-trimpath`. The difference is module mode: mcu-interface
+builds as a module, where `-trimpath` rewrites paths to the module path, while
+`build.sh` sets `GO111MODULE=off` for the rest, and in GOPATH mode there is no
+module path to rewrite to, so the absolute directory survives.
+
+It is cosmetic on the device and it is not cosmetic in the repository: the
+same class of leak put three x86-64 binaries into git history carrying
+`/home/<user>/...`, which had to be rewritten out. Worth fixing the next time
+these binaries are rebuilt for another reason; not worth a flash on its own.
+
 ## Dependency and build boundary
 
 Included donor assets are native boot/kernel payloads, SD8887 firmware and

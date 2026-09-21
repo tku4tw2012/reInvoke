@@ -42,6 +42,8 @@ Taken from observation on the running unit, not from intent. Version 2.2.7,
 | Front lamp state changes | verified | amber at boot, white once online |
 | Bluetooth pairing from the host | verified | `LinkKey` written, survived a reboot |
 | Microphone capture | verified | 2.2.7: 192,000 samples, 191,998 non-zero at −34.7 dBFS; DSP mute gave 192,000 samples, peak 0 |
+| One device namespace | verified | 2.2.11, `/etc/reinvoke`, `/usr/libexec/reinvoke`, `/run/reinvoke`; all three nand-pilot paths absent on the running unit |
+| Identifiers reads the new build-id | verified | 2.2.11, `com.harman.firmwareVersion` returned `reInvoke-2.2.11-20260921` from `/etc/reinvoke/build-id` |
 | USB ADB up at boot | verified | 2.2.11, `[29.3] reinvoke-usb-adb: ready: state=CONFIGURED` in the kernel buffer, and adb reachable on every cold boot |
 | USB ADB teardown and bring-up | verified | 2.2.11, `down`, `down` again, `up` from cold and `up` when already up; adb returned by itself, `lun0` absent after teardown |
 | Router log volume | verified | 2.2.11, 0 bytes/hour idle against 302 KB/hour before; boot log 10,692 bytes against ~54,000 |
