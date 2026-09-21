@@ -16,9 +16,17 @@
 //           controls [0 0 -0.25 -0.5 0 0 0 0 0.5 0.5 0 0 0 0 0] }]
 //   }
 //
-// Those fifteen numbers are a presence curve: a dip around 156 to 220 Hz and
-// a lift around 1.25 to 1.75 kHz, which is the tuning the donor used for the
-// speaker's own voice rather than for music.
+// Those fifteen numbers are dB, and they are small: -0.25 dB at 156 Hz,
+// -0.5 dB at 220 Hz, +0.5 dB at 1.25 and 1.75 kHz, nothing anywhere else.
+// The shape is a presence curve, taking a little out of the lower midrange
+// and putting a little into the range that carries consonants, which is the
+// tuning the donor used for the speaker's own voice rather than for music.
+//
+// Verified audibly on 2026-09-21. The same cue played voice, system, voice
+// four seconds apart: the two voice plays matched each other and the system
+// play stood out, described as "subtly different, barely noticeable". A
+// half-decibel shelf should be exactly that, so the size of the effect
+// matches the size of the curve, not just its presence.
 //
 // Without the plugin ALSA cannot instantiate plugmbeq, so opening `voice`
 // fails with ENOENT. That is why the donor's own alsa-init.sh ends its device

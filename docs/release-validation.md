@@ -42,6 +42,9 @@ Taken from observation on the running unit, not from intent. Version 2.2.7,
 | Front lamp state changes | verified | amber at boot, white once online |
 | Bluetooth pairing from the host | verified | `LinkKey` written, survived a reboot |
 | Microphone capture | verified | 2.2.7: 192,000 samples, 191,998 non-zero at −34.7 dBFS; DSP mute gave 192,000 samples, peak 0 |
+| Startup click before the chime | verified | 2.2.10, gone across two cold boots; priming logged before the outputs open |
+| Voice output stage | verified | 2.2.10, `voice` control created and `dmix<volmix_ladspa>` reached; same cue through voice, system, voice gave 1 and 3 alike and 2 different, matching a half-decibel curve |
+| Cues share the card | verified | 2.2.10, a cue on `system` returned exit 0 while music held the hardware at RUNNING; `plughw:1,0` absent from the binary |
 | Bluetooth audio playback | verified | host paired over A2DP, PCM reached `RUNNING`, chords heard |
 | Music at the shipped volume | verified | 2.2.7, heard clearly at the shipped dial |
 | No pops at startup | verified | 05.8.13, heard by the owner; the donor's one second settle |
