@@ -59,6 +59,21 @@ command -v pilot_failure >/dev/null 2>&1 || pilot_failure() {
   echo "usb-adb: FAILED $1: $2" >&2
 }
 
+# Leave a record where the boot log is.
+#
+# runtime.log is fed by the supervise wrapper, one pipe per service, and USB
+# ADB is not a supervised service: it is brought up by init directly. So its
+# log() went to init's stdout and nowhere that outlives the boot, and asking
+# afterwards whether init had brought ADB up had no answer but inference from
+# the fact that adb worked. Everything else in this file exists because a
+# failure was observed; a step that cannot be observed at all is worse.
+usb_adb_record() {
+  log "$*"
+  ${BB} test -d "${PILOT_STATE}/logs" &&
+    echo "reinvoke-usb-adb: $*" >>"${PILOT_STATE}/logs/runtime.log" 2>/dev/null
+  return 0
+}
+
 USB_ADB_DIR=${USB_ADB_DIR:-/opt/reinvoke/usb-adb}
 USB_ADB_UDC=/sys/class/udc/f7ed0100.udc
 USB_ADB_GADGET=/sys/class/android_usb/android0
@@ -81,7 +96,7 @@ pilot_usb_adb_holder() {
 
 pilot_usb_adb_up() {
   if pilot_usb_adb_disabled; then
-    log "USB ADB disabled by persistent marker"
+    usb_adb_record "disabled by persistent marker"
     return 0
   fi
 
@@ -92,7 +107,7 @@ pilot_usb_adb_up() {
   # never be how you leave it.
   if ${BB} test "$(${BB} cat "${USB_ADB_GADGET}/state" 2>/dev/null)" = CONFIGURED &&
      pilot_usb_adb_holder >/dev/null; then
-    log "USB ADB already up: state=CONFIGURED"
+    usb_adb_record "already up: state=CONFIGURED"
     return 0
   fi
   ${BB} test -d "${USB_ADB_DIR}" || {
@@ -195,14 +210,14 @@ pilot_usb_adb_up() {
   ${BB} sleep 2
 
   echo usb >"${PILOT_STATE}/adb-transport"
-  log "USB ADB ready: state=$(${BB} cat "${USB_ADB_GADGET}/state" 2>/dev/null)"
+  usb_adb_record "ready: state=$(${BB} cat "${USB_ADB_GADGET}/state" 2>/dev/null)"
   return 0
 }
 
 pilot_usb_adb_down() {
   # Symmetrically: nothing loaded is nothing to tear down.
   if ! ${BB} test -e /sys/module/g_android; then
-    log "USB ADB already down"
+    usb_adb_record "already down"
     return 0
   fi
   # Teardown runs on the shutdown path. adbd sleeps inside the gadget driver
@@ -253,7 +268,7 @@ pilot_usb_adb_down() {
       log "EHCI rebind reported a problem; the port may need a reboot"
   fi
 
-  log "USB ADB torn down"
+  usb_adb_record "torn down"
   return 0
 }
 
