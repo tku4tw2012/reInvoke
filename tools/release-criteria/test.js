@@ -61,11 +61,37 @@ for (const entry of criteria.boot.filter(e => e.expect === 'present')) {
     `removing ${entry.pattern} failed without naming ${entry.id}`);
 }
 
+// A criterion bound to a window must ignore the same line outside it, or the
+// bound is decorative. This is the case that actually shipped: RING_ARC three
+// seconds after the chime failed a boot check, and it was the ring working.
+for (const entry of criteria.boot.filter(e => e.expect === 'absent' && e.until)) {
+  const logPath = path.join(work, `after-${entry.id}.log`);
+  fs.writeFileSync(logPath, good + '\n' + entry.pattern + '\n');
+  const outcome = run('boot', logPath);
+  assert.equal(outcome.status, 0,
+    `${entry.pattern} after ${entry.until} failed ${entry.id}; the window is not honoured`);
+}
+
 // A forbidden line present must fail. These are the regressions that shipped:
 // a cue skipped, a ring arc drawn at boot, a missing identifiers binary.
 for (const entry of criteria.boot.filter(e => e.expect === 'absent')) {
   const logPath = path.join(work, `present-${entry.id}.log`);
-  fs.writeFileSync(logPath, good + '\n' + entry.pattern + '\n');
+  // Put the forbidden line where it would actually be a regression. A
+  // criterion bound to the startup sequence is not violated by the same line
+  // appearing afterwards, which is the whole reason it is bound: RING_ARC
+  // minutes after boot is the ring working. Appending blindly tested the
+  // opposite of what the criterion says.
+  let text;
+  if (entry.until) {
+    const end = good.indexOf(entry.until);
+    assert(end >= 0,
+      `the good log has no ${entry.until} to place ${entry.pattern} before`);
+    const lineStart = good.lastIndexOf('\n', end) + 1;
+    text = good.slice(0, lineStart) + entry.pattern + '\n' + good.slice(lineStart);
+  } else {
+    text = good + '\n' + entry.pattern;
+  }
+  fs.writeFileSync(logPath, text + '\n');
   const outcome = run('boot', logPath);
   assert.notEqual(outcome.status, 0,
     `${entry.pattern} present did not fail the boot check`);
