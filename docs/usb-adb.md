@@ -209,11 +209,16 @@ so the VFS holds a reference while adbd has the device open. What panicked was
 the *re-insert*, and with no pstore or `last_kmsg` on this unit there was no
 log saying why.
 
-2.2.8 ships a module that should fix it, and a test that says whether it did.
-Until that test has been run, treat reload as unproven and bring USB ADB back
-with a reboot.
+2.2.8 shipped a module intended to fix it and a test to say whether it did.
+The test has now run and the answer is no: reload still fails, and the reason
+is not the one this page gave. See below. Bring USB ADB back with a reboot.
 
 ### The asymmetry, and the fix that was never shipped
+
+> The reasoning in this section is kept because it is how the fix was arrived
+> at and it is honest about the binaries. Its conclusion about the *running*
+> system is wrong, which only the hardware test showed. Read it with the
+> section after it.
 
 Read out of `g_android.ko` with `objdump`, so this is about binaries rather
 than the source they came from.
@@ -252,33 +257,57 @@ pin and the artifact agreed with each other. Both were simply a day old.
 | vermagic | `3.8.13-yocto-standard SMP preempt mod_unload ARMv7` | identical |
 | other five modules | — | byte-identical |
 
-### Testing it
+### Tested, and the diagnosis above was wrong
 
-The fix has not run on hardware. `usb-adb-reload-test.sh` ships beside the
-modules to find out, and it cannot report over ADB because removing
-`g_android` is removing ADB. So it writes to `/persist`, which is yaffs2 on
-`mtdblock11` and survives a reboot, and syncs before each step that could stop
-the machine.
+`usb-adb-reload-test.sh` ran on 2026-09-20 against the fixed module. It set
+`panic_on_oops=0` first, which is what made the result readable: the kernel
+stayed up, the trace was written to `/persist`, and it survived the power
+cycle. Evidence is in `evidence/reload-test-229-*`.
 
-It first sets `panic_on_oops=0` and `panic=0`. This unit ships with both at 1,
-which turns a recoverable warning into a panic and a reboot one second later,
-taking the evidence with it. With them off, a failure that is only a warning
-leaves the kernel alive and the trace readable.
+Two things happened, and neither was what this page predicted.
 
-```sh
-/opt/reinvoke/usb-adb/usb-adb-reload-test.sh
+**The unload now warns, and the warning is in the fix.**
+
+```
+sysfs: kobject android0 without dirent
+  sysfs_attr_ns <- sysfs_remove_file <- device_remove_file
+  <- cleanup+0x58 [g_android] <- sys_delete_module
 ```
 
-Three outcomes, all informative:
+`cleanup()` reaches its new `device_remove_file` and finds `android0` has no
+sysfs dirent left, because `usb_composite_unregister` ran first and the unbind
+path had already taken the device down. The asymmetry this page described --
+`init_module` creating a device nothing destroys -- is not what the running
+kernel does. `rmmod` still returns 0; a warning is not fatal. But the fix
+removes something already removed.
 
-* ADB comes back on its own. The transport was rebuilt from nothing and the
-  fix works. `RESULT: reloaded` is in the log.
-* ADB does not come back but the unit stays up. The reload failed without
-  taking the kernel with it, and the oops trace is in the log. Power cycle and
-  read it.
-* The unit reboots anyway. It was a genuine panic rather than an escalated
-  warning, the explanation above is wrong, and the log holds everything up to
-  the `insmod`.
+**The re-insert fails inside `init`, not on a leaked kobject.**
 
-Until one of those is observed, treat reload as unproven and keep bringing USB
-ADB back with a reboot.
+```
+misc_deregister
+  <- accessory_function_cleanup [g_android]
+  <- android_usb_unbind <- composite_unbind
+  <- composite_bind <- usb_gadget_probe_driver
+  <- usb_composite_probe <- init+0x158 [g_android]
+  <- do_one_initcall <- load_module <- sys_init_module
+```
+
+`insmod` exited 139 and left `/sys/module/g_android` present. Read it from the
+bottom: `init()` calls `usb_composite_probe`, `composite_bind` fails, and the
+failure path calls `composite_unbind`, which runs `accessory_function_cleanup`,
+which calls `misc_deregister` on a misc device this load never successfully
+registered. The oops is in the error path, not in the thing that errored.
+
+So the real sequence is that state from the first load survives the unload,
+the second `composite_bind` cannot get what it needs, and the teardown it
+invokes tears down things that were never set up. Which piece of state
+survives is not yet identified; the accessory function's misc device is the
+obvious suspect and has not been confirmed.
+
+Adding `device_destroy` to `cleanup()` was therefore necessary reasoning from
+a real asymmetry in the disassembly, and still the wrong conclusion about the
+running system. It neither fixes reload nor is harmless: it adds a warning to
+every unload.
+
+Reload remains unsupported. Bring USB ADB back with a reboot.
+
