@@ -136,7 +136,7 @@ Established on 05.8.11:
 | --- | --- |
 | Bluedroid stores bonds in `/home/galois_rwdata/misc/bluedroid/bt_config.conf` | bind mount of mtdblock11, written during the boot under test |
 | The speaker advertises `Advanced Audio Sink` and AVRCP **only while the pairing window is open** | `sdptool browse` returned GATT alone with the window shut, and the audio services with it open |
-| Pairing inside the window stores a real bond | `bt_config.conf` grew 778 to 1219 bytes with a `[the-paired-host]` section carrying `LinkKey` |
+| Pairing inside the window stores a real bond | `bt_config.conf` grew 778 to 1219 bytes with a `[the paired host]` section carrying `LinkKey` |
 | The bond survives a reboot | 1218 bytes and the same section after `adb reboot` |
 
 An earlier revision of this section said pairing was not persisted at all.
