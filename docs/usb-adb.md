@@ -392,7 +392,40 @@ A fifth fix follows: cleanup drops the sysfs link and calls
 `f->cleanup(f)` before destroying `f->dev`, because a function cannot
 remove entries from a device directory that has already gone.
 
-Whether that is the last one is unproven. Each fix so far has revealed
-the next, which is what a teardown path that was never exercised looks
-like.
+### The leftover, seen directly
+
+The fifth fix was aimed from a backtrace. On 2026-09-21 the thing it
+describes was observed on the unit itself.
+
+Reloading does not need USB. `dropbear` listens on `0.0.0.0:22`, so an
+SSH session over Wi-Fi survives the gadget going away and the module can
+be unloaded and reloaded with the result visible immediately, no power
+cycle and no reading a log afterwards. After `rmmod g_android` returned 0
+and `/sys/module/g_android` was gone:
+
+```
+/sys/devices/soc.0/f7ed0100.udc/gadget/lun0
+```
+
+The LUN device was still registered with no module owning it. Listing
+that directory returned `Segmentation fault`, because its attribute
+handlers point into text the unload had freed. That is the name the next
+`device_register()` collides with, and it is exactly what
+`fsg_common_put()` in the fifth fix releases.
+
+It cannot be cleaned up live; the kobject outlives the module and only a
+reboot clears it.
+
+**The fix cannot be validated without flashing.** The leftover is created
+by the module that is already loaded, so the release has to be in *that*
+module, not in the one being loaded afterwards. Loading a fixed module
+over a mess made by an unfixed one fails the same way. Only a build where
+the fixed module is what boots can answer it.
+
+One trap worth recording. A command sent over SSH runs as
+`sh -c <the whole script>`, so its own `/proc/self/cmdline` contains
+every string in it. A loop that killed processes by grepping cmdline for
+`adbd-root` matched the session running it and killed itself, twice,
+before the cause was obvious. Match `/proc/*/comm` instead. This is the
+same shape as `pgrep -f` matching its own invocation.
 
