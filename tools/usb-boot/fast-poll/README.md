@@ -48,5 +48,5 @@ Point the flash wrapper at the result:
 
 ```bash
 INVOKE_USB_BOOT_BIN=<path>/usb_boot_arm \
-  tools/usb-boot/arm-flash.sh <staging> <83_IMAGE-sha256> <evidence>
+  tools/usb-boot/arm-seize.sh <staging> <evidence>
 ```

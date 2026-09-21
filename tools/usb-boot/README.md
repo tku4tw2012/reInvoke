@@ -255,21 +255,33 @@ and restores `07_IMAGE`. Failure preserves state/evidence, never retries or
 clears an uncertain operation. Intent/evidence must be on durable storage,
 not tmpfs/ramfs; do not delete the no-reissue marker to retry.
 
-### Single-entry NAND flash wrapper
+### NAND flash: seize, confirm, then write
 
-Use `arm-flash.sh` for the reviewed NAND write path:
+Three steps, deliberately not one. `arm-flash.sh` used to do all of it and
+was removed on 2026-09-21; its console driver waited for a prompt and then
+immediately sent `l2nand 83`, which is one operation with two failure points
+and no way to tell which had failed.
 
 ```bash
-INVOKE_USB_BOOT_BIN="<pinned-usb_boot_arm>" \
-  tools/usb-boot/arm-flash.sh "<staging-dir>" "<83_IMAGE-sha256>" \
-  "<private-evidence-dir>"
+REINVOKE_ARCHIVE=... tools/usb-boot/arm-seize.sh "<staging>" "<evidence>"
+# ... operator enters service mode, retrying as needed ...
+tools/usb-boot/prompt-control.sh                    # does a prompt answer?
+tools/usb-boot/flash-nand.sh "<evidence>"           # only then, the write
 ```
 
-The script runs all fail-closed preflight checks before the service-mode
-window. Start it first and reset the speaker only after it prints `READY`. One
-helper and one console client remain waiting before the operator enters yellow
-mode. The helper matches USB vendor and product identifiers, so moving the
-speaker to another host port requires no configuration.
+`arm-seize.sh` runs the fail-closed preflight checks before the service-mode
+window, then catches the device and **holds** the prompt, sending nothing.
+Start it first and reset the speaker only after it prints `READY`. One helper
+and one console relay remain waiting, and it restarts either if it exits, so
+entry can be attempted as many times as it takes. The helper matches USB
+vendor and product identifiers, so moving the speaker to another host port
+requires no configuration.
+
+Because the prompt is held rather than acted on, there is no window to hit.
+`prompt-control.sh` answers whether a prompt is really there by sending a
+freshly generated token and requiring it back, which no log line and nothing
+the device says on its own can satisfy. `flash-nand.sh` re-asks once and then
+writes.
 
 Do not add descriptor watchers that kill or replace the helper. Candidate 05.7
 completed with the helper already waiting and no other process touching USB.

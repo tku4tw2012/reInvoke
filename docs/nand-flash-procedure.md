@@ -62,19 +62,33 @@ done
 
 ## Host setup
 
-Arm the complete path before entering yellow mode:
+Catching the device, deciding a prompt is live, and writing are three separate
+steps. They used to be one command, `arm-flash.sh`, whose console driver waited
+for a prompt and then immediately sent `l2nand 83`. That coupling is what most
+of the older guidance on this page was written around. It was removed on
+2026-09-21 rather than left beside the replacement, because two flash paths
+is how the wrong one gets used.
+
+**Seizing and flashing are not the same operation, and the difference is the
+point.** `arm-seize.sh` catches the device and then *holds* the prompt,
+sending nothing. There is no window to hit and no timer running. Entry can be
+attempted as many times as it takes, and once one lands the prompt stays held
+until a command is written to it. The write is a separate command issued
+afterwards, at whatever pace the work needs.
 
 ```bash
-REINVOKE_ARCHIVE=... \
-  tools/usb-boot/arm-flash.sh <staging> <83_IMAGE-sha256> <attempt-dir>
+REINVOKE_ARCHIVE=... tools/usb-boot/arm-seize.sh <staging> <evidence-dir>
+# ... operator enters service mode, as many attempts as needed ...
+tools/usb-boot/prompt-control.sh                 # does a prompt answer?
+tools/usb-boot/flash-nand.sh <evidence-dir>      # only then, the write
 ```
 
-Wait for `READY` before touching the speaker. `arm-flash.sh` refuses to start
+Wait for `READY` before touching the speaker. `arm-seize.sh` refuses to start
 if `08_IMAGE` is present, so a staging mistake is caught before any hardware
-interaction rather than after a run of failed entries. The command starts exactly one
-helper and one console client, then leaves both waiting. Nothing else should
-watch, claim or reset the USB device. The helper matches the Invoke by vendor
-and product identifiers, not a host port path.
+interaction rather than after a run of failed entries. It starts exactly one
+helper and one console relay, then leaves both waiting and restarts either if
+it exits. Nothing else should watch, claim or reset the USB device. The helper
+matches the Invoke by vendor and product identifiers, not a host port path.
 
 These controls exist because of measured failures:
 
@@ -117,8 +131,41 @@ vendor remedy is to unplug mains, wait ten seconds and restore mains, leaving
 USB untouched.
 
 Entry is genuinely unreliable and often needs several attempts. With the
-catcher running there is no window to miss, so simply repeat. Many failed
+seizer running there is no window to miss, so simply repeat. Many failed
 attempts before one takes is normal and not a fault.
+
+### Telling a working attempt from a failed one, while it is happening
+
+The advice above is the vendor's and is about the operator's hands. It says
+nothing about how to know, within seconds, whether the attempt took. Five
+runs recorded under the two-stage tooling give a signal that does, and it is
+counted from the helper's own log rather than judged by feel.
+
+| run | `0x08` refusals | `subclass=0xFF` | outcome |
+| --- | --- | --- | --- |
+| seize-228-1623 | 2 | yes | seized |
+| seize-229-2326 | 2 | yes | seized |
+| seize-2210-1014 | 2 | yes | seized |
+| seize-228-1608 | 6 | never | fell through to a normal boot |
+| seize-2210-0959 | 6 | never | fell through to a normal boot |
+
+Every attempt that worked refused `0x08` **exactly twice** and then saw the
+device reappear at `subclass=0xFF`, which the helper logs as
+`Device is in iROM mode. Starting Phase 1.` Every attempt that failed kept
+being asked for `0x08` and never reached `0xFF`.
+
+So a third request for `0x08` means that attempt is already lost. There is
+nothing to wait for and nothing to fix on the host: release, let it boot, and
+try again. Watch for it with:
+
+```sh
+grep -ac 'type=0x08' <evidence>/seize.log     # 2 is the working number
+grep -ac 'subclass=0xFF' <evidence>/seize.log # 0 means it never reached iROM
+```
+
+What the operator did differently between those runs is **not established**.
+The counts are what was observed; the cause is not. This is a way to tell a
+lost attempt quickly, not an explanation of why entry is unreliable.
 
 ## Why attempts fail
 
@@ -131,7 +178,7 @@ attempts before one takes is normal and not a fault.
 | `No device found within 120 seconds` | The bare helper timed out; the catcher does not |
 
 Do not serve `08_IMAGE`. Keep it in staging as
-`08_IMAGE.withheld-for-uboot-access`; `arm-flash.sh` refuses to start if the
+`08_IMAGE.withheld-for-uboot-access`; `arm-seize.sh` refuses to start if the
 plain name is present.
 
 An earlier revision of this file said to "feed the device what it asks for".
