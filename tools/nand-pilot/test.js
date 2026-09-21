@@ -234,6 +234,32 @@ try {
     }
   }
 
+  // Go binaries must be built from inside their own module.
+  //
+  // -trimpath rewrites source paths to the module path, and GOPATH mode has
+  // no module path to rewrite to, so the builder's absolute home survived:
+  // three occurrences in reinvoke-status, five in reinvoke-identifiers,
+  // seven in reinvoke-source-manager. The binaries that were clean are the
+  // ones whose build scripts cd into a directory holding a go.mod.
+  {
+    const build = fs.readFileSync(
+      path.join(__dirname, 'build.sh'), 'utf8');
+    for (const line of build.split('\n')) {
+      if (!/go.*\bbuild\b|PILOT_GO.*build/.test(line)) continue;
+      if (/^\s*#/.test(line)) continue;
+      assert(!/\.\/tools\//.test(line),
+        `build.sh builds from the repository root, so -trimpath cannot ` +
+        `strip the builder's path: ${line.trim()}`);
+    }
+    // Every module built this way needs its own go.mod, or the cd lands in
+    // GOPATH mode again and the flag silently does nothing.
+    for (const dir of ['status', '../propertyd', '../source-manager',
+      '../identifiers']) {
+      assert(fs.existsSync(path.join(__dirname, dir, 'go.mod')),
+        `tools/${dir.replace('../', '')} has no go.mod, so -trimpath is a no-op there`);
+    }
+  }
+
   assert.equal(lib.CANDIDATE, '2.2.11');
   // Not a copy of the constant, which only forces an edit in two places when
   // the date moves. The date is stamped into /etc/reinvoke/build-id on the

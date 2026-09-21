@@ -295,19 +295,30 @@ token have different readers.
 
 ### Builder paths in shipped binaries
 
-`reinvoke-status` and `reinvoke-identifiers` carry the builder's absolute home
-directory in their embedded paths, three and five occurrences respectively.
-`reinvoke-mcu-interface` carries none.
+No shipped binary carries the builder's absolute paths. Getting there was not
+obvious, so the reason is recorded.
 
-Both are built with `-trimpath`. The difference is module mode: mcu-interface
-builds as a module, where `-trimpath` rewrites paths to the module path, while
-`build.sh` sets `GO111MODULE=off` for the rest, and in GOPATH mode there is no
-module path to rewrite to, so the absolute directory survives.
+`-trimpath` rewrites source paths to the **module** path. In GOPATH mode there
+is no module path to rewrite to, so the flag is accepted and does nothing, and
+the builder's home directory survives into the binary. Three binaries were
+clean and four were not, and the difference was entirely whether the build
+script happened to `cd` into a directory holding a `go.mod` first:
 
-It is cosmetic on the device and it is not cosmetic in the repository: the
-same class of leak put three x86-64 binaries into git history carrying
-`/home/<user>/...`, which had to be rewritten out. Worth fixing the next time
-these binaries are rebuilt for another reason; not worth a flash on its own.
+| binary | before | after |
+| --- | --- | --- |
+| `reinvoke-status` | 3 | 0 |
+| `reinvoke-propertyd` | 3 | 0 |
+| `reinvoke-source-manager` | 7 | 0 |
+| `reinvoke-identifiers` | 5 | 0 |
+| `reinvoke-mcu-interface` | 0 | 0 |
+
+`build.sh` now builds each from inside its own module, and `status` gained the
+`go.mod` it was missing. A subshell `cd` rather than `go build -C`: that flag
+arrives in Go 1.20 and the reviewed toolchain here is 1.18, which rejects it.
+
+It is cosmetic on the device and it is not cosmetic in a repository. The same
+leak put three x86-64 binaries into git history carrying the builder's home,
+which had to be rewritten out of every commit.
 
 ## Dependency and build boundary
 

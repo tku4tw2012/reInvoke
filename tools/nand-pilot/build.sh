@@ -69,15 +69,37 @@ if [[ "${mcu_built_sha}" != "${mcu_pin_sha}" ]]; then
   exit 1
 fi
 rm -f "${output}/work/mcu-pin-check"
-nice -n 10 "${PILOT_GO}" test -p 1 ./tools/nand-pilot/status
-nice -n 10 env GOOS=linux GOARCH=arm GOARM=7 "${PILOT_GO}" build \
-  -p 1 -trimpath -ldflags="-s -w -buildid=" -o "${output}/reinvoke-status" ./tools/nand-pilot/status
-nice -n 10 "${PILOT_GO}" test -p 1 ./tools/propertyd
-nice -n 10 env GOOS=linux GOARCH=arm GOARM=7 "${PILOT_GO}" build \
-  -p 1 -trimpath -ldflags="-s -w -buildid=" -o "${output}/reinvoke-propertyd" ./tools/propertyd
-nice -n 10 "${PILOT_GO}" test -p 1 ./tools/source-manager
-nice -n 10 env GOOS=linux GOARCH=arm GOARM=7 "${PILOT_GO}" build \
-  -p 1 -trimpath -ldflags="-s -w -buildid=" -o "${output}/reinvoke-source-manager" ./tools/source-manager
+# Built from inside each module, not from the repository root.
+#
+# -trimpath rewrites source paths to the module path, and in GOPATH mode
+# there is no module path to rewrite to, so the builder's absolute home
+# directory survived into the binary: three occurrences in reinvoke-status,
+# five in reinvoke-identifiers, seven in reinvoke-source-manager. The three
+# binaries that were already clean are the ones whose build scripts cd into a
+# directory holding a go.mod.
+#
+# It is cosmetic on the device and it is not cosmetic in a repository: the
+# same leak put three x86-64 binaries into git history carrying the builder's
+# home, which had to be rewritten out.
+# A subshell cd, not `go build -C`: that flag arrives in Go 1.20 and the
+# reviewed toolchain here is 1.18, which rejects it outright.
+build_module() {
+  local dir out
+  dir="$1"
+  out="$(realpath -m "$2")"
+  (
+    cd "${dir}"
+    nice -n 10 env -u GO111MODULE -u GOFLAGS -u GOWORK \
+      "${PILOT_GO}" test -p 1 ./...
+    nice -n 10 env -u GO111MODULE -u GOFLAGS -u GOWORK \
+      GOOS=linux GOARCH=arm GOARM=7 "${PILOT_GO}" build \
+      -p 1 -trimpath -ldflags="-s -w -buildid=" -o "${out}" ./
+  )
+}
+
+build_module ./tools/nand-pilot/status "${output}/reinvoke-status"
+build_module ./tools/propertyd "${output}/reinvoke-propertyd"
+build_module ./tools/source-manager "${output}/reinvoke-source-manager"
 for build in build-a build-b; do
   mkdir "${output}/${build}"
   nice -n 10 fakeroot -s "${output}/work/${build}.fakeroot" \
