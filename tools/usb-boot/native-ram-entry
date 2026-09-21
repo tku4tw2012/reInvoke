@@ -68,7 +68,7 @@ ${BB} ifconfig lo 127.0.0.1 up || stop_boot loopback
 
 . /usr/libexec/nand-pilot/common.sh
 
-PILOT_ADBD_PRODUCT=reInvoke-RAM-06.1
+PILOT_ADBD_PRODUCT=reInvoke-RAM-1.2
 PILOT_ADBD_STARTED_PHASE=adb-started
 PILOT_ADBD_DEGRADED_PHASE=adb-degraded
 PILOT_ADBD_ENABLE_DEV_FILE=/sys/class/misc/android_adb_enable/dev

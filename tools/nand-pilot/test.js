@@ -135,7 +135,7 @@ try {
       .test(versions),
       'docs/versions.md no longer maps the installed build to its old name');
   }
-  assert.equal(lib.CANDIDATE, '2.2.8');
+  assert.equal(lib.CANDIDATE, '2.2.9');
   // Not a copy of the constant, which only forces an edit in two places when
   // the date moves. The date is stamped into /etc/nand-pilot/build-id on the
   // device, and 2.2.8 was first assembled carrying the previous day left over
@@ -155,8 +155,8 @@ try {
     assert(stamped.getTime() <= Date.now(),
       `BUILD_ID ${lib.BUILD_ID} is dated in the future`);
   }
-  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-2.2.8');
-  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-2.2.8');
+  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-2.2.9');
+  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-2.2.9');
   // The bootstrap no longer launches an early USB ADB daemon. That launcher
   // was written for booting from RAM over USB, where the boot ROM had already
   // put the port in device mode. Booting from NAND there is no gadget until

@@ -14,9 +14,9 @@ Builds are numbered `ERA.MILESTONE.ITERATION`.
 * **Milestone** is a capability that did not exist before it.
 * **Iteration** counts builds within that milestone.
 
-The current build is **2.2.8**, and it is what the unit in hand runs. It is
-the first build numbered this way from the start; everything before it was
-renamed after the fact.
+The current build is **2.2.9**. The unit in hand runs **2.2.8**, the first
+build numbered this way from the start; everything before it was renamed
+after the fact.
 
 ## Why the numbers changed
 
@@ -64,7 +64,8 @@ mapping is listed build by build.
 | 2.2.5 | 05.8.11 | 09-18 | yes |
 | 2.2.6 | 05.8.12 | 09-19 | no |
 | 2.2.7 | 05.8.13 | 09-19 | yes |
-| 2.2.8 | — | 09-20 | yes, currently installed |
+| 2.2.8 | — | 09-20 | yes |
+| 2.2.9 | — | 09-20 | not yet |
 
 ## The abandoned 06.x branch
 
