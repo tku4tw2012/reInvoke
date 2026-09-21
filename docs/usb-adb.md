@@ -309,5 +309,57 @@ a real asymmetry in the disassembly, and still the wrong conclusion about the
 running system. It neither fixes reload nor is harmless: it adds a warning to
 every unload.
 
-Reload remains unsupported. Bring USB ADB back with a reboot.
+### What the trace actually named, and the fix in 2.2.9
+
+The vendor source explains every line of that trace.
+
+**`android0` and the first function share a device number.** `android0` is
+created with `MKDEV(0, 0)`; `android_init_functions()` created function
+devices with `MKDEV(0, index)` starting at index 0. `device_destroy()` finds
+its victim by `devt` alone, so cleaning up function 0 destroyed `android0`.
+That is the missing dirent, and it means the earlier `device_destroy` in
+`cleanup()` was removing a device something else had already taken. Functions
+now start at `index + 1`.
+
+**Teardown runs for functions that were never set up.**
+
+```c
+while (*functions) {
+        f = *functions++;
+        if (f->dev) { device_destroy(...); kfree(f->dev_name); }
+        if (f->cleanup) f->cleanup(f);   /* whether or not init ever ran */
+}
+```
+
+`android_init_functions()` stops at the first failure, but
+`android_cleanup_functions()` walks the whole table, and `composite_bind()`
+calls it on its own failure. So `acc_cleanup()` ran for a load that never
+reached `misc_register()`:
+
+```c
+static void acc_cleanup(void)
+{
+        misc_deregister(&acc_device);   /* never registered this time */
+        kfree(_acc_dev);
+        _acc_dev = NULL;
+}
+```
+
+Deregistering a misc device that is not on the list unlinks a node that is not
+there. That is the oops. It now returns early when `_acc_dev` is NULL.
+
+**`acc_setup()` leaves a freed pointer behind.** It publishes `_acc_dev`
+before `misc_register()` and its error path frees the allocation without
+clearing it, so the next `acc_cleanup()` frees it again. It now clears it.
+
+**Two more cleanups had the same shape.** `acm_function_cleanup()`
+dereferenced `f->config` without checking it, which faults for a function
+whose init never ran; `adb` and `ffs` freed `f->config` without clearing it.
+
+Four fixes, kept as patches beside the modules. Exactly one module changed:
+the other five have byte-identical `.text` to the set already validated on
+hardware, and the `init_module` relocation and `.gnu.linkonce.this_module`
+size are unchanged.
+
+Whether this makes reload work is unproven until the test runs again.
 
