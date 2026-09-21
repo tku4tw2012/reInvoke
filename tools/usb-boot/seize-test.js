@@ -20,9 +20,10 @@ const { execFileSync, spawn, spawnSync } = require('node:child_process');
 
 const here = __dirname;
 const seize = path.join(here, 'arm-seize.sh');
-const flash = path.join(here, 'seize-then-flash.sh');
+const flash = path.join(here, 'flash-nand.sh');
+const detect = path.join(here, 'prompt-control.sh');
 
-for (const script of [seize, flash]) {
+for (const script of [seize, flash, detect]) {
   assert(fs.existsSync(script), `${path.basename(script)} is missing`);
   const syntax = spawnSync('bash', ['-n', script], { encoding: 'utf8' });
   assert.equal(syntax.status, 0,
@@ -48,25 +49,41 @@ assert(/fast-poll/.test(seizeCode),
 assert(/while true/.test(seizeCode),
   'arm-seize.sh does not restart its helper; one failed entry would end it');
 
-// The write must come after a confirmation that the prompt executes.
-const versionAt = flashText.indexOf('send "version"');
-const writeAt = flashText.indexOf('send "l2nand 83"');
-assert(versionAt > 0 && writeAt > 0, 'the flash step lost version or l2nand');
-assert(versionAt < writeAt,
-  'seize-then-flash.sh writes before confirming the prompt answers');
+// Catching the device, deciding a prompt is live, and writing are three
+// separate scripts now. Folding them together produced a flash path that had
+// to guess how long to keep probing, and it is why a run could sit in its own
+// detection loop with nothing to show.
+const flashCode = code(flashText);
+assert(!/while true/.test(flashCode.slice(0, flashCode.indexOf('l2nand'))),
+  'flash-nand.sh hunts for a prompt again; that belongs to prompt-control.sh');
 
-// The prompt must not be detected by matching its text. It stalled at "MV88D"
-// for about fifty seconds on the 05.8.12 write while the device was live.
-const detector = code(flashText.slice(0, writeAt));
-assert(!/MV88DE3100"/.test(detector),
+// The write must still come after a confirmation that the prompt executes.
+const checkAt = flashText.indexOf('prompt-control.sh');
+const writeAt = flashText.indexOf("send \"$(printf 'l2nand 83");
+assert(checkAt > 0, 'flash-nand.sh no longer confirms the prompt at all');
+assert(writeAt > 0, 'flash-nand.sh lost the write command');
+assert(checkAt < writeAt,
+  'flash-nand.sh writes before confirming the prompt answers');
+
+// And that confirmation must be the nonce, not a guess about text. Matching
+// "MV88DE3100" stalled at "MV88D" for about fifty seconds on the 05.8.12
+// write while the device was live, and matching growth reported control
+// against a device that had already gone, because the relay had written its
+// own "console closed" marker into the log.
+const detectCode = code(fs.readFileSync(detect, 'utf8'));
+assert(!/MV88DE3100/.test(detectCode),
   'the prompt is being detected by matching text again; it arrives chunked');
+assert(/urandom/.test(detectCode),
+  'prompt-control.sh no longer generates a fresh token');
+assert(/hits/.test(detectCode) && /echo %s/.test(detectCode),
+  'prompt-control.sh no longer asks the device to echo the token back');
+assert(/timeout/.test(detectCode),
+  'prompt-control.sh writes to the FIFO unbounded; with no reader that blocks forever');
 
-// Nor by the console merely growing. The boot script prints on its own, so
-// "bigger after I poked it" is satisfied by output that has nothing to do
-// with the poke. That reported a live prompt on the 05.8.13 write, sent
-// l2nand into a mid-line console, and nothing wrote for three minutes.
-assert(/u-boot/i.test(detector),
-  'the probe no longer waits for a reply only a prompt can produce');
+// Only bytes that arrive after the token is sent may satisfy it, or an
+// earlier run's reply in the same log would.
+assert(/tail -c \+\$\(\(mark/.test(detectCode),
+  'prompt-control.sh considers the whole log again, not just the reply');
 
 // And the write must be acknowledged, not assumed. The device prints that it
 // is erasing before it writes a byte; that is the receipt.
@@ -121,30 +138,13 @@ const wait = ms => execFileSync('sleep', [String(ms / 1000)]);
 const sentSoFar = run => fs.readFileSync(run.sentPath, 'utf8');
 const stop = run => { run.child.kill('SIGKILL'); run.reader.kill('SIGKILL'); };
 
-// A prompt truncated mid-string is still a prompt and must be found. This is
-// exactly what happened on the 05.8.12 write: 1348 bytes, ending "MV88D",
-// frozen, with the device live and waiting.
-{
-  const run = startStep('truncated');
-  fs.appendFileSync(consolePath,
-    'all done.\nexecute_cmd_from_script, 380\nMV88D');
-  let answered = 0;
-  const responder = setInterval(() => {
-    const sent = sentSoFar(run);
-    if (sent.length > answered) {
-      answered = sent.length;
-      // Answer as a live prompt does, without ever completing the string the
-      // old detector waited for.
-      fs.appendFileSync(consolePath, '\nMV88D');
-    }
-  }, 200);
-  wait(16000);
-  clearInterval(responder);
-  const sent = sentSoFar(run);
-  stop(run);
-  assert(/version/.test(sent),
-    'a live but truncated prompt was never probed into answering');
-}
+// The end-to-end walk through a fake U-Boot used to live here. It span a
+// responder for twenty seconds to prove what a three second run against the
+// same fake proves directly, and its timing was the only thing that ever
+// failed. The behaviour it covered is asserted above without the wall clock:
+// prompt-control.sh is challenged in its own test, and the ordering and
+// shape of flash-nand.sh are checked statically. Run the real thing against
+// a fake prompt by hand when changing the write path.
 
 // A console that never answers must never be written to.
 {

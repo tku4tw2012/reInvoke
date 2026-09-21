@@ -164,7 +164,7 @@ def run(
                 # that reached iROM without a single unsolicited byte reached
                 # it in two attempts; the runs that nudged took nine, or never
                 # arrived at all. That is correlation rather than proof, but
-                # the nudge buys nothing, and seize-then-flash.sh probes
+                # the nudge buys nothing, and flash-nand.sh writes
                 # deliberately once the console is already talking.
         except OSError as exc:
             # Reconnect rather than exit: the write may already be running on
