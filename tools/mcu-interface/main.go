@@ -350,12 +350,21 @@ func main() {
 				log.Print("CUE_SKIPPED Power_On: DSP did not accept a volume")
 				return
 			}
+			// Prime before unmuting, not after. The pipeline has to already
+			// be running when the amplifier goes live, or the first cue
+			// starts the hardware itself and the start is audible: the owner
+			// heard a click immediately before the chime on a cold boot, and
+			// it was never reproducible afterwards because by then something
+			// had started the pipeline. Priming while still muted also means
+			// the priming stream's own start cannot be heard.
+			primeAudioPath(ctx, *cueLoader, *cuePlayerPath, *cueLibraryPath, log.Printf)
 			if err := control.OpenOutputs(); err != nil {
 				log.Printf("open outputs: %v", err)
 			}
 			cues.PlayAsync(ctx, "Power_On")
 		}()
 	} else {
+		primeAudioPath(ctx, *cueLoader, *cuePlayerPath, *cueLibraryPath, log.Printf)
 		if err := control.OpenOutputs(); err != nil {
 			log.Printf("open outputs: %v", err)
 		}

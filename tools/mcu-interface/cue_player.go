@@ -63,6 +63,14 @@ func dialAmplitude(percent int) float64 {
 const cueReferenceDial = 34
 const cueReferenceGain = 10008.0 / 20016.0
 
+// cueDevice is the ALSA device cues are rendered through.
+//
+// "system" is the donor's own name for this: its asound-product.conf gives
+// system, music, timer, voice and call each a softvol control over a dmix
+// slave, and its alsa-init.sh opens all five at startup. Status sounds belong
+// on system, which is why the control exists.
+const cueDevice = "system"
+
 // cueLoudestPeak is the loudest of the shipped cues, which is what the gain
 // ceiling has to be computed against so that holding one gain for every cue
 // still cannot clip the loudest one.
@@ -285,8 +293,15 @@ func (player *cuePlayer) Play(parent context.Context, name string) error {
 
 	// The renderer reads raw samples on standard input so the format is stated
 	// rather than re-parsed, and so the scaled buffer never reaches the disk.
+	//
+	// Through the mixed device, not plughw. Raw hardware access opens hw:1,0
+	// exclusively, so a cue could not share the card with anything else: the
+	// donor's whole asound layout exists to avoid that, giving every softvol
+	// device a dmix slave on one ipc_key so concurrent streams mix instead of
+	// returning EBUSY. Bypassing it also meant each cue started and stopped
+	// the hardware, which is the transition the priming stream now covers.
 	args := []string{
-		"-D", "plughw:1,0",
+		"-D", cueDevice,
 		"-f", "S16_LE",
 		"-r", strconv.Itoa(decoded.sampleRate),
 		"-c", strconv.Itoa(decoded.channels),
