@@ -75,23 +75,31 @@ not a step on this line: they are a dead end worth remembering.
 The flashes themselves succeeded. `06.1` and `06.2` were written to NAND and
 the device accepted them. What failed is that the kernel never ran.
 
-The reason is recorded in [bootimgs format](bootimgs-format.md), and it is
-**not** signature enforcement, which is a distinction that matters if anyone
-is tempted to retry this. The SoC's own first-stage signing is confirmed
-**off** on this unit: the boot ROM prints `MRVL SIGN R :0000` and
-`CUST SIGN R :0000` with the fuses unlocked, and an unsigned `bootloader.img`
-boots fine.
+The reason is recorded in [bootimgs format](bootimgs-format.md), and the
+distinction matters if anyone is tempted to retry this. It is **not**
+signature enforcement. The SoC's own first-stage signing is confirmed **off**
+on this unit: the boot ROM prints `MRVL SIGN R :0000` and `CUST SIGN R :0000`
+with the fuses unlocked, and an unsigned `bootloader.img` boots fine. A
+kernel does not need to be signed to be accepted here.
 
 The barrier is a separate, later mechanism inside the vendor's bootloader.
 It reads the kernel slot with `bcpu0_image_encrypt` confirmed set and hands
 those bytes to `bcm_image_verify(BCM_IMG_KERNEL_TYPE, ...)`, a mailbox call
 into the closed BCM co-processor, before treating the result as a kernel.
 `06.1` placed a bare, unencrypted uImage at the correct address; the address
-was never the problem. Without the customer key that mechanism expects,
-a kernel this project builds cannot be made acceptable to it.
+was never the problem. The co-processor expects a customer key held in
+silicon this project cannot reach, so the obstacle is not one that better
+tooling or a signature could clear.
 
 So: the vendor kernel is a fixed dependency, and everything this project
 ships runs on top of it.
+
+The NAND-side artifacts of that branch were deleted on 2026-09-20: the
+`reinvoke-native-06.0` build output and the `flash-06.0`, `flash-06.1` and
+`flash-06.2` evidence directories. Nothing pinned them and no document cited
+them, and the conclusion above does not rest on them. The RAM-side `06.1`
+artifacts were kept: they belong to era 1, not to this dead end, and the
+name collision is only a naming accident.
 
 ## What was not renamed
 
