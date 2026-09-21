@@ -16,10 +16,10 @@ pilot_ssh_start() {
   # answers while every port hangs rather than refusing. The listener still
   # starts, so this trades peer filtering for reachability, deliberately.
   if ${BB} test -f "${ssh_config}/firewall-disabled"; then
-    echo disabled >/run/nand-pilot/ssh-firewall
+    echo disabled >/run/reinvoke/ssh-firewall
     supervise sshd /usr/sbin/dropbear -F -E -j -k \
       -p 0.0.0.0:22 -r "${ssh_config}/host-key" \
-      -P /run/nand-pilot/sshd-native.pid -I 900 -K 30
+      -P /run/reinvoke/sshd-native.pid -I 900 -K 30
     return 0
   fi
   # Fail closed independently of the WAMP policy: install a complete chain
@@ -46,10 +46,10 @@ pilot_ssh_start() {
       pilot_failure ssh "firewall-install-failed"
       return 1
     }
-  echo installed >/run/nand-pilot/ssh-firewall
+  echo installed >/run/reinvoke/ssh-firewall
   # Password auth and forwarding are compiled out, as well as disabled here.
   # No -R: a missing host key must never generate a different identity at boot.
   supervise sshd /usr/sbin/dropbear -F -E -j -k \
     -p 0.0.0.0:22 -r "${ssh_config}/host-key" \
-    -P /run/nand-pilot/sshd-native.pid -I 900 -K 30
+    -P /run/reinvoke/sshd-native.pid -I 900 -K 30
 }

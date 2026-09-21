@@ -34,10 +34,10 @@
 # a standalone teardown script used to sit beside this one with its own copy
 # of the sequence, and two copies of an ordering this fussy will drift.
 BB=${BB:-/bin/busybox}
-PILOT_STATE=${PILOT_STATE:-/run/nand-pilot}
+PILOT_STATE=${PILOT_STATE:-/run/reinvoke}
 
 # Two state directories, and they are not interchangeable. PILOT_STATE is the
-# pilot's own, set by common.sh to /run/nand-pilot: boot progression, the
+# pilot's own, set by common.sh to /run/reinvoke: boot progression, the
 # entry evidence, and the transports init owns. The runtime services keep
 # theirs in /run/reinvoke. Nothing here should write a log of its own into
 # either; log() already reaches the pilot's boot.log, which is where a record

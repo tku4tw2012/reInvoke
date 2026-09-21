@@ -26,9 +26,9 @@ ${BB} chmod 0666 /dev/null /dev/zero /dev/random /dev/urandom /dev/tty /dev/ptmx
 ${BB} mkdir -p /dev/pts
 ${BB} mount -t tmpfs -o mode=0755,size=16m tmpfs /run ||
   pilot_fatal "cannot mount bounded diagnostic RAM"
-${BB} mkdir -p /run/nand-pilot /run/reinvoke /run/reinvoke/logs \
+${BB} mkdir -p /run/reinvoke /run/reinvoke /run/reinvoke/logs \
   /run/adb/adb /run/adb/local/tmp
-${BB} chmod 0700 /run/nand-pilot /run/reinvoke /run/adb
+${BB} chmod 0700 /run/reinvoke /run/reinvoke /run/adb
 PILOT_ADBD_PTY_READY=1
 if ! ${BB} mount -t devpts devpts /dev/pts; then
   PILOT_ADBD_PTY_READY=0
@@ -37,10 +37,10 @@ fi
 ${BB} mount -t tmpfs -o mode=1777,size=16m tmpfs /tmp ||
   pilot_fatal "cannot mount diagnostic scratch RAM"
 exec </dev/console >/dev/console 2>&1
-${BB} cat /proc/self/mountinfo >/run/nand-pilot/entry-mountinfo
-${BB} cat /proc/cmdline >/run/nand-pilot/entry-cmdline
-${BB} uname -r >/run/nand-pilot/entry-kernel
-${BB} cat /proc/sys/kernel/random/boot_id >/run/nand-pilot/entry-boot-id
+${BB} cat /proc/self/mountinfo >/run/reinvoke/entry-mountinfo
+${BB} cat /proc/cmdline >/run/reinvoke/entry-cmdline
+${BB} uname -r >/run/reinvoke/entry-kernel
+${BB} cat /proc/sys/kernel/random/boot_id >/run/reinvoke/entry-boot-id
 pilot_phase bootstrap
 
 # A real SquashFS root cannot be switch_root's disposable initramfs root.
@@ -91,6 +91,6 @@ for identity in /etc/reinvoke-release /etc/nand-pilot; do
     pilot_fatal "cannot enforce immutable identity"
 done
 pilot_phase runtime-handoff
-${BB} touch /run/nand-pilot/runtime-ready
+${BB} touch /run/reinvoke/runtime-ready
 exec ${BB} chroot /runtime /bin/busybox sh /init
 pilot_fatal "chroot exec failed"

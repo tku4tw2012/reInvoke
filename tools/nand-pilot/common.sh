@@ -3,7 +3,18 @@
 # SPDX-License-Identifier: MIT
 
 BB=${BB:-/bin/busybox}
-PILOT_STATE=${PILOT_STATE:-/run/nand-pilot}
+# One state directory, not two.
+#
+# This was /run/nand-pilot, beside /run/reinvoke for the runtime services, and
+# both names are this project's own: neither appears in the donor, whose
+# services kept their state flat in /run with no project directory at all.
+#
+# The split cost more than it was worth. usb-adb-start.sh carried its own
+# default naming the other directory, which could never apply because this
+# file is sourced first, and the record it wrote went to a second runtime.log
+# that nothing else used. Three flashes were spent on that before the cause
+# was found.
+PILOT_STATE=${PILOT_STATE:-/run/reinvoke}
 
 pilot_log() {
   printf 'reInvoke NAND pilot: %s\n' "$*" >/dev/kmsg 2>/dev/null || true

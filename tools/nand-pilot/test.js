@@ -186,7 +186,7 @@ try {
 
   // The two state directories are deliberate and must agree on their name.
   // usb-adb-start.sh once defaulted PILOT_STATE to /run/reinvoke while
-  // common.sh, which is sourced first, set /run/nand-pilot. A default that
+  // common.sh, which is sourced first, set /run/reinvoke. A default that
   // cannot apply reads as the value in force and is not.
   {
     const common = fs.readFileSync(

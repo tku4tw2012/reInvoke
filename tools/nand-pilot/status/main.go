@@ -387,23 +387,23 @@ func collect(root string) status {
 	s := status{
 		BuildID:             read(at("/etc/nand-pilot/build-id")),
 		Kernel:              read(at("/proc/sys/kernel/osrelease")),
-		EntryKernel:         read(at("/run/nand-pilot/entry-kernel")),
+		EntryKernel:         read(at("/run/reinvoke/entry-kernel")),
 		ExternalAttestation: "required: owner power cycle without RAM download plus host observations/readback",
-		Phase:               read(at("/run/nand-pilot/phase")),
+		Phase:               read(at("/run/reinvoke/phase")),
 		Failures:            map[string]string{},
 		Services:            []service{},
 		NetworkPolicy:       "STA/uAP; saved settings require the configured persistence service",
 		Acceptance:          "not established by status: process presence is not functional health",
 		PTY:                 node(at("/dev/ptmx")),
 		DevptsListed:        strings.Contains(read(at("/proc/filesystems")), "devpts"),
-		SSHFirewall:         token(read(at("/run/nand-pilot/ssh-firewall")), "installed"),
+		SSHFirewall:         token(read(at("/run/reinvoke/ssh-firewall")), "installed"),
 		AdminListeners:      adminListeners(root),
 		Persistence:         persistenceEvidence(root, 0),
 		NetworkADB: networkADBStatus{
-			State: token(read(at("/run/nand-pilot/adb-network-state")),
+			State: token(read(at("/run/reinvoke/adb-network-state")),
 				"disabled", "usb-preserved", "starting", "listening", "closed", "failed"),
-			Firewall:          token(read(at("/run/nand-pilot/adb-network-firewall")), "installed"),
-			Result:            token(read(at("/run/nand-pilot/adb-network-result")), "expired", "shutdown"),
+			Firewall:          token(read(at("/run/reinvoke/adb-network-firewall")), "installed"),
+			Result:            token(read(at("/run/reinvoke/adb-network-result")), "expired", "shutdown"),
 			MonotonicDeadline: "not-reported",
 		},
 		KernelConfig: kernelConfig(root),
@@ -411,19 +411,19 @@ func collect(root string) status {
 	s.OriginEvidence = classify(mounts(read(at("/proc/self/mountinfo"))), at("/sys"))
 	for _, name := range []string{"bootstrap", "kernel", "wifi", "bluetooth", "runtime",
 		"pty", "usb", "usb-owner", "ssh", "adb-network", "persistence"} {
-		if read(at("/run/nand-pilot/failure-"+name)) != "" {
+		if read(at("/run/reinvoke/failure-"+name)) != "" {
 			s.Failures[name] = "failure-record-present; contents withheld"
 		}
-		if deadline, err := strconv.ParseUint(read(at("/run/nand-pilot/adb-network-deadline")), 10, 64); err == nil {
+		if deadline, err := strconv.ParseUint(read(at("/run/reinvoke/adb-network-deadline")), 10, 64); err == nil {
 			s.NetworkADB.MonotonicDeadline = strconv.FormatUint(deadline, 10)
 		}
 	}
-	for _, dir := range []string{"/run/nand-pilot", "/run/reinvoke"} {
+	for _, dir := range []string{"/run/reinvoke", "/run/reinvoke"} {
 		for _, name := range []string{"adbd", "adbd-supervisor", "sshd", "sshd-native",
 			"sshd-supervisor", "bluedroid", "mcu-interface", "dsp-interface",
 			"mic-capture", "provision-windowd", "bonefish", "syslogd", "pairing-agent",
 			"persistence", "wifi-resume", "networkd"} {
-			if read(at("/run/nand-pilot/failure-service-"+name)) != "" {
+			if read(at("/run/reinvoke/failure-service-"+name)) != "" {
 				s.Failures["service-"+name] = "failure-record-present; contents withheld"
 			}
 			path := at(dir + "/" + name + ".pid")
@@ -441,7 +441,7 @@ func collect(root string) status {
 		}
 	}
 	gadget := "/sys/class/android_usb/android0"
-	pid, _ := strconv.Atoi(read(at("/run/nand-pilot/adbd.pid")))
+	pid, _ := strconv.Atoi(read(at("/run/reinvoke/adbd.pid")))
 	misc := read(at("/sys/class/misc/android_adb/dev"))
 	fields := strings.Split(misc, ":")
 	if len(fields) != 2 {
@@ -459,12 +459,12 @@ func collect(root string) status {
 		State:        token(read(at(gadget+"/state")), "DISCONNECTED", "CONNECTED", "CONFIGURED"),
 		Functions:    token(read(at(gadget+"/functions")), "adb", "acm,adb"),
 		LegacyDevice: misc, Node: node(at("/dev/android_adb")), DaemonUSBFD: usbFD(root, pid),
-		SupervisorState: token(read(at("/run/nand-pilot/adb-transport")), "pending", "open", "stopped",
+		SupervisorState: token(read(at("/run/reinvoke/adb-transport")), "pending", "open", "stopped",
 			"gadget-absent", "gadget-config-failed", "node-invalid-or-absent", "enable-node-invalid", "fd-unreadable", "usb-fd-not-open", "retry-budget-exhausted"),
-		LastFailure: token(read(at("/run/nand-pilot/usb-last-failure")), "gadget-absent",
+		LastFailure: token(read(at("/run/reinvoke/usb-last-failure")), "gadget-absent",
 			"gadget-config-failed", "node-invalid-or-absent", "enable-node-invalid", "fd-unreadable", "usb-fd-not-open", "retry-budget-exhausted"),
 	}
-	if value := read(at("/run/nand-pilot/usb-failure-uptime")); value != "" {
+	if value := read(at("/run/reinvoke/usb-failure-uptime")); value != "" {
 		if seconds, err := strconv.ParseFloat(value, 64); err == nil && seconds >= 0 {
 			s.USB.FailureUptime = value
 		}

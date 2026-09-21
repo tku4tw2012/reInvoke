@@ -43,13 +43,13 @@ func TestBoundedRedactedUSBStatus(t *testing.T) {
 	if s.USB.DaemonUSBFD != "daemon-not-observed" || s.USB.Enable != "unknown-or-unavailable" {
 		t.Fatal("missing evidence is not readiness", s.USB)
 	}
-	write("/run/nand-pilot/adbd.pid", "42")
-	write("/run/nand-pilot/failure-runtime", "SECRET-CREDENTIALS")
+	write("/run/reinvoke/adbd.pid", "42")
+	write("/run/reinvoke/failure-runtime", "SECRET-CREDENTIALS")
 	write("/proc/cmdline", "SECRET-COMMANDLINE")
 	write("/sys/class/android_usb/android0/iSerial", "SECRET-SERIAL")
 	write("/proc/self/mountinfo", "SECRET-PATH")
-	write("/run/nand-pilot/usb-last-failure", "fd-unreadable")
-	write("/run/nand-pilot/usb-failure-uptime", "12.34")
+	write("/run/reinvoke/usb-last-failure", "fd-unreadable")
+	write("/run/reinvoke/usb-failure-uptime", "12.34")
 	write("/sys/class/android_usb/android0/enable", "1")
 	write("/sys/class/misc/android_adb/dev", "1:5")
 	if err := os.MkdirAll(filepath.Join(root, "dev"), 0700); err != nil {
@@ -177,7 +177,7 @@ func TestAdminListenerEvidenceDoesNotRevealAddresses(t *testing.T) {
 
 func TestNetworkADBStatusIsBoundedAndRedacted(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, "run/nand-pilot")
+	dir := filepath.Join(root, "run/reinvoke")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}

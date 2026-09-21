@@ -25,13 +25,13 @@ export PATH HOME
 
 # The runtime reads this same path, so the gadget started here is the gadget it
 # finds. Using the BSL's /run/reinvoke-bsl would hide it.
-PILOT_STATE=/run/nand-pilot
+PILOT_STATE=/run/reinvoke
 export PILOT_STATE
 
 stop_boot() {
   echo "reInvoke RAM entry stopped: $*" >&2
-  ${BB} mkdir -p /run/nand-pilot 2>/dev/null
-  echo "$*" >/run/nand-pilot/ram-entry-failure 2>/dev/null
+  ${BB} mkdir -p /run/reinvoke 2>/dev/null
+  echo "$*" >/run/reinvoke/ram-entry-failure 2>/dev/null
   while true; do ${BB} sleep 5; done
 }
 
@@ -41,7 +41,7 @@ ${BB} mount -t tmpfs devtmpfs /dev || stop_boot dev
 ${BB} mkdir -p /dev/pts || stop_boot pts-directory
 ${BB} mount -t tmpfs -o mode=0755,size=16m tmpfs /run || stop_boot run
 ${BB} mount -t tmpfs -o mode=1777,size=16m tmpfs /tmp || stop_boot tmp
-${BB} mkdir -p /run/nand-pilot /run/adb/local/tmp /run/adb/adb ||
+${BB} mkdir -p /run/reinvoke /run/adb/local/tmp /run/adb/adb ||
   stop_boot diagnostic-directories
 
 PILOT_ADBD_PTY_READY=1
@@ -64,7 +64,7 @@ ${BB} ifconfig lo 127.0.0.1 up || stop_boot loopback
 {
   echo "reInvoke RAM entry; pid=$$"
   ${BB} cat /proc/version /proc/cmdline
-} >/run/nand-pilot/ram-entry.txt 2>/dev/null
+} >/run/reinvoke/ram-entry.txt 2>/dev/null
 
 . /usr/libexec/nand-pilot/common.sh
 
@@ -79,7 +79,7 @@ PILOT_ADBD_RUNTIME_ROOT=""
 export PILOT_ADBD_PRODUCT
 
 if ! pilot_usb_adbd_launch; then
-  echo "USB transport unavailable" >/run/nand-pilot/ram-entry-usb 2>/dev/null
+  echo "USB transport unavailable" >/run/reinvoke/ram-entry-usb 2>/dev/null
 fi
 
 exec ${BB} sh /init.runtime

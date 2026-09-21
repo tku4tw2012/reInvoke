@@ -68,6 +68,23 @@ mapping is listed build by build.
 | 2.2.10 | — | 09-21 | yes |
 | 2.2.11 | — | 09-21 | not yet |
 
+## What an iteration is worth recording
+
+2.2.11 was flashed three times. Every one of those images carried **identical
+binaries**: the same `reinvoke-mcu-interface`, the same `g_android.ko`, the
+same everything compiled. What differed between them was shell scripts and
+one init patch.
+
+Two of the three existed only because a record was believed missing when it
+had been written to `boot.log` all along, under a prefix the searches did not
+use. That is not a build; it is a configuration change, repeated because the
+diagnosis was wrong twice.
+
+ITERATION counts images written to the device, so those flashes are part of
+the record and are not renumbered away. But the useful question before
+spending one is whether anything compiled actually changed, and if not,
+whether the change has been understood rather than guessed at.
+
 ## The abandoned 06.x branch
 
 `06.0`, `06.1` and `06.2` were an attempt to boot a kernel this project
