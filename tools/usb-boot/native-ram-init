@@ -282,7 +282,12 @@ start_autonomous_runtime() {
   if ! cmdline_has reinvoke.router=off; then
     supervise bonefish \
       "${runtime_loader}" --library-path "${runtime_lib}" \
-      "${runtime_bin}/bonefish" -r default -t 9999 -w 9998 -d
+      # No -d. That is the router's debug switch and it logs every message
+      # that crosses it. With three services publishing a lifecycle heartbeat
+      # every ten seconds it produced 302 KB an hour on an idle unit, which
+      # fills the 16 MB /run tmpfs in about two and a half days. Nothing reads
+      # it: no release criterion and no audit parses a bonefish line.
+      "${runtime_bin}/bonefish" -r default -t 9999 -w 9998
   fi
   if ${BB} test -x /usr/sbin/reinvoke-provision-windowd &&
     ${BB} test -x /usr/sbin/reinvoke-provisiond &&

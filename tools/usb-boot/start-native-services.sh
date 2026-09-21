@@ -177,7 +177,7 @@ ensure_router() {
   start_detached_service \
     bonefish \
     /tmp/reinvoke-bonefish.log \
-    /usr/bin/bonefish -r default -t 9999 -w 9998 -d
+    /usr/bin/bonefish -r default -t 9999 -w 9998
 
   adb -s "${ADB_SERIAL}" forward tcp:19999 tcp:9999 >/dev/null
   for ((attempt = 0; attempt < 20; attempt++)); do

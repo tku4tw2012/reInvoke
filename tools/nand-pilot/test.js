@@ -153,6 +153,28 @@ try {
     }
   }
 
+  // The router must not ship with its debug switch. -d makes bonefish log
+  // every message that crosses it, and three services publishing a lifecycle
+  // heartbeat every ten seconds produced 302 KB an hour on an idle unit,
+  // filling the 16 MB /run tmpfs in about two and a half days. Nothing reads
+  // those lines: no release criterion and no audit parses a bonefish line.
+  {
+    const launchers = [
+      '../usb-boot/native-ram-init',
+      '../usb-boot/start-native-services.sh',
+    ];
+    for (const relative of launchers) {
+      const file = path.join(__dirname, relative);
+      if (!fs.existsSync(file)) continue;
+      const text = fs.readFileSync(file, 'utf8');
+      for (const line of text.split('\n')) {
+        if (!/bonefish/.test(line) || /^\s*#/.test(line)) continue;
+        assert(!/\s-d(\s|$)|--debug/.test(line),
+          `${relative} starts the router with debugging: ${line.trim()}`);
+      }
+    }
+  }
+
   assert.equal(lib.CANDIDATE, '2.2.10');
   // Not a copy of the constant, which only forces an edit in two places when
   // the date moves. The date is stamped into /etc/nand-pilot/build-id on the
