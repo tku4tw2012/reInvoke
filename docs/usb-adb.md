@@ -212,6 +212,42 @@ session without either of us noticing, because SSH did everything. USB ADB
 covers the case that actually matters: the build boots but the network does
 not.
 
+## Where the bring-up record goes
+
+`usb_adb_record` writes to `/run/reinvoke/logs/runtime.log` and to
+`/dev/kmsg`. The second destination is there because the first has never
+worked at boot, and four explanations for that were offered and all four
+were wrong.
+
+The kernel buffer settled what the log file could not. On 2.2.11:
+
+```
+[   29.307748] reinvoke-usb-adb: ready: state=CONFIGURED
+```
+
+So `pilot_usb_adb_up` does run at boot, does reach its success path, and
+does call the record. What fails is only the write to `runtime.log`.
+
+What was ruled out, each by observation rather than reasoning: the logs
+directory exists by then, because `start_autonomous_runtime` is defined near
+line 298 but invoked at 596, after the `mkdir` at 575. Nothing truncates the
+file; the only two references to it in init are appends. `PILOT_STATE` and
+`BB` are both set. The call site is reached, which the kernel line proves.
+And running the same function by hand in the same shell, with the same
+variables, writes correctly.
+
+One observation is unexplained: `mount` reports **two** tmpfs mounts on
+`/run`. A write at 29.3 seconds and a write now may therefore be going to
+different filesystems, with the earlier one hidden beneath the later mount.
+That is consistent with everything above, and it is **not confirmed**: the
+attempt to read the lower mount produced nothing, and what performs the
+second mount was not found. init contains no mount commands at all.
+
+This is recorded as an open question rather than fixed. The record is
+available from `dmesg` and the runtime is unaffected either way; USB ADB
+comes up at boot regardless, which is what the line was only ever
+describing.
+
 ## Unloading
 
 `rmmod g_android` followed by `insmod` panicked this unit on every candidate up
