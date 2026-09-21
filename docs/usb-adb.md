@@ -183,7 +183,20 @@ It is gated the same way the peer firewall is:
   installed at all.
 * `/persist/reinvoke/usb-adb-disabled` turns it off at runtime across reboots
   without reflashing and without removing anything.
-* `/opt/reinvoke/usb-adb/usb-adb-down.sh` stops it for the current boot.
+* `/opt/reinvoke/usb-adb/usb-adb-start.sh up|down|cycle|status` controls it
+  for the current boot. The same file init sources for its functions answers
+  these verbs when run directly, so there is one implementation of an
+  ordering that is easy to get wrong.
+
+  Both directions are idempotent. `up` on a gadget that is already
+  `CONFIGURED` returns without touching it: re-running the `soft_connect`
+  toggle underneath a host that had already enumerated left the gadget
+  `DISCONNECTED` and took the transport away from whoever was using it.
+  `down` with no module loaded says so and stops.
+
+  `status` reports the module, whether adbd holds `/dev/android_adb`, the
+  gadget state, and whether `lun0` is present, which is the leftover that
+  used to survive a teardown.
 
 Teardown is on the shutdown path because leaving it up broke reboots. adbd
 sleeps inside the gadget driver and the driver holds the USB controller; with

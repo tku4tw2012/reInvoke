@@ -145,7 +145,14 @@ function installUsbAdb(privateConfig, root, scriptSource) {
   // The reload test ships beside it: it is the only way to find out whether
   // the cleanup() fix in this build's g_android actually lets the module go
   // back in, and it cannot report over ADB because it removes ADB.
-  for (const script of ['usb-adb-down.sh', 'usb-adb-reload-test.sh']) {
+  // usb-adb-start.sh is the one implementation of both directions. init
+  // sources it for its functions; shipped here executable it also answers
+  // `up`, `down`, `cycle` and `status` from a shell. It used to have a
+  // standalone teardown twin whose copy of the sequence had already drifted:
+  // the twin handed the port back to the EHCI host driver and the sourced
+  // copy did not, so a teardown followed by a bring-up was not the same as a
+  // boot.
+  for (const script of ['usb-adb-start.sh', 'usb-adb-reload-test.sh']) {
     const from = path.join(scriptSource, script);
     fs.writeFileSync(path.join(target, script), fs.readFileSync(from), { mode: 0o755 });
     fs.chmodSync(path.join(target, script), 0o755);
