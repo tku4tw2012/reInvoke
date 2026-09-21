@@ -47,7 +47,7 @@ for (const [i, offset] of [start - erase, start + extent].entries()) {
 for (const build of ['build-a', 'build-b']) {
   assert(image.equals(fs.readFileSync(path.join(out, build, 'rootfs.squashfs'))));
   const payloadCopy = fs.readFileSync(path.join(out, build, 'verified-bootstrap/payload/runtime.cpio.gz'));
-  const conf = fs.readFileSync(path.join(out, build, 'verified-bootstrap/etc/nand-pilot/payload.conf'), 'utf8');
+  const conf = fs.readFileSync(path.join(out, build, 'verified-bootstrap/etc/reinvoke/payload.conf'), 'utf8');
   assert(conf.includes(`PAYLOAD_SHA256=${lib.sha(payloadCopy)}\n`));
   assert(conf.includes(`PAYLOAD_BYTES=${payloadCopy.length}\n`));
 }

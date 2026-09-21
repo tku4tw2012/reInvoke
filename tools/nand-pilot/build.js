@@ -87,7 +87,7 @@ function prepare() {
       installBluedroid(bluedroidConfig, root,
         path.join(here, '../bluedroid/bluedroid-start.sh')));
   for (const script of ['usb-adb-start.sh', 'persistence-start.sh'])
-    install(path.join(here, script), path.join(root, 'usr/libexec/nand-pilot', script), '0644');
+    install(path.join(here, script), path.join(root, 'usr/libexec/reinvoke', script), '0644');
   fs.rmSync(path.join(root, 'lib/modules'), { recursive: true });
   // Installed after the vendor module tree is replaced so the gadget payload
   // is not swept away with it.
@@ -129,7 +129,7 @@ function prepare() {
     parameters: 'stock calibration/power and BT parameters retained; RC12 mlan naming/MAC and STA-uAP mode selected',
   });
   for (const dir of ['proc', 'sys', 'dev/pts', 'run', 'tmp', 'runtime', 'root', 'nand-source',
-    'etc/nand-pilot', 'usr/var/lib/bluetooth', 'home/galois_rwdata/local/tmp']) {
+    'etc/reinvoke', 'usr/var/lib/bluetooth', 'home/galois_rwdata/local/tmp']) {
     fs.mkdirSync(path.join(root, dir), { recursive: true });
     fs.mkdirSync(path.join(boot, dir), { recursive: true });
   }
@@ -142,10 +142,10 @@ function prepare() {
     link('busybox', path.join(tree, 'bin/sh'));
     link('busybox', path.join(tree, 'bin/ash'));
     for (const file of ['common.sh', 'kernel.sh', 'ssh-start.sh'])
-      install(path.join(here, file), path.join(tree, 'usr/libexec/nand-pilot', file), '0644');
+      install(path.join(here, file), path.join(tree, 'usr/libexec/reinvoke', file), '0644');
     install(path.join(path.dirname(output), 'reinvoke-status'), path.join(tree, 'usr/bin/reinvoke-status'));
     link('/usr/bin/reinvoke-status', path.join(tree, 'usr/sbin/reinvoke-status'));
-    write(path.join(tree, 'etc/nand-pilot/build-id'), lib.BUILD_ID + '\n');
+    write(path.join(tree, 'etc/reinvoke/build-id'), lib.BUILD_ID + '\n');
     link('/opt/reinvoke/lib/ld-linux-armhf.so.3', path.join(tree, 'lib/ld-linux-armhf.so.3'));
   }
   // Runtime only. The donor stack blocks its A2DP callback inside
@@ -182,7 +182,7 @@ function prepare() {
     !v.path.split('/').some(part => part.startsWith('.')) &&
     /\.(?:sh|js|go|c)$/.test(v.path));
   const components = inventory(root).filter(v => (v.type === 'f' || v.type === 'l') &&
-    v.path !== 'etc/reinvoke-release' && !v.path.startsWith('etc/nand-pilot/'));
+    v.path !== 'etc/reinvoke-release' && !v.path.startsWith('etc/reinvoke/'));
   const componentManifest = JSON.stringify(components, null, 2) + '\n';
   const manifestHash = lib.sha(componentManifest);
   const release = [
@@ -200,9 +200,9 @@ function prepare() {
   ].join('\n');
   for (const tree of [root, boot]) {
     write(path.join(tree, 'etc/reinvoke-release'), release, 0o444);
-    write(path.join(tree, 'etc/nand-pilot/runtime-components.json'), componentManifest, 0o444);
-    json(path.join(tree, 'etc/nand-pilot/module-manifest.json'), modules);
-    json(path.join(tree, 'etc/nand-pilot/source-manifest.json'), sourceCode);
+    write(path.join(tree, 'etc/reinvoke/runtime-components.json'), componentManifest, 0o444);
+    json(path.join(tree, 'etc/reinvoke/module-manifest.json'), modules);
+    json(path.join(tree, 'etc/reinvoke/source-manifest.json'), sourceCode);
   }
   normalize(root); normalize(boot);
   json(path.join(output, 'runtime-elf-closure.json'), lib.elfClosure(root));
@@ -216,7 +216,7 @@ function prepare() {
   fs.mkdirSync(path.join(boot, 'payload'));
   const payload = path.join(boot, 'payload/runtime.cpio.gz');
   cpioPack(root, payload);
-  write(path.join(boot, 'etc/nand-pilot/payload.conf'),
+  write(path.join(boot, 'etc/reinvoke/payload.conf'),
     `PAYLOAD_SHA256=${hashFile(payload)}\nPAYLOAD_BYTES=${fs.statSync(payload).size}\n`, 0o444);
   normalize(boot);
   json(path.join(output, 'runtime-manifest.json'), inventory(root));

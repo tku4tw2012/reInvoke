@@ -40,10 +40,10 @@ const targetRuntimeSHA256 = lib.hashFile(path.join(root, 'payload/runtime.cpio.g
 fs.unlinkSync(path.join(root, 'payload/runtime.cpio.gz'));
 for (const relative of ['usr/bin/reinvoke-status', 'usr/sbin/reinvoke-status'])
   fs.unlinkSync(path.join(root, relative));
-fs.rmSync(path.join(root, 'etc/nand-pilot'), { recursive: true });
+fs.rmSync(path.join(root, 'etc/reinvoke'), { recursive: true });
 for (const [source, relative, mode] of [
   [path.join(__dirname, 'bsl-init.sh'), 'init', '0755'],
-  [path.join(__dirname, 'common.sh'), 'usr/libexec/nand-pilot/common.sh', '0644'],
+  [path.join(__dirname, 'common.sh'), 'usr/libexec/reinvoke/common.sh', '0644'],
   [path.join(rc12, 'sbin/ueventd'), 'sbin/ueventd', '0755'],
   [path.join(rc12, 'ueventd.rc'), 'ueventd.rc', '0644'],
   [path.join(rc12, 'lib/libglibc_bridge.so'), 'lib/libglibc_bridge.so', '0755'],

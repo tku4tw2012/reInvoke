@@ -6,7 +6,7 @@ BB=/bin/busybox
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
 HOME=/root
 export PATH HOME
-. /usr/libexec/nand-pilot/common.sh
+. /usr/libexec/reinvoke/common.sh
 
 if [ "$$" -ne 1 ]; then
   echo "NAND pilot bootstrap requires PID 1; refusing host/manual execution" >&2
@@ -60,7 +60,7 @@ fi
 # "retry-budget-exhausted" at 41.41s, having rewritten functions and iProduct
 # in between. The runtime owns USB ADB now; see usb-adb-start.sh.
 
-. /etc/nand-pilot/payload.conf
+. /etc/reinvoke/payload.conf
 pilot_verify_payload /payload/runtime.cpio.gz "${PAYLOAD_SHA256}" "${PAYLOAD_BYTES}" ||
   pilot_fatal "runtime payload size/hash mismatch"
 pilot_phase payload-verified
@@ -84,7 +84,7 @@ ${BB} mount -o bind / /runtime/nand-source ||
   pilot_fatal "cannot retain source root evidence"
 ${BB} mount -o remount,bind,ro /runtime/nand-source ||
   pilot_fatal "cannot enforce read-only source view"
-for identity in /etc/reinvoke-release /etc/nand-pilot; do
+for identity in /etc/reinvoke-release /etc/reinvoke; do
   ${BB} mount -o bind "${identity}" "/runtime${identity}" ||
     pilot_fatal "cannot bind immutable identity"
   ${BB} mount -o remount,bind,ro "/runtime${identity}" ||

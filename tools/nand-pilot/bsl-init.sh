@@ -8,7 +8,7 @@ PATH=/sbin:/bin:/usr/sbin:/usr/bin
 HOME=/root
 export PATH HOME
 PILOT_STATE=/run/reinvoke-bsl
-. /usr/libexec/nand-pilot/common.sh
+. /usr/libexec/reinvoke/common.sh
 
 stop_boot() {
   echo "reInvoke BSL stopped: $*" >&2

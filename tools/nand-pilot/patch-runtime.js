@@ -12,7 +12,7 @@ function patchRuntime(source) {
     if (text.split(old).length !== 2) throw new Error('ambiguous/missing RC12 patch context');
     text = text.replace(old, value);
   }
-  replace('export PATH\n', 'export PATH\n. /usr/libexec/nand-pilot/common.sh\n. /usr/libexec/nand-pilot/kernel.sh\n. /usr/libexec/nand-pilot/ssh-start.sh\n. /usr/libexec/nand-pilot/usb-adb-start.sh\n. /usr/libexec/nand-pilot/persistence-start.sh\n');
+  replace('export PATH\n', 'export PATH\n. /usr/libexec/reinvoke/common.sh\n. /usr/libexec/reinvoke/kernel.sh\n. /usr/libexec/reinvoke/ssh-start.sh\n. /usr/libexec/reinvoke/usb-adb-start.sh\n. /usr/libexec/reinvoke/persistence-start.sh\n');
   replace('  echo "reInvoke: $*" > /dev/kmsg', `  pilot_log "runtime: $*"
   case "$*" in
     *failed*|*incomplete*|*invalid*|*missing*|*unavailable*|*"not initialized"*)

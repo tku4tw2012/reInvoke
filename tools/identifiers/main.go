@@ -246,7 +246,7 @@ func main() {
 	deviceNameFile := flag.String("device-name-file", "", "path to a file holding the device name; wins over -device-name when set")
 	serviceName := flag.String("service-name", "identifiers",
 		"name used for the ready and heartbeat topics")
-	buildIdentityFile := flag.String("build-identity-file", "/etc/nand-pilot/build-id",
+	buildIdentityFile := flag.String("build-identity-file", "/etc/reinvoke/build-id",
 		"file whose contents answer com.harman.firmwareVersion")
 	call := flag.String("call", "", "diagnostic: invoke this procedure and exit")
 	callArgs := flag.String("call-args", "", "diagnostic: JSON array of positional arguments")

@@ -385,7 +385,7 @@ func adminListeners(root string) map[string]string {
 func collect(root string) status {
 	at := func(path string) string { return filepath.Join(root, path) }
 	s := status{
-		BuildID:             read(at("/etc/nand-pilot/build-id")),
+		BuildID:             read(at("/etc/reinvoke/build-id")),
 		Kernel:              read(at("/proc/sys/kernel/osrelease")),
 		EntryKernel:         read(at("/run/reinvoke/entry-kernel")),
 		ExternalAttestation: "required: owner power cycle without RAM download plus host observations/readback",

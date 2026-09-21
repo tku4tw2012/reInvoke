@@ -26,7 +26,7 @@ chmod 0700 "${output}"
 output="$(realpath "${output}")"
 [[ ! -e "${output}/rootfs.squashfs" && ! -e "${output}/build-a" && ! -e "${output}/build-b" ]] ||
   { echo "Refusing to overwrite a previous build" >&2; exit 1; }
-# The date inside BUILD_ID is what lands in /etc/nand-pilot/build-id on the
+# The date inside BUILD_ID is what lands in /etc/reinvoke/build-id on the
 # device. It is a constant, so it goes stale silently: 2.2.8 was first built
 # carrying the previous day, left over from the version rename. When the
 # output path names a date, hold the two to each other.

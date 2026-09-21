@@ -210,9 +210,33 @@ try {
       'usb-adb-start.sh writes its own runtime.log again; log() already logs');
   }
 
+  // One namespace on the device, and it is the product's.
+  //
+  // reinvoke is the product; nand-pilot is one subsystem of it, the thing
+  // that boots and writes NAND. Files describing the whole image were
+  // namespaced for that subsystem: /etc/nand-pilot/build-id beside
+  // /etc/reinvoke-release, /usr/libexec/nand-pilot beside /run/reinvoke.
+  //
+  // The donor groups its own product config under /etc/podium, its platform
+  // name, and keeps identity flat in /etc as version, distro_version and
+  // build.info. So a product directory is donor behaviour; naming it for a
+  // subsystem is not.
+  {
+    const files = fs.readdirSync(__dirname)
+      .filter(name => /\.(js|sh)$/.test(name))
+      .map(name => [name, fs.readFileSync(path.join(__dirname, name), 'utf8')]);
+    for (const [name, text] of files) {
+      for (const line of text.split('\n')) {
+        if (/^\s*(\/\/|#)/.test(line)) continue;
+        assert(!/(etc|usr\/libexec|run)\/nand-pilot/.test(line),
+          `${name} puts a device path under nand-pilot: ${line.trim()}`);
+      }
+    }
+  }
+
   assert.equal(lib.CANDIDATE, '2.2.11');
   // Not a copy of the constant, which only forces an edit in two places when
-  // the date moves. The date is stamped into /etc/nand-pilot/build-id on the
+  // the date moves. The date is stamped into /etc/reinvoke/build-id on the
   // device, and 2.2.8 was first assembled carrying the previous day left over
   // from the version rename, so check it is a real calendar date that has
   // actually happened and that the version in it is the one being built.

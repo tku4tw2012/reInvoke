@@ -298,10 +298,10 @@ function installBluedroid(config, root, launcher) {
   fs.chmodSync(pairingAgentTarget, 0o755);
 
   // The init reads these rather than embedding private values in a patch.
-  // They live under the Bluedroid stack root, NOT etc/nand-pilot: the
-  // bootstrap bind mounts its own immutable /etc/nand-pilot over the
+  // They live under the Bluedroid stack root, NOT etc/reinvoke: the
+  // bootstrap bind mounts its own immutable /etc/reinvoke over the
   // runtime's copy before chroot, so anything written there is invisible at
-  // runtime. Candidate 05 shipped them to etc/nand-pilot and the identity
+  // runtime. Candidate 05 shipped them to etc/reinvoke and the identity
   // provider consequently read an empty value and crash-looped on hardware.
   const settings = path.join(stackRoot, 'etc');
   fs.mkdirSync(settings, { recursive: true, mode: 0o755 });

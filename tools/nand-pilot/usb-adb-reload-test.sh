@@ -38,7 +38,7 @@ note() {
 
 note ""
 note "=== reload test $(${BB} date -u '+%Y-%m-%dT%H:%M:%SZ') ==="
-note "build      $(${BB} cat /etc/nand-pilot/build-id 2>/dev/null)"
+note "build      $(${BB} cat /etc/reinvoke/build-id 2>/dev/null)"
 note "g_android  $(${BB} sha256sum "${DIR}/g_android.ko" 2>/dev/null | ${BB} cut -c1-64)"
 note "uptime     $(${BB} cat /proc/uptime 2>/dev/null)"
 note "panic_on_oops=$(${BB} cat /proc/sys/kernel/panic_on_oops) panic=$(${BB} cat /proc/sys/kernel/panic)"
