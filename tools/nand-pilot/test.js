@@ -135,7 +135,25 @@ try {
       .test(versions),
       'docs/versions.md no longer maps the installed build to its old name');
   }
-  assert.equal(lib.CANDIDATE, '2.2.9');
+  // The voice output stage: the donor's LADSPA equaliser and the one
+  // library it needs. Both must stay under /usr/lib, because elfClosure
+  // classifies an object by where it sits and resolves a /usr/lib object
+  // against /lib and /usr/lib only. Splitting them put the library in the
+  // runtime's private directory and the build refused it.
+  {
+    const voice = require('./voice-config');
+    assert.deepEqual(voice.validateVoice(undefined), { enabled: false });
+    assert.deepEqual(voice.validateVoice({ enabled: true }), { enabled: true });
+    assert.throws(() => voice.validateVoice({ enabled: true, extra: 1 }),
+      /unknown voiceOutput key/);
+    assert.throws(() => voice.validateVoice([]), /must be an object/);
+    for (const [, destination] of voice.VOICE_FILES) {
+      assert(destination.startsWith('usr/lib/'),
+        `${destination} sits outside the loader family elfClosure uses`);
+    }
+  }
+
+  assert.equal(lib.CANDIDATE, '2.2.10');
   // Not a copy of the constant, which only forces an edit in two places when
   // the date moves. The date is stamped into /etc/nand-pilot/build-id on the
   // device, and 2.2.8 was first assembled carrying the previous day left over
@@ -155,8 +173,8 @@ try {
     assert(stamped.getTime() <= Date.now(),
       `BUILD_ID ${lib.BUILD_ID} is dated in the future`);
   }
-  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-2.2.9');
-  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-2.2.9');
+  assert.equal(lib.BLUETOOTH_NAME, 'reInvoke-2.2.10');
+  assert.equal(lib.BUNDLE_NAME, '83_IMAGE.reinvoke-2.2.10');
   // The bootstrap no longer launches an early USB ADB daemon. That launcher
   // was written for booting from RAM over USB, where the boot ROM had already
   // put the port in device mode. Booting from NAND there is no gadget until

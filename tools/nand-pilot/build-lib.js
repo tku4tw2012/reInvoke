@@ -22,8 +22,8 @@ const pins = {
 // date a day stale, left over from the version rename, which would have
 // stamped the device with a day it was not built on. build.sh now refuses
 // when the output directory carries a different date.
-const CANDIDATE = '2.2.9';
-const BUILD_ID = `reInvoke-${CANDIDATE}-20260920`;
+const CANDIDATE = '2.2.10';
+const BUILD_ID = `reInvoke-${CANDIDATE}-20260921`;
 const BLUETOOTH_NAME = `reInvoke-${CANDIDATE}`;
 const BUNDLE_NAME = `83_IMAGE.reinvoke-${CANDIDATE}`;
 const BB_SHA256 = '5fc83ab6cd37841b8d73e07bf3cd8af47ae5af56c93fe085b2db91e0d1f4207b';
