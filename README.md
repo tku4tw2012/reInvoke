@@ -1,6 +1,6 @@
 ---
 title: reInvoke
-description: An open Linux runtime and local-assistant endpoint project for the Harman Kardon Invoke
+description: An open Linux runtime for the Harman Kardon Invoke, booting from the speaker's own NAND
 ---
 
 reInvoke is an open Linux runtime for the Harman Kardon Invoke
@@ -15,20 +15,23 @@ one unit.
 ## Current status
 
 Build `2.2.11`, running on one closed Invoke. Each row is something observed
-on the unit, not something intended; [release validation](docs/release-validation.md)
-records how each was observed and which checks require a human ear or eye.
+on the unit, not something intended. Rows marked with an earlier build were
+observed on that build and have not been re-run since.
+[Release validation](docs/release-validation.md) records how each was observed,
+which checks still require a human ear or eye, and what is not covered at all.
 
 | Scope        | Result                                                                                        |
 | ------------ | --------------------------------------------------------------------------------------------- |
 | Startup      | Boots from NAND on wall power with no host attached; seventeen supervised services             |
-| Audio        | Bluetooth A2DP playback, startup chime, rotary volume following the donor's measured gain curve |
+| Audio        | Bluetooth A2DP playback and rotary volume on the donor's measured gain curve; the startup chime and the fix that made it audible are still awaiting confirmation by ear |
 | Network      | Wi-Fi associates and leases; SSH and USB ADB both reachable from a cold boot                    |
-| Microphone   | Capture verified by measurement, with the DSP mute gate proven to silence it                   |
-| Persistence  | Wi-Fi credentials and Bluetooth stack configuration survive power loss                          |
+| Microphone   | Capture measured on 2.2.7, with the DSP mute gate proven to silence it                         |
+| Persistence  | Wi-Fi credentials are read from durable storage at boot; survival across abrupt power loss is not verified on this build |
 
 What it does not do: there is no wake word, no assistant protocol and no voice
-assistant of any kind. The audio and capture interfaces a local assistant would
-need are implemented and tested; nothing consumes them yet. See
+assistant of any kind. Capture and playback primitives exist and have isolated
+hardware tests, but no assistant consumer has ever used them, and the mute
+contract such a consumer should rely on is still undecided. See
 [remaining work](docs/revival-roadmap.md#remaining-work).
 
 The [native guide](docs/native-nand-platform.md#current-result) owns the result

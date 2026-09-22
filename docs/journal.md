@@ -157,19 +157,20 @@ path the donor does not read; and the state directory was an invented one
 nothing reads. The radio and driver were never at fault. Removing BlueZ then
 exposed an unrelated MCU crash loop that the two stacks had masked.
 
-**A custom kernel cannot boot from NAND on this unit.** Signature verification
-was ruled out directly: the loader reports `MRVL SIGN R :0000` and the fuses are
-unlocked. The obstacle is `bcm_image_verify()`, a mailbox call into the closed
-BCM co-processor. Splicing a kernel into `bootimgs` rather than replacing it
-was tried and recorded. This bounds what any future persistent design may
-change.
+**No custom kernel has booted from NAND on this unit.** Signature verification
+was ruled out as the obstacle: the loader reports `MRVL SIGN R :0000` and the
+fuses are unlocked. What blocks it is `bcm_image_verify()`, a mailbox call into
+the closed BCM co-processor whose transform is still unknown, so the project
+cannot currently produce an image that satisfies it. Splicing a kernel into
+`bootimgs` rather than replacing it was tried and recorded. This bounds what
+any future persistent design may change.
 
 **Catching, confirming and writing became three separate scripts.** Entry into
-recovery had been treated as an operator timing problem. Measurement showed the
-iROM window is deterministic: the device appears at device subclass `0xFE` and
-reaches `0xFF` nine to ten seconds later, three times out of three. The tooling
-now catches that window instead of racing it. Prompt detection moved from
-matching the console banner to a nonce challenge: send `echo <token>` and
+recovery had been treated as an operator timing problem. Measurement showed
+otherwise: the device appears at device subclass `0xFE` and was observed
+reaching `0xFF` nine to ten seconds later in all three runs measured. The
+tooling now catches that window instead of racing it. Prompt detection moved
+from matching the console banner to a nonce challenge: send `echo <token>` and
 require the token back, counting only bytes that arrive after the send. Banner
 matching had stalled for fifty seconds on a live prompt, and a byte-growth
 heuristic was satisfied by the relay's own closing marker.

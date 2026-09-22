@@ -78,9 +78,13 @@ Bluetooth carries audio and WAMP carries compatibility calls. Device ports
 ADB server and host TCP 8141 is the USB-helper console, not device services.
 
 Wi-Fi credentials and Bluetooth stack configuration are held in `/persist`, a
-yaffs2 volume on the `app` partition, and survive power loss. User preferences
-and the update, recovery and reset semantics for those contents are not yet
-settled. The [roadmap](revival-roadmap.md#remaining-work) owns remaining gates.
+yaffs2 volume on the `app` partition. The running `wpa_supplicant.conf` is
+generated from that store rather than from a fresh provisioning exchange, so
+credentials are read from durable storage at boot. Survival across abrupt power
+loss has been exercised on earlier builds but not on this one, and is not
+listed as verified. User preferences and the update, recovery and reset
+semantics for `/persist` are not yet settled. The
+[roadmap](revival-roadmap.md#remaining-work) owns remaining gates.
 
 ## Installed architecture
 

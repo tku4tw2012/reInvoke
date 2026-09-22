@@ -6,21 +6,23 @@ description: Runtime ownership, local policy and interface contracts for the Inv
 reInvoke targets a local assistant endpoint on existing Invoke hardware.
 The implemented milestone is an owned runtime, not a complete assistant.
 The [native result ledger](native-nand-platform.md#current-result) is the
-authority for candidate-specific acceptance; the contracts below describe
+authority for acceptance on a given build; the contracts below describe
 implementation unless a measurement is explicitly identified.
 
 ## Current product contract
 
 Normal operation starts from NAND. Host-loaded U-Boot/RAM Linux remains the
-development and observed recovery path. Installed candidate 03 keeps settings
-volatile. The offline 04 successor adds guarded app/YAFFS2 persistence for
-Wi-Fi, bonds and selected preferences; see its
+development and observed recovery path. Settings are held in `/persist`, a
+yaffs2 volume on the `app` partition, covering Wi-Fi credentials, Bluetooth
+stack configuration and selected preferences; see its
 [scope and limits](native-nand-platform.md#settings-persistence-and-bounded-network-adb).
 
-Installed candidate 03 has startup, provisioning and SSH-negotiation evidence
-but no login. Candidate 02 owns the broader native audio/control baseline;
-detailed mic-mute, firewall and restart checks remain RAM-scoped.
-The actual native kernel, PID 1 and mount table remain unread through a shell.
+The running build serves a root SSH login and USB ADB from a cold boot, so the
+native kernel command line, process table and mount table are directly
+readable on the device rather than inferred from composition. Earlier
+candidate builds reached SSH negotiation without a login, and their audio and
+control results were separately scoped; that history is in the
+[decision record](journal.md).
 
 The original Cortana system and final Bluetooth-oriented `12.2134.0` donor
 are historical dependencies, not reInvoke product policy. See

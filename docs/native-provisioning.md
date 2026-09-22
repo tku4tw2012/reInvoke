@@ -1,19 +1,22 @@
 ---
 title: Native Wi-Fi provisioning boundary
-description: Volatile onboarding, exact parser contract, bootstrap trust and process ownership
+description: Onboarding, exact parser contract, bootstrap trust and process ownership
 ---
 
 Provisioning is a physically requested, bounded AP-to-station handoff.
-Candidates 02 and 03 completed attended onboarding; candidate 03 joined the
-local network and answered ping. Its later SSH negotiation did not produce
-a login. The [native ledger](native-nand-platform.md#current-result) records
-those results; detailed isolation/failure/restart checks below remain RAM-scoped.
-Credentials disappear after power loss.
 
-That is candidate 03's behavior. The offline 04 adapter saves successfully
-associated profiles through the [persistence service](../tools/nand-pilot/persistence/README.md)
-and resumes a saved profile or eligible private seed at startup. HTTP 202,
-association, durable save and DHCP remain distinct outcomes.
+Successfully associated profiles are saved through the
+[persistence service](../tools/nand-pilot/persistence/README.md), and the
+running build resumes a saved profile, or an eligible private seed, at startup
+rather than requiring onboarding on every boot. HTTP 202, association, durable
+save and DHCP remain distinct outcomes, and a later one does not imply an
+earlier one succeeded.
+
+Earlier candidate builds completed attended onboarding and joined the local
+network without saving credentials, so onboarding was required after every
+power loss. The [native ledger](native-nand-platform.md#current-result) records
+current results; detailed isolation, failure and restart checks below remain
+RAM-scoped.
 
 ## Current replacement components
 

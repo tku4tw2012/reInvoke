@@ -231,7 +231,8 @@ Recovery after corrupt `block0`, pre-bootloader or hidden OOB remains unproved.
 
 Future writes require exact artifact/bounds, a fixed per-read ECC policy,
 independent readback and explicit stop conditions, not automatic restore/reboot.
-Current credentials, bonds and settings are volatile. Native administration,
-remaining acceptance, storage design and assistant integration belong to the
+Settings now live in `/persist` on the `app` partition rather than in memory,
+so a write that reaches `app` destroys them. Remaining acceptance, storage
+design and assistant integration belong to the
 [remaining work](revival-roadmap.md#remaining-work), not another speculative
 partition recipe.

@@ -44,7 +44,7 @@ numbering maps to the names earlier builds used.
 | No volume arc at boot | verified | no `RING_ARC` logged, and none seen |
 | Reboot without a power cycle | verified | `adb reboot` returned the unit repeatedly |
 | Front lamp state changes | verified | amber at boot, white once online |
-| Wi-Fi credentials persist | verified | 2.2.11, the runtime `wpa_supplicant.conf` SSID is the hex encoding of the SSID in `/persist/reinvoke/state.json`, so the config is generated from durable storage rather than re-provisioned |
+| Wi-Fi config comes from durable storage | verified | 2.2.11, the runtime `wpa_supplicant.conf` SSID is the hex encoding of the SSID in `/persist/reinvoke/state.json`, so the config is generated from the store rather than from a fresh provisioning exchange. This is not a power-loss test |
 | Bluetooth pairing from the host | verified | `LinkKey` written, survived a reboot |
 | Microphone capture | verified | 2.2.7: 192,000 samples, 191,998 non-zero at −34.7 dBFS; DSP mute gave 192,000 samples, peak 0 |
 | No builder paths in shipped binaries | verified | 2.2.11, all seven Go binaries report zero `/home/<user>` occurrences on the running unit; four carried 3, 3, 7 and 5 before |
@@ -61,13 +61,18 @@ numbering maps to the names earlier builds used.
 | No pops at startup | verified | 05.8.13, heard by the owner; the donor's one second settle |
 | Dial carries the donor curve | verified | dial 34 sent the DSP `payload 04 05`, the measured gain |
 
-This table is not maintained by hand. It records the same conditions that
-[`tools/release-criteria`](../tools/release-criteria/criteria.json) checks, so
-a claim here and the check behind it cannot drift apart silently. That coupling
-exists because the table did drift: while it was prose, it under-reported the
-service count, recorded the chime as failed after it had played, and listed a
-fix as never exercised after it had been. A result ledger nobody re-derives
-becomes a record of what was once believed.
+Some of these conditions are also executable. `tools/release-criteria` checks
+twenty-three of them against a boot log, a connected device, a flash attempt,
+and the list of things only a listener can judge, so those cannot drift from
+the checker silently. The rest of this table is recorded by hand and can.
+That distinction matters, because this table did drift: while it was entirely
+prose it under-reported the service count, recorded the chime as failed after
+it had played, and listed a fix as never exercised after it had been. A result
+ledger nobody re-derives becomes a record of what was once believed.
+
+Rows naming a build earlier than the current one were observed on that build
+and have not been re-run since. "What is not covered here" at the end of this
+page lists what has no current evidence at all.
 
 Playback rows describe what was observed on the named build. They are not
 claims about being the first time a given thing worked.
