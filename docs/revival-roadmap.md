@@ -1,8 +1,6 @@
 ---
 title: reInvoke revival roadmap
 description: Milestones and remaining work toward a maintained local assistant endpoint
-ms.date: 2026-09-12
-ms.topic: overview
 ---
 
 The target is a local assistant endpoint on the Invoke's existing compute,

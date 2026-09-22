@@ -1,8 +1,6 @@
 ---
 title: DSP boundary
 description: Owned DSP policy and recovered SPI frames, image loading, GPIO handshake and WAMP contracts
-ms.date: 2026-09-12
-ms.topic: reference
 ---
 
 `reinvoke-dsp-interface` replaces donor `dsp-client` for image loading,

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+// Copyright (c) 2026 tku4tw2012
 // SPDX-License-Identifier: MIT
 //
 // Answer com.harman.identifiersGet for the donor Bluetooth service.

@@ -1,7 +1,6 @@
 ---
 title: FCC exhibits for APIHKINVOKE
 description: Acquired exhibit inventory and qualified visual observations of the FCC sample
-ms.date: 2026-09-12
 ---
 
 ## Acquisition and integrity

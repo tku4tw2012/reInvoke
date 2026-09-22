@@ -1,8 +1,6 @@
 ---
 title: reInvoke control tools
 description: WAMP diagnostics, offline DSP decoding and gated Bluetooth helper builds
-ms.date: 2026-09-12
-ms.topic: how-to
 ---
 
 Host diagnostics and contract references live here; the target runs static

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) Microsoft Corporation.
+# Copyright (c) 2026 tku4tw2012
 # SPDX-License-Identifier: MIT
 #
 # Record one Invoke USB attempt as a timestamped evidence bundle.

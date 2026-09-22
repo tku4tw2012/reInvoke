@@ -1,8 +1,6 @@
 ---
 title: USB device mode on BG2CD
 description: Kernel and device-tree work required to provide USB ADB
-ms.date: 2026-09-14
-ms.topic: concept
 ---
 
 Status: investigated, not built. This records exactly what the change is so it

@@ -1,8 +1,6 @@
 ---
 title: Bluetooth enable path
 description: What gates the donor radio, what is solved, and what still blocks it
-ms.date: 2026-09-14
-ms.topic: reference
 ---
 
 Recovered by disassembling the donor `bluetooth` binary and confirmed on the

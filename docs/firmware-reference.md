@@ -1,7 +1,6 @@
 ---
 title: Firmware reference
 description: Retained vendor inputs, image boundaries and maintenance-relevant firmware differences
-ms.date: 2026-09-12
 ---
 
 ## Evidence scope

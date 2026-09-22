@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) Microsoft Corporation.
+# Copyright (c) 2026 tku4tw2012
 # SPDX-License-Identifier: MIT
 #
 # Attach the console client when a boot tool opens its local TCP relay.

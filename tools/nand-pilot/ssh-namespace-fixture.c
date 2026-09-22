@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+// Copyright (c) 2026 tku4tw2012
 // SPDX-License-Identifier: MIT
 // Rootless user namespaces deny setgroups even for their mapped root. Permit
 // only an emulated reset to the already mapped primary group (0); never change

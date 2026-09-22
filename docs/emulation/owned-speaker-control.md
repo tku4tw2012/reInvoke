@@ -1,8 +1,6 @@
 ---
 title: Owned Bluetooth speaker control boundary
 description: Volume authority, MCU speaker output control and PCM separation
-ms.date: 2026-09-12
-ms.topic: reference
 ---
 
 The donor Bluedroid stack carries Bluetooth audio; volume authority runs

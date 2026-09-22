@@ -1,7 +1,6 @@
 ---
 title: Invoke hardware evidence
 description: Hardware references, evidence conventions, and acquired-source provenance
-ms.date: 2026-09-12
 ---
 
 ## Reference map

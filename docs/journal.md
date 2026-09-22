@@ -1,8 +1,6 @@
 ---
 title: Project journal
 description: Engineering milestones, corrected assumptions, and consequences for the local-assistant platform
-ms.date: 2026-09-12
-ms.topic: reference
 ---
 
 reInvoke progressed from retained firmware and emulated services to

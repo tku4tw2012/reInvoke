@@ -1,8 +1,6 @@
 ---
 title: Faster USB boot helper
 description: Poll and attach timing that fits inside the measured iROM window
-ms.date: 2026-09-15
-ms.topic: reference
 ---
 
 The pinned helper at `jryruegas92/hk-invoke-arm-flasher` commit `63444e82`

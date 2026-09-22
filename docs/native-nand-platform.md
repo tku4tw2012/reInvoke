@@ -1,8 +1,6 @@
 ---
 title: Native NAND platform
 description: Current native results, artifact identities, installation limits and build provenance
-ms.date: 2026-09-12
-ms.topic: overview
 ---
 
 ## Current result

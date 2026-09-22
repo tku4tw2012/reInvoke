@@ -1,8 +1,6 @@
 ---
 title: reInvoke microphone capture owner
 description: Build and client reference for the mic mute-gated local capture service
-ms.date: 2026-09-12
-ms.topic: how-to
 ---
 
 `reinvoke-mic-capture` is the packaged capture-PCM owner. It supervises the

@@ -1,8 +1,6 @@
 ---
 title: Volatile Wi-Fi provisioning tools
 description: Component builds, authenticated credential protocol and NetworkManager client
-ms.date: 2026-09-12
-ms.topic: how-to
 ---
 
 The owned provisioning stack replaces donor plaintext HTTP setup. Credentials

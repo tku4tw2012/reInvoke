@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) Microsoft Corporation.
+# Copyright (c) 2026 tku4tw2012
 # SPDX-License-Identifier: MIT
 #
 # Build a RAM-only diagnostic initramfs from the preserved recovery image.

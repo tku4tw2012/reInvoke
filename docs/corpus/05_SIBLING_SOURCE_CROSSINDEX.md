@@ -1,7 +1,6 @@
 ---
 title: Berlin source and community cross-index
 description: Useful source-code locators, bounded search results, and community research provenance
-ms.date: 2026-09-12
 ---
 
 ## Source coverage

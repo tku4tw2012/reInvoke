@@ -1,8 +1,6 @@
 ---
 title: USB boot and RAM-runtime tooling
 description: Recovery sessions, gated RAM composition and loading, and native flash inspection
-ms.date: 2026-09-12
-ms.topic: how-to
 ---
 
 These host tools support [U-Boot recovery](../../docs/uboot-access.md),

@@ -1,8 +1,6 @@
 ---
 title: USB ADB on the vendor kernel
 description: How USB ADB was built and proven on this unit without replacing the kernel
-ms.date: 2026-09-17
-ms.topic: reference
 ---
 
 USB ADB works on this unit. It was proven on hardware before anything was

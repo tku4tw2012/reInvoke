@@ -1,8 +1,6 @@
 ---
 title: MCU command map
 description: Opcodes recovered from the donor mcu-interface binary by disassembly
-ms.date: 2026-09-17
-ms.topic: reference
 ---
 
 The microcontroller on this unit speaks a six-byte frame over I2C. This file

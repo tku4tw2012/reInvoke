@@ -1,8 +1,6 @@
 ---
 title: Offline NAND image builders
 description: Native candidate composition, private inputs and verification boundaries
-ms.date: 2026-09-12
-ms.topic: how-to
 ---
 
 These builders create regular files from private RC12, vendor, BSL, compiler

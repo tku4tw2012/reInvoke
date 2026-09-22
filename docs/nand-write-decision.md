@@ -1,8 +1,6 @@
 ---
 title: NAND evidence and write decisions
 description: NAND geometry, backup limitations, withdrawn methods, and the native-startup milestones
-ms.date: 2026-09-12
-ms.topic: reference
 ---
 
 ## Current result

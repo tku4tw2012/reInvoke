@@ -1,5 +1,5 @@
 #!/bin/busybox sh
-# Copyright (c) Microsoft Corporation.
+# Copyright (c) 2026 tku4tw2012
 # SPDX-License-Identifier: MIT
 # The target has BusyBox ash, not Bash. All persistent mounts remain read-only.
 

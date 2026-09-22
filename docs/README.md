@@ -1,7 +1,6 @@
 ---
 title: reInvoke documentation
 description: Index of the 32 public Markdown pages, grouped by engineering task
-ms.date: 2026-09-12
 ---
 
 Current status and candidate-specific acceptance live in the

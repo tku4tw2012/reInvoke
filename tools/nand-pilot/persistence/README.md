@@ -1,8 +1,6 @@
 ---
 title: Native settings persistence
 description: Verified app-partition storage, saved station profiles and bounded settings snapshots
-ms.date: 2026-09-12
-ms.topic: reference
 ---
 
 Candidate 04 stores selected settings in `/persist/reinvoke/state.json` on the

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+// Copyright (c) 2026 tku4tw2012
 // SPDX-License-Identifier: MIT
 
 import assert from "node:assert/strict";

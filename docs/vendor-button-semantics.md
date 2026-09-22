@@ -1,8 +1,6 @@
 ---
 title: Vendor button semantics
 description: Button-to-action table recovered from the stock audio-ui state machine
-ms.date: 2026-09-16
-ms.topic: reference
 ---
 
 What each physical control did on the retail Invoke, recovered from the stock

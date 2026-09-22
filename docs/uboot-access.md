@@ -1,8 +1,6 @@
 ---
 title: U-Boot recovery access over Micro-USB
 description: Verified closed-enclosure recovery, the working RAM image pair, and limits of boot-stage evidence
-ms.date: 2026-09-12
-ms.topic: how-to
 ---
 
 ## Recovery boundary

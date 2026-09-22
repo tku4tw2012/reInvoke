@@ -1,7 +1,6 @@
 ---
 title: Invoke hardware baseline
 description: Product specifications, measured unit geometry, and unresolved hardware boundaries
-ms.date: 2026-09-12
 ---
 
 ## Scope and sources

@@ -1,8 +1,6 @@
 ---
 title: Historical donor boot and update state
 description: Vendor fw_stat markers, write semantics and unresolved boot-slot behavior
-ms.date: 2026-09-12
-ms.topic: reference
 ---
 
 Static disassembly of the final firmware establishes the `fw_stat` update

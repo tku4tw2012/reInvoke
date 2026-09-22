@@ -1,7 +1,6 @@
 ---
 title: Invoke and Berlin source catalogue
 description: Acquisition status, authoritative records and unresolved firmware and source leads
-ms.date: 2026-09-12
 ---
 
 ## Record authority

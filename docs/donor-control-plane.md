@@ -1,8 +1,6 @@
 ---
 title: Donor control-plane procedures
 description: Harman WAMP procedures used by the donor Bluedroid service
-ms.date: 2026-09-14
-ms.topic: reference
 ---
 
 The donor Bluedroid binary calls twenty-four `com.harman.*` WAMP procedures.

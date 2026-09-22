@@ -1,8 +1,6 @@
 ---
 title: Offline minimal SquashFS diagnostic
 description: Build and verify the two-block startup probe without accessing the speaker
-ms.date: 2026-09-11
-ms.topic: how-to
 ---
 
 ## Scope

@@ -1,7 +1,6 @@
 ---
 title: One-command sealed NAND trial runner
 description: Offline inspection and an explicitly gated foreground apply, stopping before manual boot observation
-ms.date: 2026-09-11
 ---
 
 ## Scope and current status

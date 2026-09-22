@@ -1,7 +1,6 @@
 ---
 title: reInvoke
 description: An open Linux runtime and local-assistant endpoint project for the Harman Kardon Invoke
-ms.date: 2026-09-12
 ---
 
 reInvoke is building a local assistant endpoint on the Harman Kardon Invoke

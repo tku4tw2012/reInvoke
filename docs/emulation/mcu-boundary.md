@@ -1,8 +1,6 @@
 ---
 title: MCU boundary
 description: Owned controls and mute state, recovered I2C frames and donor API reference
-ms.date: 2026-09-12
-ms.topic: reference
 ---
 
 `reinvoke-mcu-interface` owns MCU I2C, physical input, rotary volume,

@@ -1,8 +1,6 @@
 ---
 title: Current reInvoke product and architecture contract
 description: Runtime ownership, local policy and interface contracts for the Invoke
-ms.date: 2026-09-12
-ms.topic: overview
 ---
 
 reInvoke targets a local assistant endpoint on existing Invoke hardware.

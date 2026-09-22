@@ -1,5 +1,5 @@
 #!/bin/busybox sh
-# Copyright (c) Microsoft Corporation.
+# Copyright (c) 2026 tku4tw2012
 # SPDX-License-Identifier: MIT
 
 pilot_select_kernel() {

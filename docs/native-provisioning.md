@@ -1,8 +1,6 @@
 ---
 title: Native Wi-Fi provisioning boundary
 description: Volatile onboarding, exact parser contract, bootstrap trust and process ownership
-ms.date: 2026-09-12
-ms.topic: concept
 ---
 
 Provisioning is a physically requested, bounded AP-to-station handoff.

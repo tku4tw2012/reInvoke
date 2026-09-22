@@ -1,8 +1,6 @@
 ---
 title: Version history
 description: How the build numbering works, and what every earlier name maps to
-ms.date: 2026-09-19
-ms.topic: reference
 ---
 
 # Version history

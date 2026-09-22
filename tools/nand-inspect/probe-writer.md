@@ -1,8 +1,6 @@
 ---
 title: Fixed NAND writer contracts
 description: Executed scopes, retained recovery tools, and limits of the current writer
-ms.date: 2026-09-11
-ms.topic: reference
 ---
 
 ## Start with the current decision

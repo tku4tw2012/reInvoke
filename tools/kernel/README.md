@@ -1,8 +1,6 @@
 ---
 title: Invoke kernel build
 description: Pinned RAM-kernel profiles, MTD cleanup variant and reproducibility boundaries
-ms.date: 2026-09-12
-ms.topic: how-to
 ---
 
 The hardware-validated custom RAM/recovery path builds Linux 3.8.13 with NDK

@@ -1,8 +1,6 @@
 ---
 title: The bootimgs record and why a custom kernel does not boot from NAND
 description: Measured layout of the NAND boot records, two failed kernel-replacement attempts, and what would have to be true to succeed
-ms.date: 2026-09-15
-ms.topic: concept
 ---
 
 ## Summary

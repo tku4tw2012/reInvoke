@@ -1,7 +1,6 @@
 ---
 title: Storage and retention policy
 description: Public evidence boundaries, private artifact retention and backup integrity
-ms.date: 2026-09-12
 ---
 
 ## Publication boundary

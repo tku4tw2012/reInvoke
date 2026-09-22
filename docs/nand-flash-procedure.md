@@ -1,8 +1,6 @@
 ---
 title: NAND flash procedure
 description: The verified steps to flash a reInvoke bundle over USB recovery
-ms.date: 2026-09-14
-ms.topic: how-to
 ---
 
 This is the procedure that successfully flashed Candidates 05.2 and 05.3 on

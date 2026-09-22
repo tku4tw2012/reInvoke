@@ -1,8 +1,6 @@
 ---
 title: Control-plane emulation
 description: Recovered donor WAMP contracts, stock reachability and isolated emulation
-ms.date: 2026-09-12
-ms.topic: reference
 ---
 
 Preserved ARM services run under `qemu-user` with synthetic ALSA/I2C responses.

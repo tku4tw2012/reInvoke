@@ -1,8 +1,6 @@
 ---
 title: Footprint and runtime baseline
 description: Measured comparison between the stock Harman image and reInvoke
-ms.date: 2026-09-15
-ms.topic: reference
 ---
 
 Measured on candidate 05.8, 2026-09-15, against the stock rootfs preserved in

@@ -1,8 +1,6 @@
 ---
 title: Offline Invoke NAND inspector
 description: Validate Marvell image records and archived NAND version tables without accessing hardware
-ms.date: 2026-09-09
-ms.topic: how-to
 ---
 
 ## Scope

@@ -1,8 +1,6 @@
 ---
 title: mic mute-gated microphone capture
 description: Audio format, stream protocol, polled mic mute gate and measured limits
-ms.date: 2026-09-12
-ms.topic: concept
 ---
 
 `reinvoke-mic-capture` supplies trusted local consumers without giving them

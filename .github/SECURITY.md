@@ -1,8 +1,6 @@
 ---
 title: Security policy
 description: Private reporting, runtime trust boundaries and repository data checks
-ms.date: 2026-09-12
-ms.topic: reference
 ---
 
 ## Reporting a vulnerability
