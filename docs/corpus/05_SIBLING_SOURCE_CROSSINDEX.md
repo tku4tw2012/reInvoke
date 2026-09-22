@@ -83,7 +83,8 @@ Acorn U-Boot and Nest's generic import do not fill those gaps. Later
 ## Community projects
 
 * [HKHacking][hkhack] supplies Invoke USB/U-Boot/ADB reports, firmware releases,
-  and the historical MTD map. Discussion #3 also records a `99_IMAGE` failure
+  and the historical MTD map. That discussion, coggy9/HKHacking#3, also records
+  a `99_IMAGE` failure
   with loss of expected recovery: the reporting operator's own words are "stuck
   in some loop, with no U-Boot output," tried on both the normal flashing
   trigger and the alternate BT+Mic "green light" trigger, same result on each.
