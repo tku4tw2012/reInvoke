@@ -32,10 +32,12 @@ import (
 // neither the microphone control socket extended nor the DSP binary rebuilt,
 // which is what previously blocked this.
 //
-// The DSP takes a single byte. Percent is passed straight through: the scale
-// is NOT established as linear, and the only measured points are 5 and 10
-// (comfortable) against 90 (loud), so values are kept in that low range rather
-// than scaled up to fill the byte.
+// The DSP takes a single byte. A dial position is mapped onto it by
+// dspByteForPercent, which applies the donor's own curve rather than passing
+// percent straight through; passing it through made the dial linear in
+// amplitude and put the comfortable point at 5 of 100. The scale is NOT
+// established as linear, and the only measured points are 5 and 10
+// (comfortable) against 90 (loud).
 type dspVolumeController struct {
 	socket string
 
@@ -353,12 +355,13 @@ func (controller *dspVolumeController) Run(ctx context.Context) {
 		// The DSP call carries the level the listener hears.
 		//
 		// The donor faded a softvol control instead, in
-		// aui::VolumeManager::softvol_fading_tick. That control does not exist
-		// on this runtime: nothing defines a softvol plugin, and the default
-		// this code shipped pointed at card 0, which is the Loopback device.
+		// aui::VolumeManager::softvol_fading_tick. This runtime does define
+		// softvol devices, as volmix_* in asound-product.conf, but the fade
+		// here does not reach them: the default this code shipped points at
+		// card 0, which is the Loopback device, not marvellwm8904 on card 1.
 		// So the fade failed on every change and logged while the DSP call did
-		// the work. The fade is left here, disabled, for whoever ships a real
-		// softvol plugin; until then it is off rather than failing.
+		// the work. The fade is left here, disabled, for whoever points it at
+		// the right control; until then it is off rather than failing.
 		if err := controller.fadeToTarget(ctx, softvolForPercent(level)); err != nil {
 			if ctx.Err() != nil {
 				return

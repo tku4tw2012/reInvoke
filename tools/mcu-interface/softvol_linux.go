@@ -13,12 +13,14 @@ import (
 	"unsafe"
 )
 
-// The speaker's user volume is an ALSA softvol control, not DSP gain. The
-// donor drove it from aui::VolumeManager through add_softvol/fade_step and a
-// periodic softvol_fading_tick, which is why its volume changes were smooth:
-// a softvol write is an ioctl on an already-open descriptor, so a fade costs
-// nothing. Candidate 05.8.9 attenuated with DSP gain instead and forked a
-// process per rotary detent, which stuttered during playback.
+// In the donor, the speaker's user volume was an ALSA softvol control rather
+// than DSP gain. It drove that control from aui::VolumeManager through
+// add_softvol/fade_step and a periodic softvol_fading_tick, which is why its
+// volume changes were smooth: a softvol write is an ioctl on an already-open
+// descriptor, so a fade costs nothing. Candidate 05.8.9 attenuated with DSP
+// gain instead and forked a process per rotary detent, which stuttered during
+// playback. This runtime carries the level on the DSP byte; see
+// dspByteForPercent in volume.go.
 //
 // The control is created by ALSA when the named PCM is first opened, so it
 // exists only once the donor stack has opened "music". Verified on hardware:

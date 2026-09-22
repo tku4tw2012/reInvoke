@@ -23,10 +23,11 @@ The MCU handles physical rotary input before compatibility publication and
 applies the level by calling `com.harman.dsp.volumeSet`, a plain WAMP
 registration of the DSP service.
 
-The DSP takes a single byte and percent is passed straight through. The scale
-is not established as linear: the only measured points on this unit are 5 and
-10 (comfortable) against 90 (loud), so levels are kept in that low range rather
-than scaled to fill the byte.
+The DSP takes a single byte. A dial position is mapped onto it through the
+donor's own curve rather than passed straight through; passing percent through
+made the dial linear in amplitude and put the comfortable point at 5 of 100.
+The scale is not established as linear: the only measured points on this unit
+are 5 and 10 (comfortable) against 90 (loud).
 
 An earlier design drove volume through BlueALSA's `org.bluealsa.PCM1.Volume`
 and packed mute bits with 0-127 A2DP volumes into one `uint16`. BlueZ and
