@@ -42,6 +42,7 @@ Taken from observation on the running unit, not from intent. Version 2.2.7,
 | Front lamp state changes | verified | amber at boot, white once online |
 | Bluetooth pairing from the host | verified | `LinkKey` written, survived a reboot |
 | Microphone capture | verified | 2.2.7: 192,000 samples, 191,998 non-zero at −34.7 dBFS; DSP mute gave 192,000 samples, peak 0 |
+| No builder paths in shipped binaries | verified | 2.2.11, all seven Go binaries report zero `/home/<user>` occurrences on the running unit; four carried 3, 3, 7 and 5 before |
 | One device namespace | verified | 2.2.11, `/etc/reinvoke`, `/usr/libexec/reinvoke`, `/run/reinvoke`; all three nand-pilot paths absent on the running unit |
 | Identifiers reads the new build-id | verified | 2.2.11, `com.harman.firmwareVersion` returned `reInvoke-2.2.11-20260921` from `/etc/reinvoke/build-id` |
 | USB ADB up at boot | verified | 2.2.11, `[29.3] reinvoke-usb-adb: ready: state=CONFIGURED` in the kernel buffer, and adb reachable on every cold boot |
