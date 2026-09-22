@@ -76,7 +76,12 @@ With the HAL reachable, the stack proceeds into real Bluedroid calls:
 
 ## What still blocks it
 
-The radio remains dark even with both gates cleared:
+Nothing does. This section records the blocker as it stood and how it was
+cleared, because the symptom is easy to mistake for a live fault: while the
+stack is off, `hci0` still reads an all-zero address, which looks identical to
+the failure below.
+
+The radio was dark even with both gates cleared:
 
 ```text
 address       = 00:00:00:00:00:00
@@ -106,18 +111,25 @@ Bluetooth function is not attached, and a warm module reload cannot re-attach
 it because the driver declines to re-download active firmware. The surviving
 `hci0` node is a leftover from the original cold boot.
 
-## Next measurement
+## How it was cleared
 
-This needs a **cold boot**; a warm reload cannot reproduce the original
-firmware-download path. On a fresh boot, before anything touches Bluetooth:
+The cold-boot measurement was taken, and the answer was the first branch:
+something in the running runtime was tearing the controller down. Three
+packaging defects, each found by reading a core dump rather than by inference:
 
-```sh
-dmesg | grep -i "BT:"                       # is there a "Create hci0"?
-cat /sys/class/bluetooth/hci0/hci_version   # nonzero means initialised
-```
+* BlueZ opened the adapter and this runtime then removed it, so `hci0` sat
+  DOWN at version 0 and the donor stack dereferenced state it never
+  populated. The controller is now handed to the donor stack rather than
+  opened first.
+* `bt_stack.conf` shipped as `etc/bluetooth_orig` to dodge a BlueZ path
+  collision, so the donor never found it. It is installed at `/etc/bluetooth`,
+  the path compiled into the donor binary.
+* The state directory was `/data/bluetooth`, which nothing reads. The donor
+  uses `/data/misc/bluedroid`.
 
-If `hci_version` is nonzero cold, the controller does initialise normally and
-something in the running runtime tears it down. If it is zero even cold, the
-driver needs a step this runtime does not perform, and the next place to look
-is the `init_cfg` and `cal_cfg` parameters the driver exposes, against the
-donor's own calibration files.
+Measured after the fix: `hci_version` 8 and `manufacturer` 72, where both had
+read zero. The radio and the driver were never at fault.
+
+`/run/reinvoke/bluetooth-state` reports whether the stack is currently on. An
+all-zero `hci0` address while that file reads `off` is the stack being
+disabled, not a return of the fault above.

@@ -9,9 +9,12 @@ Replacing `rootfs` and `bsl` works. Replacing `bootimgs` does not. Two attempts
 failed on this unit, and the reason is the format of the image `bootimgs`
 carries, not signature enforcement.
 
-USB ADB needs a custom kernel, a custom kernel needs `bootimgs`, and `bootimgs`
-needs an image this project cannot currently produce. Network ADB over Wi-Fi is
-unaffected and remains available on a NAND boot.
+USB ADB was once believed to need a custom kernel, which would need
+`bootimgs`, which needs an image this project cannot currently produce. That
+chain was broken elsewhere: USB ADB ships as loadable modules on the vendor
+kernel and is in service from a cold boot, so it no longer depends on this
+record at all. See [USB ADB](usb-adb.md). What still needs `bootimgs` is any
+attempt to boot a kernel this project built.
 
 ## Which records are safe to replace
 
@@ -22,7 +25,7 @@ Read from the vendor image and from a full NAND capture of this unit.
 | `rootfs` | `68737173` (`hsqs`) | raw SquashFS | yes, proven |
 | `bsl` | `68737173` (`hsqs`) | raw SquashFS | yes, proven |
 | `bootimgs` | 40 zero bytes, then a descriptor | container | **no** |
-| `block0`, `pre-bootloader`, `post-bootloader`, `tz_en`, `app` | — | vendor | never changed |
+| `block0`, `pre-bootloader`, `post-bootloader`, `tz_en`, `app` | — | vendor | payload never changed |
 
 Every candidate through 05.8 replaced only the two SquashFS records. Each
 booted. Candidates that changed `bootimgs` did not.
@@ -548,9 +551,8 @@ risk for a lever the evidence says is not connected.
 
 * A custom kernel boots from RAM and brings up USB ADB: `/sys/class/udc`
   populated with `f7ed0100.udc`, `mv-udc` bound, `adb ... usb:2-1.2`.
-* The runtime prefers an existing USB gadget and falls back to TCP 5555, so a
-  NAND boot on the vendor kernel still offers network ADB.
-* No loadable UDC module ships in either module tree, so USB ADB cannot be
-  added to the vendor kernel without replacing it.
+* Neither module tree ships a loadable UDC module, but one can be built. USB
+  ADB now runs on the vendor kernel from a cold boot, without replacing it;
+  see [USB ADB](usb-adb.md). Network ADB was removed in the same change.
 * Neither failed attempt damaged the unit. The bad-block list is unchanged at
   `0x0c000000` and `0x0c020000`, and yellow mode continued to work throughout.

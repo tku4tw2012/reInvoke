@@ -7,7 +7,8 @@ description: Build and client reference for the mic mute-gated local capture ser
 pinned donor `arecord`, polls MCU mute state and serves channel 0 over a
 root-only Unix socket. The [wire/mic mute contract](../../docs/microphone-capture.md)
 is authoritative; synchronous per-delivery fencing is deferred, not implemented.
-Data-path/mic mute hardware acceptance remains RAM-scoped.
+Capture and the mute gate were measured on the device on 2.2.7; a repeated
+acceptance campaign has not been run.
 
 ## Runtime interface
 
@@ -39,7 +40,8 @@ and `go test -race`.
 
 ## Target test client
 
-Requires an existing target access channel; native SSH login is not established.
+Requires an existing target access channel. The running build serves a root
+SSH login and USB ADB from a cold boot.
 
 > [!WARNING]
 > This captures microphone audio. Use an attended, consented test and private

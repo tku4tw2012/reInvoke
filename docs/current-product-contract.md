@@ -15,7 +15,7 @@ Normal operation starts from NAND. Host-loaded U-Boot/RAM Linux remains the
 development and observed recovery path. Settings are held in `/persist`, a
 yaffs2 volume on the `app` partition, covering Wi-Fi credentials, Bluetooth
 stack configuration and selected preferences; see its
-[scope and limits](native-nand-platform.md#settings-persistence-and-bounded-network-adb).
+[scope and limits](native-nand-platform.md#settings-and-persistence).
 
 The running build serves a root SSH login and USB ADB from a cold boot, so the
 native kernel command line, process table and mount table are directly
@@ -107,9 +107,10 @@ the dial was linear in decibels and logarithmic in amplitude.
 The curve here is anchored to this unit rather than copied: its range is
 solved so that dial 34 produces gain 5, measured as comfortable on
 2026-09-19, and dial 100 produces 90, reported as loud. Copying the plugin's
-own 51 dB put the comfortable point at gain 2. `defaultVolume` is 34 and the
-startup chime follows the same curve, with `cueTargetPeak` set so it renders
-at the peak measured as right at that position.
+own 51 dB put the comfortable point at gain 2. `defaultVolume` is 40, the
+donor's own recovered constant. The startup chime follows the same curve,
+anchored by `cueReferenceDial` and `cueReferenceGain` at the dial position
+where the level was measured as right.
 
 Passing percent straight through, as builds before 05.8.13 did, made the dial
 linear in amplitude: the comfortable point sat at 5 of 100, so almost the

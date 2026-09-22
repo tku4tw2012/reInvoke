@@ -47,7 +47,8 @@ unknown; software mute observations do not prove electrical disconnection.
 
 The recovered [DSP SPI protocol](../emulation/dsp-boundary.md) carries control
 messages and a volatile program download, not PCM playback. The separate
-[speaker path](../emulation/owned-speaker-control.md) covers ALSA/BlueALSA.
+[speaker path](../emulation/owned-speaker-control.md) covers ALSA and the
+donor Bluedroid stack.
 [MCU control](../emulation/mcu-boundary.md) covers indicators, mute controls,
 and expander operations without identifying every fitted IC.
 
@@ -176,6 +177,12 @@ Image generations and offsets are indexed in the
 
 Harman's final update notes specify release `12.2314.0`, dated 2021-09-08,
 distributed through a USB flashing tool with a Windows driver [FINAL].
+Note the discrepancy: the retained OTA2 bundle self-identifies as
+`Barracuda_libre-12.2134.0`, which is the number used everywhere else in this
+project because it is read from the artifact rather than from a web page. The
+two differ by a digit transposition and one of them is likely a typo, but the
+cited page is not currently reachable to confirm which, so both are recorded
+as they were found.
 The project independently reached a USB U-Boot console and host-loaded Linux
 with a custom PID 1 and root ADB gadget before native installation.
 
@@ -205,8 +212,10 @@ requiring a complete board schematic. Remaining questions are:
 WM8904 appears in an ACast reference device tree, not a verified Invoke
 component identification. Daughterboard modularity motivated an August 2026
 replacement-compute proposal; electrical compatibility remains unproved.
-Actual native kernel, PID 1, and mounts remain unread via shell. RAM microphone
-Mic-mute and capture supervision results still require native acceptance.
+The native kernel command line, process table and mounts are readable over the
+root SSH login the running build serves. Microphone capture and the mute gate
+were measured on the device on 2.2.7; a repeated acceptance campaign has not
+been run.
 
 ## Sources
 

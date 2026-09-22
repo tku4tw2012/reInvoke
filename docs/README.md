@@ -26,7 +26,7 @@ Implementation, RAM measurements and vendor evidence are separate scopes.
 | [Wi-Fi provisioning](native-provisioning.md)                      | Onboarding, bootstrap trust and durable credentials |
 | [Microphone capture](microphone-capture.md)                       | Stream protocol and implemented mic mute gate    |
 | [USB ADB](usb-adb.md)                                             | Gadget modules, bring-up and teardown on this unit |
-| [USB device mode](usb-device-mode.md)                             | What the SoC, device tree and vendor kernel provide |
+| [USB device mode](usb-device-mode.md)                             | Superseded: the built-in-kernel route, and the hardware evidence |
 | [RAM platform](native-ram-platform.md)                            | Host-loaded development/recovery runtime        |
 | [U-Boot access](uboot-access.md)                                  | USB recovery procedure and observed limits      |
 | [NAND flash procedure](nand-flash-procedure.md)                   | Service-mode entry, the helper, and what fails  |

@@ -217,7 +217,7 @@ verification. Native source-filter enforcement remains unverified: the policy
 is installed before the listener, but no test has confirmed that a connection
 from outside the configured CIDR is actually refused on the device.
 
-## Settings, persistence and bounded network ADB
+## Settings and persistence
 
 These behaviours were designed for the candidate-04 successor and are in the
 shipping build:
@@ -230,12 +230,14 @@ shipping build:
   is added or formatted. Failed storage leaves explicit volatile operation.
 * A private derived Wi-Fi seed can initialize a verified empty store.
   Saved profiles take precedence; association precedes durable saving.
-* Host-configured USB with an open daemon descriptor is preserved.
-  Otherwise optional network ADB replaces the USB owner for one window per
-  boot, at most 300 seconds and one private `/32` peer. It is unauthenticated,
-  unencrypted root access, not a substitute for SSH's trust model.
 * USB startup handles the optional legacy enable node. Status distinguishes
   observed listeners from authentication and firewall acceptance.
+
+That design also included an optional bounded network ADB window, at most 300
+seconds and one private `/32` peer. It was removed once USB ADB worked on the
+vendor kernel: it needed an associated Wi-Fi link and a healthy runtime, which
+is what SSH already needs. Nothing listens on TCP 5555. See
+[USB ADB](usb-adb.md).
 
 The installer erases saved settings on reflash. Across ordinary boots,
 abrupt power loss can discard the latest 30 seconds of bond/preference changes;

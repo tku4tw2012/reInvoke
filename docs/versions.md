@@ -10,8 +10,8 @@ Builds are numbered `ERA.MILESTONE.ITERATION`.
 * **Milestone** is a capability that did not exist before it.
 * **Iteration** counts builds within that milestone.
 
-The current build is **2.2.11**. The unit in hand runs **2.2.10**. Numbering began with 2.2.8;
-everything before it was renamed after the fact.
+The current build is **2.2.11**, and it is what the unit in hand runs.
+Numbering began with 2.2.8; everything before it was renamed after the fact.
 
 ## Why the numbers changed
 
@@ -62,19 +62,24 @@ mapping is listed build by build.
 | 2.2.8 | — | 09-20 | yes |
 | 2.2.9 | — | 09-20 | yes |
 | 2.2.10 | — | 09-21 | yes |
-| 2.2.11 | — | 09-21 | not yet |
+| 2.2.11 | — | 09-21 | yes |
 
 ## What an iteration is worth recording
 
-2.2.11 was flashed three times. Every one of those images carried **identical
+2.2.11 was flashed repeatedly. The first three images carried **identical
 binaries**: the same `reinvoke-mcu-interface`, the same `g_android.ko`, the
 same everything compiled. What differed between them was shell scripts and
 one init patch.
 
-Two of the three existed only because a record was believed missing when it
+Two of those three existed only because a record was believed missing when it
 had been written to `boot.log` all along, under a prefix the searches did not
 use. That is not a build; it is a configuration change, repeated because the
 diagnosis was wrong twice.
+
+The images after them did carry compiled changes: collapsing the device onto
+one namespace, and the `-trimpath` fix that removed the builder's home
+directory from four of the seven Go binaries. Each was verified on hardware
+before the next was cut.
 
 ITERATION counts images written to the device, so those flashes are part of
 the record and are not renumbered away. But the useful question before

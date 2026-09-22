@@ -5,8 +5,9 @@ description: Vendor fw_stat markers, write semantics and unresolved boot-slot be
 
 Static disassembly of the final firmware establishes the `fw_stat` update
 markers, not active-slot selection. reInvoke does not run this updater.
-Runtime settings remain volatile; native installation is a separate
-[whole-good-block operation](../nand-write-decision.md).
+It keeps no state here: its own settings live in `/persist` on the `app`
+partition, and native installation is a separate
+[whole-good-block operation](../nand-write-decision.md) that erases them.
 
 ## Command surface
 

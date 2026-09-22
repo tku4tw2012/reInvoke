@@ -1,10 +1,18 @@
 ---
 title: USB device mode on BG2CD
-description: Kernel and device-tree work required to provide USB ADB
+description: The built-in-kernel route to USB ADB, investigated and not taken
+status: superseded
 ---
 
-Status: investigated, not built. This records exactly what the change is so it
-can be attempted deliberately rather than discovered again.
+Superseded. This records the route that was investigated, which was to build
+USB gadget support into a replacement kernel. That is not what shipped: USB
+ADB runs on the **vendor** kernel using loadable modules, and is in service
+from a cold boot. See [USB ADB](usb-adb.md) for the implementation, and treat
+the kernel-replacement steps below as a record of an alternative rather than
+as instructions.
+
+What remains valid here is the hardware and device-tree evidence, which is
+what established that the controller exists and is driveable at all.
 
 ## Why it is wanted
 
@@ -96,11 +104,14 @@ Unknowns worth expecting:
 The kernel lives in `bootimgs`, the one record still byte-identical to vendor
 12.2134.0. Shipping a kernel changes what boots.
 
-That was initially recorded here as a serious risk. It is not. Yellow-mode
-recovery has been exercised fifty-five times in this project, twenty of them
-ending in a confirmed NAND write. A kernel that does not boot costs one more
-flash cycle, which is routine, not a brick.
+Yellow-mode recovery has been exercised fifty-five times in this project,
+twenty of them ending in a confirmed NAND write, so a kernel that fails to
+boot has so far cost one more flash cycle rather than the speaker. That is a
+record of what has happened, not a guarantee about what will: every one of
+those recoveries began from a device whose boot chain was intact enough to
+reach the boot ROM. Recovery from arbitrary boot-chain damage remains
+unproved, and nothing here establishes it.
 
-The honest risk is narrower: a kernel that boots but breaks Wi-Fi or Bluetooth
+The narrower risk is a kernel that boots but breaks Wi-Fi or Bluetooth, which
 would be harder to notice and harder to bisect than one that does not boot at
 all. Keep the previous image staged so a revert is one flash away.

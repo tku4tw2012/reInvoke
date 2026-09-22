@@ -1,11 +1,14 @@
 ---
-title: Volatile Wi-Fi provisioning tools
+title: Wi-Fi provisioning tools
 description: Component builds, authenticated credential protocol and NetworkManager client
 ---
 
-The owned provisioning stack replaces donor plaintext HTTP setup. Credentials
-remain in RAM regardless of boot medium; candidate-specific evidence and the
-physical AP flow are in [native provisioning](../../docs/native-provisioning.md).
+The owned provisioning stack replaces donor plaintext HTTP setup. These
+daemons do not write credentials to disk themselves; a successfully associated
+profile is saved by the [persistence service](../nand-pilot/persistence/README.md)
+to `/persist`, so onboarding is not required on every boot. Evidence for a
+given build and the physical AP flow are in
+[native provisioning](../../docs/native-provisioning.md).
 
 ## Components and build
 
