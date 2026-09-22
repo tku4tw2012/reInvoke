@@ -1,15 +1,16 @@
 ---
-title: Project journal
-description: Engineering milestones, corrected assumptions, and consequences for the local-assistant platform
+title: Engineering decision record
+description: What was measured, what was decided because of it, and what the decision cost
 ---
 
-reInvoke progressed from retained firmware and emulated services to
-closed-enclosure RAM execution, then autonomous NAND userspace.
-These August-September 2026 milestones connect measured results to the
-decisions they enabled.
-Detailed trial records remain in Git history and the private archive.
-The [product contract](current-product-contract.md) defines current behavior;
-[remaining work](revival-roadmap.md#remaining-work) tracks the assistant goal.
+This is the project's decision record: measurements, the choices they forced,
+and the consequences. It is organised by when each decision was made, because
+several of them reverse earlier ones and the order is the point.
+
+It is a historical record, not a description of current behaviour. The
+[product contract](current-product-contract.md) defines how the runtime behaves
+today and [remaining work](revival-roadmap.md#remaining-work) tracks what is
+left. Detailed trial records remain in Git history and the private archive.
 
 ## August 28: firmware and off-device control
 
@@ -140,7 +141,63 @@ Candidate 02's broader acoustic/rotary/WAMP results do not transfer to 03.
 
 Retained vendor bootloader, TrustZone and encrypted kernel payloads remained
 byte-identical, but their blocks were erased/reprogrammed. Recovery worked after
-the observed experiments, not arbitrary corruption. Credentials, bonds and
-settings remain volatile. Native administration, remaining acceptance,
-persistent configuration, assistant integration and distributable recovery
-still separate this milestone from a future 1.0.0.
+the observed experiments, not arbitrary corruption.
+
+## September 12-21: donor adoption, native administration and the current build
+
+**Bluedroid replaced BlueZ and BlueALSA.** The earlier decision had gone the
+other way: donor Bluedroid paired and received SBC but failed PCM handoff, so
+BlueZ and BlueALSA were adopted and produced verified playback. That reversed
+once the donor stack's actual failure was traced. Bluedroid segfaulted in its
+`stack_manager` thread every five seconds because of three packaging defects,
+each found by reading a core dump rather than by inference: BlueZ had opened
+the adapter and the runtime removed it, so `hci0` sat DOWN at version zero and
+the stack dereferenced state it never populated; `bt_stack.conf` shipped at a
+path the donor does not read; and the state directory was an invented one
+nothing reads. The radio and driver were never at fault. Removing BlueZ then
+exposed an unrelated MCU crash loop that the two stacks had masked.
+
+**A custom kernel cannot boot from NAND on this unit.** Signature verification
+was ruled out directly: the loader reports `MRVL SIGN R :0000` and the fuses are
+unlocked. The obstacle is `bcm_image_verify()`, a mailbox call into the closed
+BCM co-processor. Splicing a kernel into `bootimgs` rather than replacing it
+was tried and recorded. This bounds what any future persistent design may
+change.
+
+**Catching, confirming and writing became three separate scripts.** Entry into
+recovery had been treated as an operator timing problem. Measurement showed the
+iROM window is deterministic: the device appears at device subclass `0xFE` and
+reaches `0xFF` nine to ten seconds later, three times out of three. The tooling
+now catches that window instead of racing it. Prompt detection moved from
+matching the console banner to a nonce challenge: send `echo <token>` and
+require the token back, counting only bytes that arrive after the send. Banner
+matching had stalled for fifty seconds on a live prompt, and a byte-growth
+heuristic was satisfied by the relay's own closing marker.
+
+**The donor's audio initialisation was adopted rather than reinvented.** A
+click before the startup chime survived five hypotheses, all tested live and
+all silent. The cause was that the first real sound started the hardware. The
+donor's `alsa-init.sh` opens all five softvol devices and plays three seconds
+of silence; doing the same removed the click. The `voice` device was the only
+one routed through a LADSPA equaliser the runtime did not ship, so the donor's
+own plugin was packaged.
+
+**One namespace on the device, and it is the product's.** Runtime state had
+accumulated in two directories and configuration in a subsystem-named one. The
+donor's precedent is a product-named directory, so `/etc/reinvoke`,
+`/usr/libexec/reinvoke` and `/run/reinvoke` replaced the split. The builder's
+source directory kept its own name because it never reaches the device.
+
+**Two build-time assumptions were measured and found false.** `-trimpath` was
+accepted silently by the toolchain and did nothing for four of seven Go
+binaries, which shipped the builder's home directory; the flag rewrites to the
+module path, and GOPATH-mode builds have none. Separately, a proposal to
+rewrite Go services in C for footprint was measured instead of assumed: the two
+heaviest CPU consumers are already C, the system is 98 percent idle at rest,
+and the rewrite would have recovered about 20 MB on a 462 MB system. Both were
+caught only by measurement rather than reasoning, and the `-trimpath` case only
+by unpacking the built image, which is now the rule: a source edit and a
+passing suite have twice been green while the image was wrong.
+
+Native administration, remaining acceptance, an assistant consumer and
+distributable recovery still separate this work from a 1.0.0.

@@ -54,7 +54,7 @@ not exclusively emulated results.
 
 | Page                                                                               | Purpose                                               |
 | ---------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| [Engineering journal](journal.md)                                                  | Closed-unit bring-up and milestone-level history      |
+| [Decision record](journal.md)                                                  | What was measured, what it forced, and what it cost  |
 | [NAND decision history](nand-write-decision.md)                                    | Failed trials, withdrawn methods and recovery limits  |
 | [Firmware reference](firmware-reference.md)                                        | Retained inputs, image formats and vendor generations |
 | [Corpus index](corpus/00_README.md)                                                | Evidence conventions and provenance                   |
