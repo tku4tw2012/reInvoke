@@ -93,9 +93,9 @@ func TestLinkLocalIsNotOnline(t *testing.T) {
 	if linkLocal == nil || !linkLocal.IsLinkLocalUnicast() {
 		t.Fatal("169.254.10.5 is not being classified as link-local")
 	}
-	routable := net.ParseIP("192.168.4.28").To4()
+	routable := net.ParseIP("192.168.1.10").To4()
 	if routable == nil || routable.IsLinkLocalUnicast() {
-		t.Fatal("192.168.4.28 is being classified as link-local")
+		t.Fatal("192.168.1.10 is being classified as link-local")
 	}
 }
 

@@ -17,12 +17,16 @@ Output is metadata-only JSON on stdout.
 An accepted report proves the stated structural checks, not that an image
 will boot or that a writer will leave other regions unchanged.
 
-## Run with the existing archived Go toolchain
+## Run with a pinned Go toolchain
+
+The build uses Go 1.18.1, held in the external archive rather than installed
+system-wide. Point `GOROOT` at whichever copy you have; the offline flags
+matter more than the location.
 
 From this directory:
 
 ```bash
-export GOROOT="$HOME/harman-kardon/reinvoke-archive/toolchains/ubuntu-go-1.18.1/extracted/usr/lib/go-1.18"
+export GOROOT=/path/to/go-1.18
 export GOPROXY=off GOSUMDB=off GOFLAGS=-mod=readonly GOWORK=off
 "$GOROOT/bin/go" test ./...
 "$GOROOT/bin/go" run . container /absolute/path/to/83_IMAGE
