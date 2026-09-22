@@ -4,12 +4,11 @@
 // USB ADB payload: the gadget modules, an adbd property area that selects the
 // USB transport, and the bring-up and teardown scripts.
 //
-// The vendor kernel ships no USB device controller module, which an earlier
-// note in this project read as "USB ADB is impossible without replacing the
-// kernel". Nothing ships one, but one can be built: the SoC has the
-// controller, the device tree declares it, and a driver for it exists in the
-// vendor's own source. docs/usb-adb.md records how these modules were built
-// and what had to match.
+// The vendor kernel ships no USB device controller module. That does not make
+// USB ADB impossible without replacing the kernel: nothing ships one, but one
+// can be built, because the SoC has the controller, the device tree declares
+// it, and a driver for it exists in the vendor's own source.
+// docs/usb-adb.md records how these modules were built and what had to match.
 //
 // Modules are pinned by hash for the same reason every other retained binary
 // is. A module that does not match the kernel's struct module layout does not

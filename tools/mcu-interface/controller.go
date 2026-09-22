@@ -118,11 +118,11 @@ func (c *controller) initialize() error {
 	// what calls muteampcontrol, so the DSP powers up behind a muted
 	// amplifier.
 	//
-	// An earlier revision of this comment claimed the donor "does not keep
-	// them muted". That was asserted, not checked, and it is wrong. Opening
-	// the outputs here put the amplifier live for DSP bootup and for the
-	// first gain change, which was audible on this unit as more than one pop
-	// during startup. OpenOutputs is called once the DSP has accepted a
+	// Do not open the outputs here. Doing so puts the amplifier live for DSP
+	// bootup and for the first gain change, which is audible on this unit as
+	// more than one pop during startup. The claim that the donor "does not
+	// keep them muted" was asserted rather than checked, and disassembly
+	// shows the opposite. OpenOutputs is called once the DSP has accepted a
 	// level instead.
 	c.initialized = true
 	return nil
