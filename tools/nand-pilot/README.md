@@ -8,14 +8,14 @@ and QEMU inputs. They do not discover hardware, mount filesystems or flash.
 `PROPOSAL.json` carries `authorization: false`. Deterministic composition from
 held artifacts is not a complete fresh-clone rebuild.
 
-Candidate 03 is installed; its power-only startup, Bluetooth connection,
-provisioning and SSH-listener results are recorded in the
-[native NAND guide](../../docs/native-nand-platform.md). SSH authentication,
-USB/ADB and native microphone acceptance remain unverified. Candidate 02's
-broader acoustic/control acceptance is not transferred to 03.
-The current builder targets candidate 04: persisted settings and station
-resume, corrected local-account SSH lookup, and optional bounded TCP ADB.
-These changes are offline-qualified, not native acceptance.
+The builder produces the current `2.2.x` series, which boots from NAND
+unattended and serves a root SSH login and USB ADB from a cold boot. Results
+are recorded in the [native NAND guide](../../docs/native-nand-platform.md)
+and the evidence behind them in
+[release validation](../../docs/release-validation.md). Persisted settings and
+station resume, corrected local-account SSH lookup and optional bounded TCP
+ADB all shipped in this series. Earlier candidate builds are history; the
+[decision record](../../docs/journal.md) covers them.
 
 > [!CAUTION]
 > The bundle's vendor `l2nand 83` path erases all good blocks before programming

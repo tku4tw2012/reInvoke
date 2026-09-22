@@ -9,7 +9,7 @@ Use the repository Security tab for private vulnerability reports. If private
 reporting is unavailable, request a private contact through a content-free
 issue before sending details.
 
-Include affected commit/candidate/tool, impact, reproduction and evidence
+Include affected commit/build/tool, impact, reproduction and evidence
 scope: source, offline test, RAM or native execution. Keep credentials,
 identifiers and unredacted captures out of public issues.
 
@@ -19,9 +19,13 @@ reInvoke is experimental, unit-specific firmware. The
 [contract](../docs/current-product-contract.md) separates policy from acceptance.
 
 * WAMP is unauthenticated; its network boundary depends on firewall policy.
-* Candidate 03 reached pinned SSH negotiation, not successful native login.
-* Candidate 04's optional network ADB is unencrypted, unauthenticated root
-  access, limited to one private `/32` source and 300 seconds per boot.
+* SSH serves a root login over key authentication on all interfaces. Password
+  and PAM authentication are compiled out, but source-address filtering has
+  not been confirmed to reject a connection from outside its configured range.
+* USB ADB gives unauthenticated root to anything that can reach the service
+  port over the USB cable, and is up from a cold boot.
+* Optional network ADB is unencrypted, unauthenticated root access, limited to
+  one private `/32` source and 300 seconds per boot.
 * Provisioning trusts a physical setup window and AP-delivered TLS fingerprint,
   not independent out-of-band identity.
 * Microphone privacy trusts root and owned software. The polled capture gate

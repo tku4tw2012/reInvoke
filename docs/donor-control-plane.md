@@ -45,7 +45,7 @@ art URLs. The donor pushes it whenever the connected phone changes track.
 
 ## What is implemented
 
-Candidate 05.8.10 implements the framework in `reinvoke-source-manager`. Two
+The framework lives in `reinvoke-source-manager`, added in 05.8.10. Two
 earlier stubs in the identifiers service answered `register` and `get-active`
 from a fixed table, and `get-active` returned the wrong shape, so a second
 source could never have taken the speaker. The service now keeps real

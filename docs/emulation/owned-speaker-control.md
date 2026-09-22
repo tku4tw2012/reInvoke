@@ -108,8 +108,9 @@ rotary updates. It runs neither Node.js nor the reference modules.
 ## Evidence boundary
 
 Host tests and historical RAM runs exercise the safety implementation.
-Candidate 02 separately demonstrated native attended sound and rotary volume.
-Candidate 03 has connection/provisioning evidence, not a repeated acoustic
-campaign. Native microphone capture/mic-mute acceptance remains open.
-Candidate-specific results belong in the
-[native NAND guide](../native-nand-platform.md).
+Native attended sound and rotary volume were demonstrated on candidate 02 and
+have been repeated on the current series; microphone capture has been measured
+on the device. What remains open is a repeated acoustic campaign rather than
+one-off confirmation. Results for a given build belong in the
+[native NAND guide](../native-nand-platform.md) and
+[release validation](../release-validation.md).
