@@ -317,7 +317,8 @@ pin and the artifact agreed with each other. Both were simply a day old.
 `usb-adb-reload-test.sh` ran on 2026-09-20 against the fixed module. It set
 `panic_on_oops=0` first, which is what made the result readable: the kernel
 stayed up, the trace was written to `/persist`, and it survived the power
-cycle. Evidence is in `evidence/reload-test-229-*`.
+cycle. Evidence is in `evidence/reload-test-229-*`, in the private archive
+rather than public Git.
 
 Two things happened, and neither matched the diagnosis above.
 

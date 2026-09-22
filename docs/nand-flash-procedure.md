@@ -35,7 +35,12 @@ Each request appears exactly once. Anything else is a failed attempt.
 ## Prerequisites
 
 Staging must byte-match the known-good set, whose authoritative copy is
-`evidence/nand-restored-ram-inspection-20260909/firmware`:
+`evidence/nand-restored-ram-inspection-20260909/firmware` in the private
+archive. Paths beginning `evidence/` throughout this repository refer to that
+archive and are not in public Git; see the
+[storage policy](acquisition/storage-policy.md). The table below names the
+files and what each is, so a reader with their own vendor bundle can identify
+them:
 
 | File | Note |
 | ---- | ---- |

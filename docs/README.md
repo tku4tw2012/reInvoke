@@ -37,6 +37,7 @@ Implementation, RAM measurements and vendor evidence are separate scopes.
 | [Kernel tools](../tools/kernel/README.md)                         | Kernel/DTB inputs, profiles and checks          |
 | [Capture tools](../tools/mic-capture/README.md)                   | Capture service and local client                |
 | [NAND builders](../tools/nand-pilot/README.md)                    | Bootstrap, BSL and bundle composition           |
+| [NAND inspection](../tools/nand-inspect/README.md)                | Read-only container, capture and compare checks |
 | [Settings persistence](../tools/nand-pilot/persistence/README.md) | Guarded app storage, Wi-Fi resume and snapshots |
 | [Provisioning tools](../tools/provisioning/README.md)             | Parser, network/window services and client      |
 | [USB recovery tools](../tools/usb-boot/README.md)                 | Host helper and bounded installation tooling    |

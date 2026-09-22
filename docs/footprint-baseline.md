@@ -101,8 +101,6 @@ replacement module set, and `module-manifest.json` lists its members. It
 becomes the live tree the moment a reInvoke kernel boots, and removing it would
 make that kernel unable to bring up Wi-Fi or Bluetooth.
 
-The operator was right to question the original claim.
-
 ## Actually recoverable
 
 | item | size | note |

@@ -447,15 +447,12 @@ Until then, keep `bootimgs` at the vendor image.
 
 ## External research: does anyone else know the co-processor's transform
 
-Four AI research agents (GPT-6 Astra, Claude Opus 5, Grok 4.6, Claude Sonnet 5)
-searched independently and in parallel for prior art on this exact question.
-Opus 5 returned zero content across five distinct attempts (fresh research,
-retry, reworked prompt, critique of the other reports, reframed peer review) —
-a content-filter block on this topic, on this model, not a research result.
-The other three succeeded and converged with each other and with the findings
-above. Their most consequential citations were then independently re-verified
-directly against live sources (not taken on the reporting model's word),
-per this project's standing rule to ground every claim.
+Several AI research assistants searched independently and in parallel for
+prior art on this exact question, and their results converged with each other
+and with the findings above. Their most consequential citations were then
+independently re-verified directly against live sources, rather than taken on
+the reporting model's word, per this project's standing rule to ground every
+claim.
 
 * **`coggy9/HKHacking`** (real, public, dormant since 2022) independently
   corroborates this project's own yellow-mode entry sequence and confirms

@@ -37,8 +37,10 @@ owned services. Software can handle received events, not manufacture missing
 ones. The mute boundary is software-enforced, not an established electrical
 microphone disconnect.
 
-Speaker unmute separately requires the active-PCM lease, ALSA owner thread,
-packaged player executable and `RUNNING` state to agree. See
+Speaker unmute is not gated on the MCU side. An earlier design required an
+active-PCM lease, ALSA owner thread, packaged player executable and `RUNNING`
+state to agree; it was this project's invention rather than donor behaviour,
+and it has been removed. See
 [speaker safety](owned-speaker-control.md#pcm-and-speaker-safety);
 volume state and DSP boot do not authorize physical unmute.
 

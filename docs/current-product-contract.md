@@ -213,11 +213,11 @@ without this project implementing them. See
 [Bluetooth audio rendering](#bluetooth-audio-rendering) for what it needs from
 the property service.
 
-This paragraph previously described BlueZ 5.55, BlueALSA 4.0.0,
-`bluealsa-aplay` and `bluealsa-cli` as the audio path, and stated that donor
-Bluedroid does not run. That was reversed by commit 225183e: BlueZ and
-BlueALSA were removed and Bluedroid is what runs. The text was not updated,
-and the error survived several releases.
+The audio path is the donor Bluedroid stack. BlueZ 5.55, BlueALSA 4.0.0,
+`bluealsa-aplay` and `bluealsa-cli` were removed in commit 225183e and none of
+them ship. This paragraph described the opposite for several releases after
+that change, which is why the [documentation audit](../tools/doc-audit/audit.js)
+now checks prose against the contents of the built image.
 
 The pairing agent limits the window, peer and services. Bluetooth short press
 uses `SIGUSR2` to toggle the window; long uses `SIGUSR1` to reopen it.
@@ -347,10 +347,13 @@ Two of those exclusions carry contracts this runtime partially answers.
 publishing `com.harman.stateChanged`. `music-source-manager` owned source
 arbitration: `com.harman.source.register`, `.start`, `.get-active`,
 `.get-registered`, `.flush`, `.nowPlayingUpdate`, `.trackPositionUpdate`,
-`.volumeSet` and `.volumeChanged`. This runtime answers `stateGet`,
-`source.register` and `source.get-active` from a fixed table in the
-identifiers service and implements none of the rest, so source switching and
-published state are stubs rather than a state machine. The donor's own test
+`.volumeSet` and `.volumeChanged`. Most of that is now implemented in
+`reinvoke-source-manager`, which ships and runs: it answers `source.register`,
+`.start`, `.get-active`, `.get-registered` and `.flush`, keeps real
+registrations rather than a fixed table, arbitrates which source holds the
+speaker, and routes the source-agnostic `music.*` verbs to whichever source is
+active. `source.nowPlayingUpdate` is not implemented. `stateGet` is still
+answered from the identifiers service. The donor's own test
 suite documents the intended behaviour, including that `source.get-active`
 returns a positional URI rather than the keyword map answered here.
 
