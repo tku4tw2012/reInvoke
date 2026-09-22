@@ -3,36 +3,36 @@ title: reInvoke
 description: An open Linux runtime and local-assistant endpoint project for the Harman Kardon Invoke
 ---
 
-reInvoke is building a local assistant endpoint on the Harman Kardon Invoke
-(`HKINVOKE`, FCC ID `APIHKINVOKE`). Owned Linux services replace the vendor
-application stack while reusing the existing compute, audio and controls.
-Native startup and Bluetooth playback are demonstrated milestones, not a
-complete assistant. Images remain experimental, unit-specific builds.
+reInvoke is an open Linux runtime for the Harman Kardon Invoke
+(`HKINVOKE`, FCC ID `APIHKINVOKE`), a 2017 smart speaker whose vendor service
+was discontinued. Owned services replace the vendor application stack while
+reusing the existing compute, audio and controls. The speaker boots from its
+own NAND and needs no attached host.
+
+This is a personal restoration project. Images are experimental and built for
+one unit.
 
 ## Current status
 
-Results from one closed Invoke, as of 2026-09-12:
+Build `2.2.11`, running on one closed Invoke. Each row is something observed
+on the unit, not something intended; [release validation](docs/release-validation.md)
+records how each was observed and which checks require a human ear or eye.
 
-| Scope                         | Result                                                                                             |
-| ----------------------------- | -------------------------------------------------------------------------------------------------- |
-| Installed native candidate 03 | Wall-power startup as `reInvoke-NAND`; reported physical pairing and observed host A2DP connection |
-| Candidate 03 networking       | Attended Wi-Fi provisioning and ping; pinned Dropbear negotiation, then disconnect before login    |
-| Candidate 02 native baseline  | Audible playback, rotary volume, indicators, provisioning and MCU/DSP/WAMP checks                  |
-| RAM platform                  | Detailed microphone capture/mic mute, speaker safety, firewall and restart measurements             |
-| Remaining product work        | Native administration and acceptance, persistent settings and assistant integration                |
+| Scope        | Result                                                                                        |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Startup      | Boots from NAND on wall power with no host attached; seventeen supervised services             |
+| Audio        | Bluetooth A2DP playback, startup chime, rotary volume following the donor's measured gain curve |
+| Network      | Wi-Fi associates and leases; SSH and USB ADB both reachable from a cold boot                    |
+| Microphone   | Capture verified by measurement, with the DSP mute gate proven to silence it                   |
+| Persistence  | Wi-Fi credentials and Bluetooth stack configuration survive power loss                          |
 
-Candidate 03 has no native shell or USB enumeration; its SSH failure cause is
-unknown. Earlier audio/control and RAM results do not establish acceptance of
-the installed image. Wi-Fi credentials, Bluetooth bonds and preferences are
-volatile after power loss.
-
-The [offline candidate 04](docs/native-nand-platform.md#candidate-04-offline-successor)
-adds saved settings, station resume, corrected SSH lookup and bounded network
-ADB. It is built and tested offline, not yet installed.
+What it does not do: there is no wake word, no assistant protocol and no voice
+assistant of any kind. The audio and capture interfaces a local assistant would
+need are implemented and tested; nothing consumes them yet. See
+[remaining work](docs/revival-roadmap.md#remaining-work).
 
 The [native guide](docs/native-nand-platform.md#current-result) owns the result
 ledger and artifact pins. See the [product contract](docs/current-product-contract.md),
-[remaining work](docs/revival-roadmap.md#remaining-work),
 [version history](docs/versions.md) and
 [documentation index](docs/README.md).
 
@@ -122,6 +122,26 @@ The checker validates tracked Markdown, relative links/anchors and selected
 credential patterns in tracked text. Tests include broken links and synthetic
 private-data fixtures. Keep real identifiers in external private rules and
 render changed Mermaid diagrams separately. See [coverage and limits](.github/SECURITY.md#repository-checks).
+
+## Acknowledgements
+
+This project stands on work other people published first.
+
+- **[coggy9/HKHacking](https://github.com/coggy9/HKHacking)** — the firmware
+  releases this project analysed, and the starting point for understanding the
+  update bundle layout.
+- **[jryruegas92/hk-invoke-arm-flasher](https://github.com/jryruegas92/hk-invoke-arm-flasher)**
+  (MIT) — the USB recovery approach this project's boot tooling is built on,
+  mirrored and pinned at commit `63444e8` in [P2-003](metadata/P2-003.json).
+- **The wider Invoke community** — for establishing that these units are
+  recoverable over USB at all, which is what made any of this reachable.
+- **Harman Kardon and Marvell** — the original hardware and the donor firmware
+  whose behaviour this project studied and, where practical, deliberately
+  reproduced rather than reinvented.
+
+Where this project's runtime imitates the donor firmware, that choice is
+recorded at the point it is made, with the donor evidence that motivated it.
+Where the design is this project's own, it says so.
 
 ## Licensing and attribution
 

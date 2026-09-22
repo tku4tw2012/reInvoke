@@ -50,6 +50,13 @@ places `bsl` at `0x01a20000`, `bootimgs` at `0x01f20000` and `rootfs` at
 `0x02920000`, all confirmed against the capture. An earlier note calling
 `0x00a20000` an 8 MiB kernel container was wrong; that offset is `tz_en`.
 
+The bundle's example is not this unit's layout in the tail. Read live from
+`/proc/cmdline` under native startup, this unit's bootloader ends
+`123M(app),128K(fw_stat),128K(cenv),128K(senv)` rather than `1M(fw_stat)`,
+so it declares fifteen partitions where the bundle example declares thirteen.
+Everything through `app` agrees. See the
+[allocation map](nand-write-decision.md#unit-facts-to-preserve).
+
 ## The 44-byte header is slot one of a three-slot table, not the whole header
 
 What earlier notes called "a 44-byte Marvell header" is the first field of a

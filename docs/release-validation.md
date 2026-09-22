@@ -1,4 +1,7 @@
-# Release validation
+---
+title: Release validation
+description: What the running build has demonstrated, and how each result was observed
+---
 
 ## Why this list exists
 
@@ -25,13 +28,14 @@ outside the code changed state and was observed.
 
 ## What the current build has actually demonstrated
 
-Taken from observation on the running unit, not from intent. Version 2.2.7,
-2026-09-19, which was built and flashed as `05.8.13`; see
-[version history](versions.md) for the mapping.
+Taken from observation on the running unit, not from intent. Version 2.2.11,
+2026-09-21. Rows naming an earlier version record the build on which that
+particular result was observed; see [version history](versions.md) for how the
+numbering maps to the names earlier builds used.
 
 | Capability | Status | How it was observed |
 | --- | --- | --- |
-| Boots from NAND unattended | verified | 34 service pid files, no host attached |
+| Boots from NAND unattended | verified | 2.2.11, 36 service pid files, no host attached |
 | Wi-Fi associates and gets a lease | verified | `FRONT_INDICATOR online` and SSH reachable |
 | USB ADB from cold boot | verified | `adb shell` with no network configured |
 | USB identity is this unit | verified | host reads the unit's own MAC as `iSerial`, `reInvoke-<last six>` as `iProduct`, and `Harman Kardon` as `iManufacturer`, in place of the gadget defaults |
@@ -56,18 +60,16 @@ Taken from observation on the running unit, not from intent. Version 2.2.7,
 | No pops at startup | verified | 05.8.13, heard by the owner; the donor's one second settle |
 | Dial carries the donor curve | verified | dial 34 sent the DSP `payload 04 05`, the measured gain |
 
-Two rows in this table claimed no stream had ever been played on a NAND
-build. That was this project's own record being read rather than the owner's
-memory, and the owner corrected it: music had been played on earlier NAND
-builds. What is recorded here is the playback observed on 2.2.7; it is not a
-claim about being the first.
-
-This table was wrong for several releases: it recorded eight services when the
-build ran thirty-four, the chime as failed after it had played, the reboot fix
-as never exercised after it had been, and the ring count as unexplained after
-it was explained. It is now generated from the same conditions that
+This table is not maintained by hand. It records the same conditions that
 [`tools/release-criteria`](../tools/release-criteria/criteria.json) checks, so
-the two cannot drift apart silently.
+a claim here and the check behind it cannot drift apart silently. That coupling
+exists because the table did drift: while it was prose, it under-reported the
+service count, recorded the chime as failed after it had played, and listed a
+fix as never exercised after it had been. A result ledger nobody re-derives
+becomes a record of what was once believed.
+
+Playback rows describe what was observed on the named build. They are not
+claims about being the first time a given thing worked.
 
 ## Checks that need a person
 

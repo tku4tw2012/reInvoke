@@ -3,8 +3,6 @@ title: Version history
 description: How the build numbering works, and what every earlier name maps to
 ---
 
-# Version history
-
 Builds are numbered `ERA.MILESTONE.ITERATION`.
 
 * **Era** is what the speaker can do without help. `1` needs a host to boot;

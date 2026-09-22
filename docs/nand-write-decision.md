@@ -20,7 +20,11 @@ the storage, backup and recovery limits behind that installation.
 
 September 2026 measurements identified 256 MiB NAND, 512 MiB DRAM, NAND ID
 `98 DA 90 15 76 16`, 2 KiB pages and 128 KiB erase blocks: 2,048 blocks total.
-Linux exposed one unpartitioned `mv_nand` device. Spare-area sizes differ:
+Linux exposed one unpartitioned `mv_nand` device when running from RAM, because
+the RAM platform supplied no `mtdparts`. Under native startup the vendor
+bootloader supplies its own, and the same chip appears as fifteen named
+partitions with `mv_nand` retained as the whole-device aggregate. The chip did
+not change; the description passed to the kernel did. Spare-area sizes differ:
 
 | Layer                        | OOB bytes/page | Meaning                                       |
 | ---------------------------- | -------------- | --------------------------------------------- |
@@ -51,7 +55,18 @@ packages, established this end-exclusive allocation map:
 | `bootimgs`        | `0x01f20000` | `0x02920000` |
 | `rootfs`          | `0x02920000` | `0x08320000` |
 | `app`             | `0x08320000` | `0x0fe20000` |
-| `fw_stat`         | `0x0fe20000` | `0x0ff20000` |
+| `fw_stat`         | `0x0fe20000` | `0x0fe40000` |
+| `cenv`            | `0x0fe40000` | `0x0fe60000` |
+| `senv`            | `0x0fe60000` | `0x0fe80000` |
+
+Verified on this unit under native startup: the vendor bootloader passes its
+own `mtdparts` in `/proc/cmdline` and the kernel creates exactly these
+fifteen partitions, plus `mv_nand` as the whole-device aggregate. Every
+allocation above through `app` matches the reconstruction byte for byte. The
+tail is where this unit departs from the bundle: the bundle's compact example
+ends `123M(app),1M(fw_stat)`, while this unit declares
+`123M(app),128K(fw_stat),128K(cenv),128K(senv)`. The allocations stop at
+`0x0fe80000`, leaving the remaining 1.5 MiB of the 256 MiB device unallocated.
 
 Physical bad blocks are `0x0c000000` and `0x0c020000`, in `app`.
 Mirrored BBTs were found at pages 131008 and 130944 in the remaining tail.
