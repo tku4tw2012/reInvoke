@@ -137,14 +137,11 @@ whether the attempt took or not, and continuing to hold past the first few
 seconds of boot changes nothing that can be observed. Both accounts agree that
 whatever decides the outcome has happened by about ten seconds in.
 
-So: enter service mode, and release when you like. This page previously
-carried an instruction to hold for the whole attempt, repeated from the vendor
-document as though it had been measured here. It had not been.
-
-The reverse claim was also once in this file -- that holding longer "makes no
-difference; measured on this unit" -- and was withdrawn for citing a
-measurement that did not exist. Neither direction has been instrumented. What
-is measured is the nine to ten seconds above.
+So: enter service mode, and release when you like. Hold duration has not been
+instrumented on this unit in either direction. The vendor document says to
+hold for the whole attempt; that has not been tested here, and neither has the
+claim that it makes no difference. What is measured is the nine to ten seconds
+above.
 
 If the device instead disconnects repeatedly for more than ten seconds, the
 vendor remedy is to unplug mains, wait ten seconds and restore mains, leaving
@@ -168,13 +165,12 @@ Only after the second does the device ask for the real chain -- `0x09`,
 `0x02`, `0x03`, `0x05`, `0x79` -- and only then is there a bootloader of ours
 running with a console on it.
 
-An earlier revision of this section presented a table of `0x08` refusal
-counts across five runs, and claimed a third refusal meant the attempt was
-already lost. That is withdrawn. The counts were real, but every one of those
-runs was taken while this tooling was itself being changed, and attributing
-the difference to the device rather than to the harness is exactly the
-mistake this page exists to prevent. The iROM side of this is deterministic;
-what varied across those runs was the host.
+Do not infer anything from how many times `0x08` is refused before entry
+succeeds. Those refusals were once tabulated across five runs and a threshold
+read out of them, but every one of those runs was taken while this tooling was
+itself being changed, so the variation belonged to the host and not to the
+device. The iROM side is deterministic. Attributing host-side variation to the
+device is the specific mistake this page exists to prevent.
 
 What is safe to say: watch for the `subclass=0xFF` line. Until it appears,
 nothing of ours is running on the device.
@@ -193,14 +189,14 @@ Do not serve `08_IMAGE`. Keep it in staging as
 `08_IMAGE.withheld-for-uboot-access`; `arm-seize.sh` refuses to start if the
 plain name is present.
 
-An earlier revision of this file said to "feed the device what it asks for".
-That is wrong and it cost a long run of failed entries. A device that has not
-entered recovery asks for `0x08` and resumes its normal boot once it is
-answered, so answering helps it leave the state we are trying to catch. The
-staging that caught iROM on every attempt withheld the file and recorded zero
-`0x08` requests; staging that served it logged repeated `0x08` at subclass
-`FE` and never reached Phase 1. [U-Boot access](uboot-access.md) has always
-required "recovery-only staging: `08_IMAGE` absent".
+Do not feed the device what it asks for here. Answering `0x08` is what keeps
+entry failing, and following that instinct cost a long run of failed attempts.
+A device that has not entered recovery asks for `0x08` and resumes its normal
+boot once it is answered, so answering helps it leave the state we are trying
+to catch. The staging that caught iROM on every attempt withheld the file and
+recorded zero `0x08` requests; staging that served it logged repeated `0x08`
+at subclass `FE` and never reached Phase 1. [U-Boot access](uboot-access.md)
+has always required "recovery-only staging: `08_IMAGE` absent".
 
 ## Console
 
@@ -266,10 +262,10 @@ whose 120-second timeout expired before the operator could act, and a
 persistent helper that claimed the device at `FE` before iROM ever appeared.
 None of these were device faults.
 
-This list previously also blamed "a wrapper that deleted `08_IMAGE` before
-every attempt". That attribution is withdrawn. Withholding the file is what
-makes the device reach iROM, and serving it is what kept candidate 05.8.11
-stuck: twelve consecutive enumerations at `FE` with no iROM, then a successful
-flash on the first attempt after the file was withheld. What is genuinely
-unsafe is destroying `08_IMAGE.stock`, which is the only copy of the record.
-Rename rather than delete.
+Deleting `08_IMAGE` before an attempt is not one of these faults, despite once
+being listed as one. Withholding the file is what makes the device reach iROM,
+and serving it is what kept candidate 05.8.11 stuck: twelve consecutive
+enumerations at `FE` with no iROM, then a successful flash on the first
+attempt after the file was withheld. What is genuinely unsafe is destroying
+`08_IMAGE.stock`, which is the only copy of the record. Rename rather than
+delete.

@@ -37,9 +37,9 @@ SoC family rather than adapted to it.
 
 ## What is missing: the driver, not the device tree
 
-An earlier revision of this document concluded that the BG2CD device tree
-lacked a UDC node and that adding one was the work. That was wrong, and reading
-the running system rather than the source tree shows why.
+The device tree is not what is missing. Reading the running system rather than
+the source tree shows why, and reverses the intuitive conclusion that a UDC
+node needs adding.
 
 The unit reports `BG2CD` in its U-Boot banner, which is the family name. The
 variant is CDP-A0: the vendor's own kernel payload contains

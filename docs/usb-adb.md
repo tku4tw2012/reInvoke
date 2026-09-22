@@ -7,10 +7,10 @@ USB ADB works on this unit. It was proven on hardware before anything was
 written to NAND: the modules, the device node and the property area all live in
 tmpfs, and a reboot returns the speaker to exactly its flashed state.
 
-An earlier note in this project concluded that "no loadable UDC module ships in
-either module tree, so USB ADB cannot be added to the vendor kernel without
-replacing it". The premise was true and the conclusion was wrong. Nothing ships
-one, but one can be built.
+Nothing in either vendor module tree ships a loadable UDC module. That fact was
+once read as meaning USB ADB could not be added without replacing the kernel.
+It does not follow: nothing ships one, but one can be built, and the rest of
+this document is how.
 
 ## Why it is worth having
 
@@ -305,14 +305,14 @@ pin and the artifact agreed with each other. Both were simply a day old.
 | vermagic | `3.8.13-yocto-standard SMP preempt mod_unload ARMv7` | identical |
 | other five modules | — | byte-identical |
 
-### Tested, and the diagnosis above was wrong
+### What the reload test showed instead
 
 `usb-adb-reload-test.sh` ran on 2026-09-20 against the fixed module. It set
 `panic_on_oops=0` first, which is what made the result readable: the kernel
 stayed up, the trace was written to `/persist`, and it survived the power
 cycle. Evidence is in `evidence/reload-test-229-*`.
 
-Two things happened, and neither was what this page predicted.
+Two things happened, and neither matched the diagnosis above.
 
 **The unload now warns, and the warning is in the fix.**
 
