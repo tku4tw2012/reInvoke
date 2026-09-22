@@ -313,6 +313,27 @@ for (const file of markdownFiles()) {
   });
 }
 
+// The index is the only route a reader has to most of these pages. Nine of
+// them were unreachable from it at once, including the flash procedure, so a
+// page that exists but is not listed is treated as a finding.
+{
+  const indexPath = path.join(repo, 'docs/README.md');
+  const index = fs.readFileSync(indexPath, 'utf8');
+  const walk = dir => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!entry.name.endsWith('.md')) continue;
+      const relative = path.relative(repo, full);
+      if (relative === 'docs/README.md') continue;
+      if (!index.includes(path.relative(path.join(repo, 'docs'), full)))
+        finding('unindexed-doc', 'docs/README.md', 1, relative,
+          'page exists but the documentation index does not link it');
+    }
+  };
+  walk(path.join(repo, 'docs'));
+}
+
 const byKind = {};
 for (const item of findings) byKind[item.kind] = (byKind[item.kind] || 0) + 1;
 
