@@ -247,7 +247,7 @@ boot progression, the entry evidence and the transports init owns;
 is real but it is ours, and collapsing it to one name is worth doing when
 something else is already being changed.
 
-## Unloading## Unloading## Unloading
+## Unloading
 
 `rmmod g_android` followed by `insmod` panicked this unit on every candidate up
 to and including 2.2.7. The unload itself is safe, and the kernel refuses the
@@ -258,8 +258,15 @@ the *re-insert*, and with no pstore or `last_kmsg` on this unit there was no
 log saying why.
 
 2.2.8 shipped a module intended to fix it and a test to say whether it did.
-The test has now run and the answer is no: reload still fails, and the reason
-is not the one this page gave. See below. Bring USB ADB back with a reboot.
+The test ran and the answer was no: reload still failed, and the reason was
+not the one this page gave. See below. Bring USB ADB back with a reboot.
+
+> **Status.** The LUN release described at the end of this page shipped in
+> 2.2.10. Whether it makes reload succeed is **not recorded in this
+> repository**: no reload-test log survives on the unit, and 2.2.11 does not
+> ship the test script. Treat module reload as unverified on the current
+> build. This is separate from `usb-adb-start.sh up|down|cycle`, which is
+> verified on 2.2.11 and does not unload the module.
 
 ### The asymmetry, and the fix that was never shipped
 

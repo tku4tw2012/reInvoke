@@ -76,7 +76,9 @@ active source. This runtime has no such router, so the equivalent call is
 `com.harman.bluetooth.pause` and `com.harman.bluetooth.resume`, which the donor
 Bluedroid stack registers directly.
 
-Wi-Fi setup belonged to `btn-micmute-long`. The LED player currently starts
-`L_302_d_wifisetup` on `bluetooth-long`, which puts the Wi-Fi setup animation
+Wi-Fi setup belongs to `btn-micmute-long`. The LED player once started
+`L_302_d_wifisetup` on `bluetooth-long`, which put the Wi-Fi setup animation
 on the wrong control; that mapping arrived in `217d052` without a recorded
-rationale.
+rationale. It no longer does: the animation is played by the provisioning
+controller that actually opens the window, and `led.go` records why it is
+deliberately not started on the Bluetooth press.

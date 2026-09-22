@@ -37,7 +37,7 @@ setup continue without durable settings.
 | Data        | Policy                                                                        |
 | ----------- | ----------------------------------------------------------------------------- |
 | Wi-Fi       | Last successfully associated SSID, derived WPA2 PSK, security and hidden flag |
-| Bluetooth   | Selected BlueZ peer `info` and `attributes` files; no discovery cache         |
+| Bluetooth   | Selected BlueZ peer `info` and `attributes` files. This is vestigial: the runtime uses the donor Bluedroid stack, which keeps its state in `/persist/reinvoke/bluedroid/bt_config.conf` and does not read the BlueZ path, so the service finds it empty. Bluetooth configuration persists without this entry |
 | Preferences | microphone mute and music-volume preference                                |
 
 One versioned, checksummed envelope limits selected data to 1 MiB and the
@@ -50,8 +50,10 @@ rename and directory fsync. Orderly shutdown flushes after writers stop.
 Abrupt power loss can discard recent changes. Actual NAND power-cut behavior
 remains untested; checksums are corruption detection, not encryption.
 
-Music restoration retains the existing 12-percent reconnect ceiling and never
-raises a quieter transport. Zero stays zero; transport mute does not overwrite
+Music restoration no longer applies a connect-time ceiling. The 12-percent
+ceiling this section once described went away with BlueALSA; it existed only
+because a BlueALSA transport arrived at full scale, and the donor Bluedroid
+stack does not. Zero stays zero; transport mute does not overwrite
 the volume preference. A previously louder setting remains recorded but is
 not automatically restored at that loudness.
 

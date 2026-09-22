@@ -51,7 +51,7 @@ numbering maps to the names earlier builds used.
 | One device namespace | verified | 2.2.11, `/etc/reinvoke`, `/usr/libexec/reinvoke`, `/run/reinvoke`; all three nand-pilot paths absent on the running unit |
 | Identifiers reads the new build-id | verified | 2.2.11, `com.harman.firmwareVersion` returned `reInvoke-2.2.11-20260921` from `/etc/reinvoke/build-id` |
 | USB ADB up at boot | verified | 2.2.11, `[29.3] reinvoke-usb-adb: ready: state=CONFIGURED` in the kernel buffer, and adb reachable on every cold boot |
-| USB ADB teardown and bring-up | verified | 2.2.11, `down`, `down` again, `up` from cold and `up` when already up; adb returned by itself, `lun0` absent after teardown |
+| USB ADB teardown and bring-up | verified | 2.2.11, `down`, `down` again, `up` from cold and `up` when already up; adb returned by itself, `lun0` absent after teardown. This exercises `usb-adb-start.sh`, which does not unload the module; module reload is separate and unverified on this build |
 | Router log volume | verified | 2.2.11, 0 bytes/hour idle against 302 KB/hour before; boot log 10,692 bytes against ~54,000 |
 | Startup click before the chime | verified | 2.2.10, gone across two cold boots; priming logged before the outputs open |
 | Voice output stage | verified | 2.2.10, `voice` control created and `dmix<volmix_ladspa>` reached; same cue through voice, system, voice gave 1 and 3 alike and 2 different, matching a half-decibel curve |
@@ -225,3 +225,9 @@ Persistence across power loss, behaviour when Wi-Fi is absent at boot, and the
 provisioning window have all been exercised at some point but not since the
 current build. They are not listed as verified because that evidence is older
 than the code.
+
+Module reload, meaning `rmmod g_android` followed by `insmod`, is not covered
+at all. The LUN release intended to fix it shipped in 2.2.10, but no
+reload-test log survives on the unit, 2.2.11 does not ship the test script,
+and no commit in this repository records the outcome. See
+[USB ADB](usb-adb.md#unloading).

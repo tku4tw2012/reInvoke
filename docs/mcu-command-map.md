@@ -49,7 +49,7 @@ byte 0 is set to immediately before the call.
 | `0x24` | heartbeat | none | verified on hardware; see below |
 | `0x01`, `0x23`, `0x25`, `0x26` | startup sequence | not decoded | verified on hardware |
 
-Opcodes `0x03`, `0x05`, `0x08`, `0x0D`, `0x0F`, `0x10`, `0x11`, `0x14`, `0x20`
+Opcodes `0x05`, `0x08`, `0x0D`, `0x10`, `0x11`, `0x14` and `0x20`
 also appear in the donor's call sites. They are not decoded here because
 nothing in scope needs them, and several sit in the firmware-upgrade path.
 
@@ -205,9 +205,10 @@ cannot reproduce `0x09` is not to be trusted on anything else.
 
 ## Still unknown
 
-`GetHWID` and `SetHWID`, and the upgrade path `requestmcuupgrade`,
+`SetHWID`, and the upgrade path `requestmcuupgrade`,
 `startmcuupgrade`, `sendfirmwaredata`, `mcuupgraderesult`. The upgrade family is
-out of scope by decision, not by difficulty.
+out of scope by decision, not by difficulty. `GetHWID` was listed here after it
+had been decoded; its request, reply channel and board-revision byte are above.
 
 ## The heartbeat is a hardware watchdog
 

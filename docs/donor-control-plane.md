@@ -150,7 +150,9 @@ the single byte that selects each command.
 This runtime already drives the indicator LEDs with opcode `0x09` and the
 frame `[0x09, amber, white, back, 0, 0]`, where each colour byte is a mode
 rather than a level: off, on, dim, slow blink, fast blink. Brightness is a
-different command, and its opcode is unknown.
+different command. Disassembly puts it at `0x0A`; see the
+[MCU command map](mcu-command-map.md). It has not been driven on hardware, so
+the decoding is documentation rather than a verified result.
 
 Guessing is not acceptable here. MCU frames are six bytes with the opcode in
 byte 0, and the same command space contains `startmcuupgrade`. An opcode that
