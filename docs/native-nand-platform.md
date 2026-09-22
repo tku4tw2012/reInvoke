@@ -5,24 +5,36 @@ description: Current native results, artifact identities, installation limits an
 
 ## Current result
 
-Candidate 05.3 is installed and running: native NAND boot in about forty
-seconds, Wi-Fi restored from durable storage, root SSH, and the
-MCU/DSP/microphone/provisioning services confirmed live. Its donor Bluetooth
-identity provider stays resident and answers, which no earlier candidate
-achieved.
+Build `2.2.11` is installed and runs unattended from NAND on wall power with
+no host attached. The boot log shows every supervisor started 34 seconds after
+power-on, for seventeen supervised services plus the native SSH and USB ADB
+helpers.
 
-Bluetooth still does not transmit. The cause is now located precisely and is
-not identity: the controller never completes HCI initialisation, so
-`hci_version`, `manufacturer` and `features` all read zero and `hci0` keeps
-`00:00:00:00:00:00`. See
-[Bluetooth enable path](bluetooth-enable-path.md).
+In service and observed on the unit: Wi-Fi association from credentials held
+in durable storage, root SSH, USB ADB from a cold boot, MCU and DSP control,
+microphone capture with a mute gate proven by measurement, the startup chime
+and cue set, rotary volume on the donor's measured gain curve, and Bluetooth
+A2DP playback.
 
-Candidate 05.4 is built and staged, carrying the OOBE query answer, the HAL
-install-path correction and a supervisor restart fix. Candidate 02 remains the
-broader native audio/control baseline. RAM mic mute, firewall and restart
-measurements are not native acceptance.
+Bluetooth is runtime-toggled and reports its state in `/run/reinvoke/bluetooth-state`.
+An earlier revision of this document reported that the controller never
+completed HCI initialisation, leaving `hci0` at version zero. That was three
+packaging defects rather than a radio or driver fault, and it is fixed; see
+[Bluetooth enable path](bluetooth-enable-path.md). While the stack is off,
+`hci0` still reads an all-zero address, which is the stack being disabled and
+not the old defect returning.
 
-### Candidate 03 startup
+[Release validation](release-validation.md) records how each result was
+observed and which checks only a person can make.
+
+### Earlier native milestones
+
+The two tables below record what was observed on the candidate builds that
+preceded the current numbering. They are retained as evidence of when each
+capability first worked, not as a description of the running build.
+[Version history](versions.md) maps the candidate names to build numbers.
+
+#### Candidate 03 startup
 
 Verified on this unit, 2026-09-12:
 
@@ -42,7 +54,7 @@ is a hypothesis, not a diagnosis. The actual native kernel, PID 1, mounts,
 firewall and PTY behavior remain unread. Provisioning is complete; native
 administration is not.
 
-### Candidate 02 functional baseline
+#### Candidate 02 functional baseline
 
 Candidate 02 demonstrated wall-power NAND startup, encrypted Bluetooth
 pairing, owner-confirmed audible melody, rotary volume both directions, red
@@ -65,9 +77,10 @@ Bluetooth carries audio and WAMP carries compatibility calls. Device ports
 9999/9998 are RawSocket/WebSocket; neither is a shell. Host TCP 5037 is the
 ADB server and host TCP 8141 is the USB-helper console, not device services.
 
-Wi-Fi credentials, Bluetooth bonds and preferences disappear on power loss.
-No configuration partition or storage mechanism is selected.
-The [roadmap](revival-roadmap.md#remaining-work) owns remaining gates.
+Wi-Fi credentials and Bluetooth stack configuration are held in `/persist`, a
+yaffs2 volume on the `app` partition, and survive power loss. User preferences
+and the update, recovery and reset semantics for those contents are not yet
+settled. The [roadmap](revival-roadmap.md#remaining-work) owns remaining gates.
 
 ## Installed architecture
 
@@ -148,11 +161,13 @@ CRC/SHA values, unchanged vendor payloads outside rootfs/BSL and the auxiliary
 preserved. These offline results are narrower than native acceptance or a
 complete reproducible build from a clean public clone.
 
-## Candidate 03 implementation
+## Implementation notes
 
-Packaged identities are Bluetooth `reInvoke-NAND`, USB `reInvoke-NAND-03`
-and build `reInvoke-NAND-03-20260912`. Only the Bluetooth name was observed
-live; the others remain composition evidence.
+Packaged identities for the candidate-03 build were Bluetooth `reInvoke-NAND`,
+USB `reInvoke-NAND-03` and build `reInvoke-NAND-03-20260912`. Only the
+Bluetooth name was observed live; the others were composition evidence. The
+running build derives its USB and Bluetooth identity from the unit's own MAC
+instead. See [release validation](release-validation.md).
 
 ### USB and status
 
@@ -181,8 +196,10 @@ USB enumeration.
 Password/PAM authentication and forwarding are compiled out.
 `DROPBEAR_REEXEC=0` avoids an unavailable `execveat` dependency.
 Host-loopback QEMU controls passed authorized-key acceptance,
-password/unlisted-key rejection and strict host-key pinning; native login did
-not pass.
+password/unlisted-key rejection and strict host-key pinning. Native login
+passed subsequently, once local-file account lookup replaced the failing
+pre-authentication path; the listener answers on `0.0.0.0:22` and serves a
+root shell on the running build.
 
 [ssh-start.sh](../tools/nand-pilot/ssh-start.sh) requires private host-key,
 authorized-key and source-CIDR inputs. It installs TCP-22 firewall policy before
@@ -192,16 +209,18 @@ independently of WAMP startup. It adds no network ADB fallback.
 The image contains a dedicated ED25519 host key and the operator's public
 authorized key, not the operator's private key. Key files use `0600` inside
 `0700` directories. Client pins remain private; do not disable strict host-key
-verification to work around the authentication failure.
-Native source-filter enforcement and the failure cause remain unverified.
+verification. Native source-filter enforcement remains unverified: the policy
+is installed before the listener, but no test has confirmed that a connection
+from outside the configured CIDR is actually refused on the device.
 
-## Candidate 04 offline successor
+## Settings, persistence and bounded network ADB
 
-Candidate 04 combines the administration fix with a daily-use settings layer:
+These behaviours were designed for the candidate-04 successor and are in the
+shipping build:
 
-* Local-file account lookup fixes the matching pre-authentication failure
-  reproduced in the extracted 03 root. The unchanged ARM Dropbear then logs
-  in and executes the packaged ARM shell under QEMU.
+* Local-file account lookup fixes the pre-authentication failure that closed
+  earlier SSH sessions. The unchanged ARM Dropbear then logs in and executes
+  the packaged ARM shell.
 * The existing named app/YAFFS2 allocation stores successful Wi-Fi profiles,
   mic mute and volume preferences. No partition
   is added or formatted. Failed storage leaves explicit volatile operation.
@@ -214,16 +233,14 @@ Candidate 04 combines the administration fix with a daily-use settings layer:
 * USB startup handles the optional legacy enable node. Status distinguishes
   observed listeners from authentication and firewall acceptance.
 
-These are offline implementation and protocol results. Candidate 03 remains
-installed; native persistence, reconnection, USB and the new administration
-paths still require an approved installation and power boot.
 The installer erases saved settings on reflash. Across ordinary boots,
 abrupt power loss can discard the latest 30 seconds of bond/preference changes;
 orderly shutdown flushes after the writers stop.
 See [builder inputs](../tools/nand-pilot/README.md) and
 [persistence](../tools/nand-pilot/persistence/README.md).
 
-The reviewed private build is identified by `complete/MANIFEST.json`:
+The candidate-04 private build that first carried these is identified by
+`complete/MANIFEST.json`:
 
 | Artifact               | Bytes      | SHA-256                                                            |
 | ---------------------- | ---------: | ------------------------------------------------------------------ |

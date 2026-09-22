@@ -15,7 +15,7 @@ Normal operation starts from NAND. Host-loaded U-Boot/RAM Linux remains the
 development and observed recovery path. Installed candidate 03 keeps settings
 volatile. The offline 04 successor adds guarded app/YAFFS2 persistence for
 Wi-Fi, bonds and selected preferences; see its
-[scope and limits](native-nand-platform.md#candidate-04-offline-successor).
+[scope and limits](native-nand-platform.md#settings-persistence-and-bounded-network-adb).
 
 Installed candidate 03 has startup, provisioning and SSH-negotiation evidence
 but no login. Candidate 02 owns the broader native audio/control baseline;
