@@ -44,6 +44,7 @@ numbering maps to the names earlier builds used.
 | No volume arc at boot | verified | no `RING_ARC` logged, and none seen |
 | Reboot without a power cycle | verified | `adb reboot` returned the unit repeatedly |
 | Front lamp state changes | verified | amber at boot, white once online |
+| Wi-Fi credentials persist | verified | 2.2.11, the runtime `wpa_supplicant.conf` SSID is the hex encoding of the SSID in `/persist/reinvoke/state.json`, so the config is generated from durable storage rather than re-provisioned |
 | Bluetooth pairing from the host | verified | `LinkKey` written, survived a reboot |
 | Microphone capture | verified | 2.2.7: 192,000 samples, 191,998 non-zero at −34.7 dBFS; DSP mute gave 192,000 samples, peak 0 |
 | No builder paths in shipped binaries | verified | 2.2.11, all seven Go binaries report zero `/home/<user>` occurrences on the running unit; four carried 3, 3, 7 and 5 before |
