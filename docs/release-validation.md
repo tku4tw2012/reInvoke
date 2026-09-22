@@ -34,7 +34,7 @@ Taken from observation on the running unit, not from intent. Version 2.2.7,
 | Boots from NAND unattended | verified | 34 service pid files, no host attached |
 | Wi-Fi associates and gets a lease | verified | `FRONT_INDICATOR online` and SSH reachable |
 | USB ADB from cold boot | verified | `adb shell` with no network configured |
-| USB identity is this unit | verified | host reads `aabbccddeeff` / `reInvoke_AABBCC` / `Harman Kardon` |
+| USB identity is this unit | verified | host reads the unit's own MAC as `iSerial`, `reInvoke-<last six>` as `iProduct`, and `Harman Kardon` as `iManufacturer`, in place of the gadget defaults |
 | DSP accepts a volume | verified | `completed com.harman.dsp.volumeSet` |
 | Startup chime audible | verified | heard by the owner on the 05.8.11 boot |
 | No volume arc at boot | verified | no `RING_ARC` logged, and none seen |

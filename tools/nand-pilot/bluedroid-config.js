@@ -130,8 +130,8 @@ function installBluedroid(config, root, launcher) {
   //
   // Both are NUL terminated with padding, and every replacement is shorter, so
   // nothing shifts and no offset in the binary changes. Verified on hardware:
-  // the stack logged SetLocalDeviceName(reInvoke_AABBCC) and a scanning host
-  // then saw exactly that name.
+  // the stack logged SetLocalDeviceName with the renamed value and a
+  // scanning host then saw exactly that name.
   const donorService = path.join(stackRoot, 'usr/bin/bluetooth');
   const renames = [
     [Buffer.from('HK Invoke_\0', 'latin1'), Buffer.from('reInvoke_\0\0', 'latin1')],
