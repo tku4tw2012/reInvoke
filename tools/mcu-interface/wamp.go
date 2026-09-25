@@ -243,6 +243,12 @@ func (service *wampService) run(ctx context.Context) error {
 			}
 			topic, args := event.publication()
 			if err := client.publish(topic, args); err != nil {
+				// Cancellation closes the connection underneath this write, so
+				// losing that race is a normal stop rather than a failure.
+				// Every other error path in this loop makes the same check.
+				if ctx.Err() != nil {
+					return nil
+				}
 				return err
 			}
 			// Announce what the press means as well as which key it was, so a
@@ -257,6 +263,9 @@ func (service *wampService) run(ctx context.Context) error {
 					buttonActionTopic,
 					[]interface{}{action, event.Name},
 				); err != nil {
+					if ctx.Err() != nil {
+						return nil
+					}
 					return err
 				}
 			}
