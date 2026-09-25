@@ -130,6 +130,64 @@ func TestSlowClientDoesNotDisableOtherClients(t *testing.T) {
 	}
 }
 
+func TestFullQueueDisconnectsSlowClient(t *testing.T) {
+	hub := newClientHub(1)
+	hub.enable(42)
+	server, client := net.Pipe()
+	defer client.Close()
+	if !hub.add(server) {
+		t.Fatal("enabled hub rejected a client")
+	}
+
+	// Nothing reads, so the writer stays blocked on its header and never
+	// drains the queue. One record fills it; the next must evict the client.
+	hub.broadcast(make([]byte, recordSize))
+	// Eviction by full queue is synchronous inside broadcast, while the write
+	// deadline fires asynchronously later. Asserting the client survives the
+	// first record keeps a slow machine from passing this test via the
+	// deadline path instead of the queue path under test.
+	if _, _, clients := hub.state(); clients != 1 {
+		t.Fatalf("client left before the queue could fill: clients=%d", clients)
+	}
+	hub.broadcast(make([]byte, recordSize))
+	if _, _, clients := hub.state(); clients != 0 {
+		t.Fatalf("full queue did not disconnect the slow client: clients=%d", clients)
+	}
+
+	// A closed net.Pipe rejects deadline calls as well, so the deadline is a
+	// best-effort guard against hanging; the read below is the real assertion.
+	_ = client.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := client.Read(make([]byte, 1)); err == nil {
+		t.Fatal("evicted slow client connection remained open")
+	}
+}
+
+func TestWriteDeadlineDisconnectsStalledClient(t *testing.T) {
+	hub := newClientHub(4)
+	hub.enable(42)
+	server, client := net.Pipe()
+	defer client.Close()
+	if !hub.add(server) {
+		t.Fatal("enabled hub rejected a client")
+	}
+
+	// No broadcast, so the queue can never fill: the outstanding header write
+	// makes the write deadline the only path that can evict this client.
+	if _, _, clients := hub.state(); clients != 1 {
+		t.Fatalf("client left before any write could stall: clients=%d", clients)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, _, clients := hub.state(); clients == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("write deadline never disconnected the stalled client")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestReplaceGenerationDisconnectsExistingClients(t *testing.T) {
 	hub := newClientHub(1)
 	hub.enable(7)
