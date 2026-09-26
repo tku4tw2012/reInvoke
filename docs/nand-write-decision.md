@@ -236,3 +236,30 @@ so a write that reaches `app` destroys them. Remaining acceptance, storage
 design and assistant integration belong to the
 [remaining work](revival-roadmap.md#remaining-work), not another speculative
 partition recipe.
+
+### Session lifetime limits any SSH-driven write
+
+The unit's SSH daemon runs with `-I 900 -K 30`, read from its own `argv`. The
+idle timeout closes any session that produces no traffic for 900 seconds.
+
+Two concurrent probes isolated it, same daemon and same network, with client
+keepalives disabled so that emitted output was the only variable:
+
+| Probe             | Output           | Result                          |
+| ----------------- | ---------------- | ------------------------------- |
+| Silent session    | none             | server closed at exactly 900 s  |
+| Identical session | one line per 60s | ran 1801 s, exited cleanly      |
+
+An erase, write and readback pass over this chip can exceed fifteen minutes,
+and a command that prints nothing while it works is indistinguishable from an
+idle one. A session severed mid-operation leaves partially written flash, which
+is the outcome this document exists to avoid. The failure is also silent from
+the host side: the transport reports the disconnect, not the state of the
+write.
+
+Long device operations therefore run device-local and detached, writing output
+to a file on the unit, rather than under an interactive session. A detached job
+also needs a holder for its stdin: `/dev/null` is always readable at end of
+file, so any program that polls stdin reads it as a closed peer and exits. A
+FIFO with a live local writer does not.
+
