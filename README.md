@@ -14,7 +14,7 @@ one unit.
 
 ## Current status
 
-Build `2.2.11`, running on one closed Invoke. Each row is something observed
+Build `2.3.0`, running on one closed Invoke. Each row is something observed
 on the unit, not something intended. Rows marked with an earlier build were
 observed on that build and have not been re-run since.
 [Release validation](docs/release-validation.md) records how each was observed,
@@ -26,13 +26,16 @@ which checks still require a human ear or eye, and what is not covered at all.
 | Audio        | Bluetooth A2DP playback and rotary volume on the donor's measured gain curve; the startup chime and the fix that made it audible are still awaiting confirmation by ear |
 | Network      | Wi-Fi associates and leases; SSH and USB ADB both reachable from a cold boot                    |
 | Microphone   | Capture measured on 2.2.7, with the DSP mute gate proven to silence it                         |
-| Persistence  | Wi-Fi credentials are read from durable storage at boot; survival across abrupt power loss is not verified on this build |
+| Voice        | The donor wake detector runs unchanged and streams a turn to a host under its control; one attended spoken turn from NAND scored 0.928 against a 0.42 threshold and played the host's reply. There is no assistant behind it |
+| Persistence  | The Wi-Fi profile survives a reboot from durable storage; the music-volume preference is designed to persist but has not been observed surviving a power cycle |
 
-What it does not do: there is no wake word, no assistant protocol and no voice
-assistant of any kind. Capture and playback primitives exist and have isolated
-hardware tests, but no assistant consumer has ever used them, and the mute
-contract such a consumer should rely on is still undecided. See
-[remaining work](docs/revival-roadmap.md#remaining-work).
+What it does not do: there is no assistant. The optional
+[voice endpoint](tools/voice-endpoint/README.md) reuses the donor's retained
+keyword detector and its original model, streams the captured turn to a host,
+and plays back whatever audio that host returns. The only host this repository
+ships is a fixed-reply stub. Nothing transcribes speech, nothing answers a
+question, and the original Cortana application and its cloud transport never
+start. See [remaining work](docs/revival-roadmap.md#remaining-work).
 
 The [native guide](docs/native-nand-platform.md#current-result) owns the result
 ledger and artifact pins. See the [product contract](docs/current-product-contract.md),

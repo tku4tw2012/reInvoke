@@ -339,8 +339,8 @@ Cortana executable's keyword detector and original model through an isolated
 worker; the original application and cloud transport never start. The endpoint
 uses owned capture and playback, existing WAMP light controls, and an outward
 connection to a configured host. The supplied host is a fixed-reply stub, not an
-assistant. This optional build is separate from the installed 2.2.11 acceptance
-record and requires an explicit private configuration.
+assistant. The endpoint stays stopped unless an explicit private configuration
+is installed; it was first accepted as part of the 2.3.0 build.
 
 `system-manager` is excluded because it is the vendor's service supervisor:
 it reads `/etc/podium/podium.conf` and starts the router and daemons, which

@@ -28,8 +28,8 @@ pinouts do not prevent maintaining the recovered software interfaces.
 1. Implement the host assistant behind the
    [optional voice endpoint](../tools/voice-endpoint/README.md). The endpoint
    reuses the donor wake detector and exchanges audio with a fixed-reply stub;
-   transcription and real answers remain host work. It is not part of the
-   installed 2.2.11 image, and building a candidate does not install it.
+   transcription and real answers remain host work. The endpoint ships in the
+   installed 2.3.0 image; the assistant behind it does not exist.
 2. Decide whether the implemented polled mic-mute gate meets the intended
    consumer contract before adopting the
    [synchronous design](microphone-capture.md#deferred-synchronous-mute-design).

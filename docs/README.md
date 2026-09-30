@@ -25,6 +25,7 @@ Implementation, RAM measurements and vendor evidence are separate scopes.
 | ----------------------------------------------------------------- | ----------------------------------------------- |
 | [Wi-Fi provisioning](native-provisioning.md)                      | Onboarding, bootstrap trust and durable credentials |
 | [Microphone capture](microphone-capture.md)                       | Stream protocol and implemented mic mute gate    |
+| [Voice endpoint](../tools/voice-endpoint/README.md)               | Optional wake-word turn capture and reply playback |
 | [USB ADB](usb-adb.md)                                             | Gadget modules, bring-up and teardown on this unit |
 | [USB device mode](usb-device-mode.md)                             | Superseded: the built-in-kernel route, and the hardware evidence |
 | [RAM platform](native-ram-platform.md)                            | Host-loaded development/recovery runtime        |

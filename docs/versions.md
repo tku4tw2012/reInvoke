@@ -10,7 +10,7 @@ Builds are numbered `ERA.MILESTONE.ITERATION`.
 * **Milestone** is a capability that did not exist before it.
 * **Iteration** counts builds within that milestone.
 
-The current build is **2.2.11**, and it is what the unit in hand runs.
+The current build is **2.3.0**, and it is what the unit in hand runs.
 Numbering began with 2.2.8; everything before it was renamed after the fact.
 
 ## Why the numbers changed
@@ -63,6 +63,16 @@ mapping is listed build by build.
 | 2.2.9 | — | 09-20 | yes |
 | 2.2.10 | — | 09-21 | yes |
 | 2.2.11 | — | 09-21 | yes |
+| 2.3.0 | — | 09-28 | yes |
+
+2.3.0 adds the optional voice endpoint. It was flashed twice on the same build
+number: the first image shipped its configuration to `/etc/reinvoke`, which the
+bootstrap bind mounts read-only from squashfs before chroot, so the endpoint
+found no configuration and stayed stopped. The build number did not advance for
+the correction, because a private attempt that never left the bench is not a
+release. The corrected image moves the file to `/etc/reinvoke-voice/voice.json`,
+matching the `/etc/reinvoke-wifi/station-seed.json` convention that already
+worked.
 
 ## What an iteration is worth recording
 

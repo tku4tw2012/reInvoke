@@ -254,8 +254,8 @@ The private 2.3.0 main filesystem, paired BSL and complete bundle were built
 and checked offline, then withdrawn because the fixed capture policy did not
 match the owner's original-experience requirement. Those measurements remain
 valid for that prototype; they do not validate the new streamed lifecycle.
-Installed 2.2.11 remains unchanged. Temporary listeners, RAM configuration and
-staged payloads were removed after testing.
+Installed firmware was 2.2.11 at the time and was left unchanged. Temporary
+listeners, RAM configuration and staged payloads were removed after testing.
 
 ## Streamed lifecycle verification
 
@@ -291,7 +291,7 @@ the retired backend's speech endpoint algorithm or acoustic echo cancellation.
 Those native-tested binaries were packaged in a private iteration labelled
 2.3.1. It was not an approved release. Its offline checks remain evidence for
 that exact snapshot, not acceptance of the subsequently approved 2.3.0 scope.
-Installed 2.2.11 remains unchanged.
+Installed firmware was still 2.2.11 at that point.
 
 ## Approved 2.3.0 build verification
 
@@ -317,5 +317,28 @@ Native validation staged these components in RAM on the existing installation:
 The original MCU binary was restored byte-for-byte after the RAM test, and all
 new test files and listeners were removed. The complete candidate was built
 offline, with two byte-identical main filesystem builds and component hashes
-matching the native-tested snapshot. It is not installed or cold-boot verified;
-firmware flashing requires separate approval.
+matching the native-tested snapshot.
+
+## Installed build verification
+
+2.3.0 is installed and was verified from NAND on 2026-09-30. Flashing was
+performed by the owner; this repository never writes NAND on its own.
+
+* The endpoint starts itself on a cold boot with no host attached: pid 1454 at
+  31.75 s uptime, with no failure record.
+* Its configuration is readable at runtime from
+  `/etc/reinvoke-voice/voice.json`, mode `0600`, and `/etc/reinvoke/voice.json`
+  is absent. The first 2.3.0 image failed precisely here, because the bootstrap
+  bind mounts an immutable `/etc/reinvoke` from squashfs before chroot. The
+  build number was not advanced for the correction.
+* With no host listening it backed off 2, 4, 8, 16 and 30 seconds, then
+  authenticated by itself once a host appeared and armed the detector:
+  `READY source=socket generation=1`, then `KWS rearmed phase=0`.
+* One attended spoken turn scored 0.928 against the 0.42 threshold, captured
+  50,560 wake bytes, completed capture, and played a reply whose hash matched
+  on both sides with `status: played`. The owner confirmed hearing it.
+* The donor detector and model on the running unit are byte-identical to the
+  donor: `cortana` `a7f56930…`, `handoff-original.table` `6f089879…`.
+
+What this does not establish: there is still no assistant. The host used was
+the fixed-reply stub in this repository. Nothing transcribed the speech.

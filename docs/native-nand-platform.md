@@ -5,10 +5,11 @@ description: Current native results, artifact identities, installation limits an
 
 ## Current result
 
-Build `2.2.11` is installed and runs unattended from NAND on wall power with
+Build `2.3.0` is installed and runs unattended from NAND on wall power with
 no host attached. The boot log shows every supervisor started 34 seconds after
 power-on, for seventeen supervised services plus the native SSH and USB ADB
-helpers.
+helpers. 2.3.0 adds the optional voice endpoint, which starts itself only when
+a private configuration is installed and otherwise stays stopped.
 
 In service and observed on the unit: Wi-Fi association from credentials held
 in durable storage, root SSH, USB ADB from a cold boot, MCU and DSP control,

@@ -115,7 +115,7 @@ The default main output is
 
 ### Optional voice candidate
 
-The installed `2.2.11` composition patches a pinned RC12 `/init`; changing the
+The installed composition patches a pinned RC12 `/init`; changing the
 RAM init source alone does not change this image. These optional environment
 inputs add the same voice bundle/startup hooks to that composition:
 
@@ -128,10 +128,11 @@ inputs add the same voice bundle/startup hooks to that composition:
 * `PILOT_BUILD_ID` sets the explicit candidate identity, for example
   `reInvoke-2.3.0-20260928`.
 
-A voice build rejects the installed `2.2.11` identity. Without an override,
-ordinary non-voice builds retain their existing identity; nothing here changes
-the accepted-build record. The owner-approved next build is `2.3.0`, pending
-complete-firmware boot verification. Earlier private iterations, including
+A voice build rejects the default `2.2.11` identity, so a voice image cannot
+be produced without naming its own build. Without an override, ordinary
+non-voice builds retain their existing identity; nothing here changes the
+accepted-build record. `2.3.0` was approved, built and flashed by the owner,
+and verified from NAND on 2026-09-30. Earlier private iterations, including
 ones labelled `2.3.1`, were experiments rather than approved releases. Their
 files are retained separately and must not be confused with the approved build.
 

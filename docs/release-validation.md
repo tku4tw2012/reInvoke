@@ -28,8 +28,8 @@ outside the code changed state and was observed.
 
 ## What the current build has actually demonstrated
 
-Taken from observation on the running unit, not from intent. Version 2.2.11,
-2026-09-21. Rows naming an earlier version record the build on which that
+Taken from observation on the running unit, not from intent. Version 2.3.0,
+2026-09-30. Rows naming an earlier version record the build on which that
 particular result was observed; see [version history](versions.md) for how the
 numbering maps to the names earlier builds used.
 
@@ -47,6 +47,12 @@ numbering maps to the names earlier builds used.
 | Wi-Fi config comes from durable storage | verified | 2.2.11, the runtime `wpa_supplicant.conf` SSID is the hex encoding of the SSID in `/persist/reinvoke/state.json`, so the config is generated from the store rather than from a fresh provisioning exchange. This is not a power-loss test |
 | Bluetooth pairing from the host | verified | `LinkKey` written, survived a reboot |
 | Microphone capture | verified | 2.2.7: 192,000 samples, 191,998 non-zero at −34.7 dBFS; DSP mute gave 192,000 samples, peak 0 |
+| Voice endpoint starts itself from NAND | verified | 2.3.0, pid 1454 at 31.75 s uptime with no failure record, on a cold boot with no host attached |
+| Voice configuration is not masked | verified | 2.3.0, `/etc/reinvoke-voice/voice.json` readable at runtime as a regular file, mode `0600`, and `/etc/reinvoke/voice.json` absent. The first 2.3.0 image failed exactly here |
+| Voice endpoint connects unattended | verified | 2.3.0, backed off 2/4/8/16/30 s while no host answered, then authenticated by itself when one appeared and armed the detector: `READY source=socket generation=1`, `KWS rearmed phase=0` |
+| Spoken turn from NAND | verified | 2.3.0, attended: score 0.928 against a 0.42 threshold, 50,560 wake bytes, capture complete, reply hash `473034652` identical on both sides, `status: played`, code 0; the owner confirmed hearing the reply |
+| Donor detector and model unchanged | verified | 2.3.0, `cortana` `a7f56930…` and `handoff-original.table` `6f089879…` on the running unit match the donor bytes |
+| Music-volume preference survives a power cycle | not verified | the MCU runs with `--music-volume-state`, but the state file is written only once the volume changes, and no power-cycle test has been run |
 | No builder paths in shipped binaries | verified | 2.2.11, all seven Go binaries report zero `/home/<user>` occurrences on the running unit; four carried 3, 3, 7 and 5 before |
 | One device namespace | verified | 2.2.11, `/etc/reinvoke`, `/usr/libexec/reinvoke`, `/run/reinvoke`; all three nand-pilot paths absent on the running unit |
 | Identifiers reads the new build-id | verified | 2.2.11, `com.harman.firmwareVersion` returned `reInvoke-2.2.11-20260921` from `/etc/reinvoke/build-id` |
