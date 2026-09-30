@@ -27,7 +27,7 @@ which checks still require a human ear or eye, and what is not covered at all.
 | Network      | Wi-Fi associates and leases; SSH and USB ADB both reachable from a cold boot                    |
 | Microphone   | Capture measured on 2.2.7, with the DSP mute gate proven to silence it                         |
 | Voice        | The donor wake detector runs unchanged and streams a turn to a host under its control; one attended spoken turn from NAND scored 0.928 against a 0.42 threshold and played the host's reply. There is no assistant behind it |
-| Persistence  | The Wi-Fi profile survives a reboot from durable storage; the music-volume preference is designed to persist but has not been observed surviving a power cycle |
+| Persistence  | The Wi-Fi profile and the music-volume preference both survive an abrupt power cut and are applied again on the cold boot |
 
 What it does not do: there is no assistant. The optional
 [voice endpoint](tools/voice-endpoint/README.md) reuses the donor's retained
