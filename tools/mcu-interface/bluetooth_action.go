@@ -23,6 +23,7 @@ type mediaActionController struct {
 	readFile                            func(string) ([]byte, error)
 	call                                func(context.Context, string) error
 	logf                                func(string, ...interface{})
+	voiceActive                         func() bool
 }
 
 func (controller *mediaActionController) Apply(ctx context.Context, event inputEvent) error {
@@ -32,8 +33,14 @@ func (controller *mediaActionController) Apply(ctx context.Context, event inputE
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	// Nothing playing means the tap was not a pause; the retail speaker used
-	// it to cancel speech instead, which this runtime has no target for.
+	action := event.Action
+	if action == "" {
+		action = resolveButtonAction(event, controller.playbackStatus,
+			controller.readFile, controller.voiceActive != nil && controller.voiceActive())
+	}
+	if action != actionMusicPause {
+		return nil
+	}
 	if !playbackRunning(controller.playbackStatus, controller.readFile) {
 		return nil
 	}
@@ -48,6 +55,9 @@ func (controller *mediaActionController) Apply(ctx context.Context, event inputE
 func (controller *mediaActionController) pause(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if controller.voiceActive != nil && controller.voiceActive() {
+		return nil
 	}
 	// Re-check rather than trust the queued request: the renderer may have
 	// stopped while this was waiting, and pausing a stopped renderer would

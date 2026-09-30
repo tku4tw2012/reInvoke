@@ -6,6 +6,9 @@ const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
 const zlib = require('zlib');
+// These historical fixtures assert the shipped default, not a caller's private
+// candidate identity. Explicit overrides are covered by voice-build.test.js.
+delete process.env.PILOT_BUILD_ID;
 const lib = require('./build-lib');
 const { patchRuntime } = require('./patch-runtime');
 const { verifyLoadEquivalent } = require('./elf-load-check');

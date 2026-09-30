@@ -37,6 +37,7 @@ type ledPlayer struct {
 	cancel   context.CancelFunc
 	done     chan struct{}
 	micMuted bool
+	voice    bool
 }
 
 func (player *ledPlayer) Apply(
@@ -45,7 +46,7 @@ func (player *ledPlayer) Apply(
 ) error {
 	switch event.Name {
 	case "action":
-		return player.Start(ctx, "L_312_d_shorttap", false)
+		return player.start(ctx, "L_312_d_shorttap", false, false, true)
 	default:
 		// Only the short tap has an animation in this asset set. The retail
 		// long-tap cue, L_313_d_longtap, is absent from the donor lights
@@ -65,14 +66,39 @@ func (player *ledPlayer) Start(
 	name string,
 	repeat bool,
 ) error {
-	return player.start(parent, name, repeat, false)
+	return player.start(parent, name, repeat, false, false)
+}
+
+func (player *ledPlayer) StartVoice(ctx context.Context, name string) error {
+	return player.start(ctx, name, true, true, false)
+}
+
+func (player *ledPlayer) StopVoice(ctx context.Context) error {
+	player.mu.Lock()
+	defer player.mu.Unlock()
+	if !player.voice {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	player.stopLocked()
+	if player.micMuted {
+		return nil
+	}
+	err := clearLEDs(player.writer)
+	if err != nil {
+		player.voice = true
+	}
+	return err
 }
 
 func (player *ledPlayer) start(
 	parent context.Context,
 	name string,
 	repeat bool,
-	force bool,
+	voice bool,
+	button bool,
 ) error {
 	if !validLEDName(name) {
 		return errors.New("invalid LED animation name")
@@ -94,12 +120,19 @@ func (player *ledPlayer) start(
 	if err := parent.Err(); err != nil {
 		return err
 	}
+	if voice && player.micMuted {
+		return errors.New("voice indication suppressed while microphone is muted")
+	}
+	if button && (player.voice || player.micMuted) {
+		return nil
+	}
 	player.stopLocked()
 	ctx, cancel := context.WithCancel(parent)
 	done := make(chan struct{})
 	started := make(chan error, 1)
 	player.cancel = cancel
 	player.done = done
+	player.voice = voice
 	go func() {
 		defer close(done)
 		startSignal := started
@@ -142,6 +175,7 @@ func (player *ledPlayer) start(
 		<-done
 		player.cancel = nil
 		player.done = nil
+		player.voice = voice
 		return err
 	}
 	return nil
@@ -159,7 +193,7 @@ func (player *ledPlayer) SetMicrophoneMuted(
 		return clearLEDs(player.writer)
 	}
 	player.mu.Unlock()
-	return player.start(parent, micMuteLEDName, true, true)
+	return player.start(parent, micMuteLEDName, true, false, false)
 }
 
 func (player *ledPlayer) Clear() error {
@@ -192,6 +226,7 @@ func (player *ledPlayer) stopLocked() {
 		player.cancel = nil
 		player.done = nil
 	}
+	player.voice = false
 }
 
 func runLEDAnimation(

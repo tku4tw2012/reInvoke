@@ -9,6 +9,11 @@ a host, not autonomous NAND startup. Commands use the repository root;
 `REINVOKE_ARCHIVE` identifies retained private inputs and outputs.
 The public clone includes neither donor payloads nor all pinned build inputs.
 
+For prompt-only work, use the
+[first-attempt seize-only baseline](../../docs/uboot-access.md#seize-only-baseline).
+Arm the existing fast-poll helper and holding relay before the power cycle;
+seize and verify control before considering any separate flashing operation.
+
 Recovery replaces the current session and loses volatile credentials, bonds
 and diagnostics. Native candidates 02/03 did not enumerate USB; network ADB
 5555 refused connections. Host ADB 5037/5038 and helper console 8141 are not
@@ -116,6 +121,54 @@ For provisioning supply private `--provision-ap-ssid-file` and
 `--provision-ap-psk-file`. Repeated `--wamp-allow-cidr` permits explicit IPv4
 peers; absent an allowlist, WAMP is not a general network service.
 Keep filled configuration and generated bundles private.
+
+### Optional personal voice endpoint
+
+Add `--voice-donor-bundle "<private-donor-bundle>" --voice-config "<private-voice.json>"`
+to `build-native-runtime.sh` to invoke `tools/voice-endpoint/build.sh`. Both
+inputs are required together; the JSON is opaque to the packager and must be
+mode `0600`. The owned static supervisor goes in `/opt/reinvoke/bin`; the
+unchanged donor detector/model and their loader family stay isolated under
+`/opt/reinvoke/voice`. Neither replaces the microphone, playback or mute owners.
+The initramfs builder installs the JSON at `/etc/reinvoke-voice/voice.json` with
+mode `0600`. Treat all resulting bundles and images as private.
+
+Use the current [voice endpoint configuration](../voice-endpoint/README.md).
+Do not add the obsolete `post_ms` field; the endpoint rejects it. Protocol v3
+streams command audio using backend end-of-speech and turn controls, not a
+fixed five-second capture batch. Packaging copies the configuration unchanged.
+
+Voice builds also install the three original listening, thinking and speaking
+animations into `/opt/reinvoke/share/lights`, each gated by its original SHA-256.
+Their private source is
+`<archive>/extracted/phase3/stockroot/rootfs/usr/share/lights/`:
+`L_101_c_listening.bin`, `L_104_c_thinking.bin` and
+`L_105_c_cortanaspeaking.bin`. Set `REINVOKE_ARCHIVE` if the archive is not the
+sibling `reinvoke-archive` directory. The normal lights-tree checksum stays
+unchanged; these are opt-in additions, not new animations or MCU behavior.
+
+Optional `--hosts-file "<private-hosts-seed>"` bakes a complete hosts file.
+The existing `/etc/hosts -> /etc/tmpfs/hosts` layout is retained; `/etc` is
+part of the RAM runtime. At startup an existing regular `/persist/hosts` can
+replace that RAM copy after persistence preparation in the NAND runtime.
+The hook never mounts or writes persistent storage, creates no override,
+and needs no DNS/discovery service. Updating `/persist/hosts` separately is
+a NAND write requiring approval. Without a seed or override, a voice build
+provides only localhost entries; supply the host-name mapping privately.
+
+PID 1 supervises voice after the existing capture owner has been launched and
+stops/waits for it before stopping MCU/capture/DSP/router services. The supervisor
+initiates the host connection; only its configuration path, not the token,
+appears in the launch command. `reinvoke.voice=off` disables it, as do the
+existing router/MCU/DSP/capture isolation flags. The manual
+`start-native-services.sh` diagnostic launcher does not start a competing voice
+owner. With neither voice nor hosts inputs, packaging remains opt-out.
+
+Host-only integration tests use synthetic payloads, never hardware:
+
+```bash
+node --test tools/usb-boot/voice-build.test.js
+```
 
 ## Build the native RAM initramfs
 
@@ -262,24 +315,29 @@ and no way to tell which had failed.
 
 ```bash
 REINVOKE_ARCHIVE=... tools/usb-boot/arm-seize.sh "<staging>" "<evidence>"
-# ... operator enters service mode, retrying as needed ...
+# Stop here: seize and hold, then verify a fresh device response.
+# Only after separate authorization to flash:
 tools/usb-boot/prompt-control.sh                    # does a prompt answer?
 tools/usb-boot/flash-nand.sh "<evidence>"           # only then, the write
 ```
 
-`arm-seize.sh` runs the fail-closed preflight checks before the service-mode
-window, then catches the device and **holds** the prompt, sending nothing.
-Start it first and reset the speaker only after it prints `READY`. One helper
-and one console relay remain waiting, and it restarts either if it exits, so
-entry can be attempted as many times as it takes. The helper matches USB
-vendor and product identifiers, so moving the speaker to another host port
-requires no configuration.
+`arm-seize.sh` checks required inputs and the absence of `08_IMAGE` before
+the service-mode window, serves recovery files, then **holds** the prompt
+without issuing console commands. Recovery-only staging also excludes
+`83_IMAGE` and `99_IMAGE`, with a comment-only `79_IMAGE`. Confirm the helper
+and FIFO reader are live before reporting armed. The helper's 20 ms polling
+and 150 ms initial attach delay target the power-up window.
 
-Because the prompt is held rather than acted on, there is no window to hit.
-`prompt-control.sh` answers whether a prompt is really there by sending a
-freshly generated token and requiring it back, which no log line and nothing
-the device says on its own can satisfy. `flash-nand.sh` re-asks once and then
-writes.
+One helper and one console relay remain waiting; their supervisors keep host
+wait expiry from disarming the listener. These process lifetimes are not
+operator attempt counts. The 2026-09-28 seize-only run acquired and held
+U-Boot on attempt 1. The helper matches USB vendor and product identifiers,
+so moving the speaker to another host port requires no configuration.
+
+Confirm control with a fresh standalone command response, not a complete
+printed prompt, local `[SENT]` record or command editor echo. Once the prompt
+is held, there is no further acquisition window to hit. Flashing remains a
+separate decision; `flash-nand.sh` calls `prompt-control.sh` before writing.
 
 Do not add descriptor watchers that kill or replace the helper. Candidate 05.7
 completed with the helper already waiting and no other process touching USB.

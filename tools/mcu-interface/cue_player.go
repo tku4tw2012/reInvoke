@@ -92,6 +92,7 @@ type cuePlayer struct {
 
 	mu      sync.Mutex
 	playing context.CancelFunc
+	playID  uint64
 }
 
 // wavPCM is the decoded body of a cue.
@@ -242,6 +243,9 @@ func (player *cuePlayer) Play(parent context.Context, name string) error {
 	if player == nil || player.directory == "" {
 		return nil
 	}
+	if err := parent.Err(); err != nil {
+		return err
+	}
 	if filepath.Base(name) != name || name == "" {
 		return fmt.Errorf("invalid cue name %q", name)
 	}
@@ -277,15 +281,22 @@ func (player *cuePlayer) Play(parent context.Context, name string) error {
 
 	ctx, cancel := context.WithTimeout(parent, cueTimeout)
 	player.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		player.mu.Unlock()
+		cancel()
+		return err
+	}
 	if player.playing != nil {
 		player.playing()
 	}
+	player.playID++
+	playID := player.playID
 	player.playing = cancel
 	player.mu.Unlock()
 	defer func() {
 		cancel()
 		player.mu.Lock()
-		if player.playing != nil {
+		if player.playID == playID {
 			player.playing = nil
 		}
 		player.mu.Unlock()

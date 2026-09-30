@@ -32,6 +32,8 @@ The reviewed rootfs image is checksum-gated and mounted from RAM read-only.
 DSP startup is opt-in because its normal boot event transiently unmutes the
 outputs before the launcher can reassert mute. The script never starts
 system-manager, Podium, an updater, or a persistent-storage service.
+The optional voice endpoint belongs to the composed runtime's /init supervisor,
+not this manual donor-service diagnostic launcher.
 EOF
   exit "${exit_code}"
 }

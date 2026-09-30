@@ -19,12 +19,13 @@ type microphoneMuteController struct {
 	desired bool
 	unknown bool
 
-	statePath   string
-	controlPath string
-	lights      *ledPlayer
-	lifetime    context.Context
-	reconcile   chan struct{}
-	logf        func(string, ...interface{})
+	statePath      string
+	controlPath    string
+	lights         *ledPlayer
+	lifetime       context.Context
+	reconcile      chan struct{}
+	logf           func(string, ...interface{})
+	onVoiceBlocked func()
 }
 
 func newMicrophoneMuteController(
@@ -61,6 +62,7 @@ func (controller *microphoneMuteController) Apply(
 	}
 	err := controller.setLocked(ctx, !controller.muted)
 	controller.mu.Unlock()
+	controller.notifyVoiceBlocked()
 	if err != nil {
 		controller.RequestReconcile()
 	}
@@ -78,6 +80,7 @@ func (controller *microphoneMuteController) Set(
 	}
 	err := controller.setLocked(ctx, muted)
 	controller.mu.Unlock()
+	controller.notifyVoiceBlocked()
 	if err != nil {
 		controller.RequestReconcile()
 	}
@@ -88,7 +91,10 @@ func (controller *microphoneMuteController) Reconcile(
 	ctx context.Context,
 ) error {
 	controller.mu.Lock()
-	defer controller.mu.Unlock()
+	defer func() {
+		controller.mu.Unlock()
+		controller.notifyVoiceBlocked()
+	}()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -96,6 +102,18 @@ func (controller *microphoneMuteController) Reconcile(
 		return nil
 	}
 	return controller.setLocked(ctx, true)
+}
+
+func (controller *microphoneMuteController) VoiceBlocked() bool {
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	return controller.muted || controller.desired || controller.unknown
+}
+
+func (controller *microphoneMuteController) notifyVoiceBlocked() {
+	if controller.onVoiceBlocked != nil && controller.VoiceBlocked() {
+		controller.onVoiceBlocked()
+	}
 }
 
 func (controller *microphoneMuteController) RequestReconcile() {

@@ -36,10 +36,11 @@ main() {
   "${script_dir}/dsp-interface/test.sh" --archive-root "${archive_root}"
   "${script_dir}/mic-capture/test.sh" --archive-root "${archive_root}"
   "${script_dir}/provisioning/test.sh" --archive-root "${archive_root}"
-  node --test \
+  REINVOKE_ARCHIVE="${archive_root}" node --test \
     "${script_dir}/control/"*.test.mjs \
     "${script_dir}/emulation/"*.test.mjs \
-    "${script_dir}/provisioning/"*.test.mjs
+    "${script_dir}/provisioning/"*.test.mjs \
+    "${script_dir}/usb-boot/voice-build.test.js"
   "${script_dir}/usb-boot/boot-native-ram-test.sh"
   "${script_dir}/usb-boot/collect-microphone-capture-test.sh"
   find "${script_dir}" -type f -name "*.sh" -print0 |

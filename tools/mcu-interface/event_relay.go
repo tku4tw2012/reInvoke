@@ -45,6 +45,7 @@ func runEventRelay(
 	controller inputController,
 	publications chan<- inputEvent,
 	logf func(string, ...interface{}),
+	resolve ...func(inputEvent) string,
 ) {
 	defer close(publications)
 	workerContext, stopWorker := context.WithCancel(ctx)
@@ -102,6 +103,11 @@ func runEventRelay(
 					continue
 				}
 				lastButtons[event.Name] = occurredAt
+			}
+			if len(resolve) != 0 {
+				// One decision reaches both the local worker and WAMP. A voice
+				// cancellation may otherwise change state between the two.
+				event.Action = resolve[0](event)
 			}
 			if buttonEvents != nil {
 				queued := false

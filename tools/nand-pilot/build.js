@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const cp = require('child_process');
 const { patchRuntime } = require('./patch-runtime');
 const { readConfig, installConfig } = require('./private-config');
 const { validateUsbAdb, installUsbAdb } = require('./usb-adb-config');
@@ -11,6 +12,9 @@ const { validateCues, installCues } = require('./cue-config');
 const { validateVoice, installVoiceOutput } = require('./voice-config');
 const { readPersistenceConfig, installPersistence } = require('./persistence-config');
 const { readBluedroidConfig, installBluedroid } = require('./bluedroid-config');
+const { voiceInputsFromEnvironment, buildVoiceRuntime, installVoiceSettings,
+  installVoiceLights, installVoiceCues } =
+  require('../usb-boot/voice-build');
 const lib = require('./build-lib');
 const { run, json, hashFile, pins, inventory, verify } = lib;
 const here = __dirname;
@@ -41,10 +45,15 @@ function cpioPack(root, out) {
     'pack', root, out]);
 }
 function prepare() {
+  const voiceInputs = voiceInputsFromEnvironment();
+  if (voiceInputs.donorBundle && lib.CANDIDATE === '2.2.11')
+    throw new Error('voice builds require a distinct explicit PILOT_BUILD_ID, not installed 2.2.11');
   const privateConfig = readConfig(process.env.PILOT_PRIVATE_CONFIG);
   validateUsbAdb(privateConfig.usbAdb);
-  validateCues(privateConfig.deviceCues);
-  validateVoice(privateConfig.voiceOutput);
+  const cues = validateCues(privateConfig.deviceCues);
+  const voiceOutput = validateVoice(privateConfig.voiceOutput);
+  if (voiceInputs.donorBundle && (!cues.enabled || !voiceOutput.enabled))
+    throw new Error('voice endpoint requires the existing device cue player and voice output route');
   const persistenceConfig = readPersistenceConfig(process.env.PILOT_PERSISTENCE_CONFIG);
   const bluedroidConfig = readBluedroidConfig(process.env.PILOT_BLUEDROID_CONFIG);
   for (const key of Object.keys(pins)) verify(input(key), pins[key]);
@@ -55,7 +64,9 @@ function prepare() {
   run('unsquashfs', ['-processors', '1', '-no-progress', '-d', stock, input('stock')]);
   json(path.join(output, 'source-rc12-manifest.json'), inventory(original));
   const originalInit = fs.readFileSync(path.join(original, 'init'));
-  const patchedInit = patchRuntime(originalInit);
+  const patchedInit = patchRuntime(originalInit, {
+    voice: Boolean(voiceInputs.donorBundle), hosts: Boolean(voiceInputs.hosts),
+  });
   if (hashFile(path.join(original, 'sbin/adbd-root')) !== lib.ADB_SHA256)
     throw new Error('unexpected RC12 adbd-root');
   const qemu = path.join(archive, 'emulation/qemu-arm-static');
@@ -81,6 +92,14 @@ function prepare() {
   link('busybox', path.join(root, 'bin/ash'));
   write(path.join(root, 'etc/profile'), 'export PATH=/sbin:/bin:/usr/sbin:/usr/bin\nexport HOME=/root\numask 022\n');
   installConfig(privateConfig, root);
+  if (voiceInputs.donorBundle) {
+    json(path.join(output, 'voice-lights-manifest.json'),
+      installVoiceLights(archive, path.join(root, 'opt/reinvoke')));
+    json(path.join(output, 'voice-cues-manifest.json'),
+      installVoiceCues(archive, path.join(root, 'opt/reinvoke')));
+  }
+  buildVoiceRuntime(voiceInputs, path.join(root, 'opt/reinvoke'));
+  installVoiceSettings(path.join(root, 'opt/reinvoke'), root);
   json(path.join(output, 'persistence-manifest.json'), installPersistence(persistenceConfig, root));
   if (bluedroidConfig)
     json(path.join(output, 'bluedroid-manifest.json'),
@@ -256,6 +275,19 @@ function prepare() {
     if (report.includes('not found')) throw new Error(`runtime loader failed: ${name}`);
     activeLoaderChecks[name] = report;
   }
+  if (voiceInputs.donorBundle) {
+    const prefix = '/opt/reinvoke/voice';
+    const check = cp.spawnSync(qemu, ['-L', extractedRuntime,
+      '-E', `LD_PRELOAD=${prefix}/lib/unit-link.so`,
+      path.join(extractedRuntime, prefix, 'lib/ld-linux-armhf.so.3'),
+      '--library-path', `${prefix}/lib`, '--list',
+      path.join(extractedRuntime, prefix, 'bin/cortana')],
+    { encoding: 'utf8', timeout: 30000, maxBuffer: 1024 * 1024 });
+    if (check.error || check.status !== 0 || check.stderr.trim() ||
+        check.stdout.includes('not found'))
+      throw new Error('voice donor loader/preload check failed');
+    activeLoaderChecks.voice = check.stdout;
+  }
   json(path.join(output, 'runtime-loader-checks.json'), activeLoaderChecks);
   const shellCheck = run(qemu, [path.join(extracted, 'bin/busybox'), 'sh', '-c',
     'set -o pipefail; false | true; test "$?" = 1']);
@@ -300,6 +332,11 @@ function finalize() {
     'runtime-delta.json', 'validation.json', 'busybox-provenance.json', 'adbd-loader-check.txt',
     'runtime-loader-checks.json', 'kernel-compatibility.json', 'persistence-manifest.json'])
     fs.copyFileSync(path.join(output, 'build-a', name), path.join(output, name));
+  for (const name of ['voice-lights-manifest.json', 'voice-cues-manifest.json']) {
+    const source = path.join(output, 'build-a', name);
+    if (fs.existsSync(source))
+      fs.copyFileSync(source, path.join(output, name));
+  }
   json(path.join(output, 'PROPOSAL.json'), proposal);
   const manifest = inventory(output).filter(v => !v.path.startsWith('build-') && !v.path.startsWith('work/') &&
     !v.path.startsWith('source-') && v.type === 'f');

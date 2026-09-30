@@ -96,13 +96,56 @@ func (c *softvolControl) elem(buffer []byte, request uintptr) error {
 
 // Read reports the first channel's value.
 func (c *softvolControl) Read() (int, error) {
+	values, err := c.ReadChannels()
+	return values[0], err
+}
+
+func (c *softvolControl) ReadChannels() ([2]int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	buffer := make([]byte, ctlStructSize)
 	if err := c.elem(buffer, ctlElemRead); err != nil {
-		return 0, fmt.Errorf("read softvol: %w", err)
+		return [2]int{}, fmt.Errorf("read softvol: %w", err)
 	}
-	return int(binary.LittleEndian.Uint32(buffer[ctlValueOffset:])), nil
+	return softvolChannels(buffer)
+}
+
+func softvolChannels(buffer []byte) ([2]int, error) {
+	var values [2]int
+	for channel := range values {
+		values[channel] = int(binary.LittleEndian.Uint32(buffer[ctlValueOffset+channel*4:]))
+		if values[channel] < 0 || values[channel] > softvolMax {
+			return [2]int{}, fmt.Errorf("softvol channel %d is outside 0..%d", channel, softvolMax)
+		}
+	}
+	return values, nil
+}
+
+// CompareAndSwapChannels preserves another writer's change instead of restoring
+// a stale pre-voice level. The same descriptor lock also serializes dial writes.
+func (c *softvolControl) CompareAndSwapChannels(before, after [2]int) (bool, error) {
+	for _, value := range after {
+		if value < 0 || value > softvolMax {
+			return false, fmt.Errorf("softvol %d is outside 0..%d", value, softvolMax)
+		}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	buffer := make([]byte, ctlStructSize)
+	if err := c.elem(buffer, ctlElemRead); err != nil {
+		return false, fmt.Errorf("read softvol before voice write: %w", err)
+	}
+	current, err := softvolChannels(buffer)
+	if err != nil || current != before {
+		return false, err
+	}
+	for channel, value := range after {
+		binary.LittleEndian.PutUint32(buffer[ctlValueOffset+channel*4:], uint32(value))
+	}
+	if err := c.elem(buffer, ctlElemWrite); err != nil {
+		return false, fmt.Errorf("write music softvol: %w", err)
+	}
+	return true, nil
 }
 
 // Write sets every channel to the same value.

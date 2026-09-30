@@ -12,6 +12,12 @@ archive="$(realpath "${1:-${repo}/../reinvoke-archive}")"
 # itself, so the failure arrived as a confusing refusal rather than a missing
 # argument.
 output="${2:?OUTPUT_DIR is required, for example ${archive}/build/artifacts/reinvoke-<version>-<date>/main}"
+node -e '
+  const lib = require(process.argv[1] + "/build-lib");
+  const voice = require(process.argv[1] + "/../usb-boot/voice-build").voiceInputsFromEnvironment();
+  if (voice.donorBundle && lib.CANDIDATE === "2.2.11")
+    throw new Error("voice builds require a distinct explicit PILOT_BUILD_ID, not installed 2.2.11");
+' "${here}"
 [[ -n "${PILOT_PRIVATE_CONFIG:-}" ]] || { echo "PILOT_PRIVATE_CONFIG is required" >&2; exit 1; }
 [[ -n "${PILOT_PERSISTENCE_CONFIG:-}" ]] || { echo "PILOT_PERSISTENCE_CONFIG is required" >&2; exit 1; }
 # Required, not optional. build.js treats an unset value as "no Bluedroid", so

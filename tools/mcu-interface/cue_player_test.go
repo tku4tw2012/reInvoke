@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -243,6 +244,79 @@ func TestPlayRendersThroughTheConfiguredPlayer(t *testing.T) {
 	peak := samplePeak(rendered)
 	if peak > int(want)+1 || peak < int(want)-1 {
 		t.Fatalf("rendered peak %d, want about %v", peak, want)
+	}
+}
+
+func TestCueCancellationKeepsNewerOwner(t *testing.T) {
+	directory := t.TempDir()
+	renderer := filepath.Join(directory, "wait-renderer")
+	if err := os.WriteFile(renderer, []byte("#!/bin/sh\nexec sleep 5\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "cue.wav"),
+		buildWAV(1, 22050, 16, pcm16(1000, -1000)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	player := &cuePlayer{directory: directory, player: renderer, volume: func() int { return 40 }}
+	first, cancelFirst := context.WithCancel(context.Background())
+	second, cancelSecond := context.WithCancel(context.Background())
+	defer cancelFirst()
+	defer cancelSecond()
+	firstDone, secondDone := make(chan error, 1), make(chan error, 1)
+	waitStarted := func(id uint64) {
+		t.Helper()
+		deadline := time.NewTimer(time.Second)
+		defer deadline.Stop()
+		tick := time.NewTicker(time.Millisecond)
+		defer tick.Stop()
+		for {
+			player.mu.Lock()
+			started := player.playID == id && player.playing != nil
+			player.mu.Unlock()
+			if started {
+				return
+			}
+			select {
+			case <-deadline.C:
+				t.Fatal("stub cue renderer did not start")
+			case <-tick.C:
+			}
+		}
+	}
+	go func() { firstDone <- player.Play(first, "cue") }()
+	waitStarted(1)
+	go func() { secondDone <- player.Play(second, "cue") }()
+	waitStarted(2)
+	select {
+	case <-firstDone:
+	case <-time.After(time.Second):
+		t.Fatal("newer cue did not cancel and join the old playback")
+	}
+	cancelFirst()
+	player.mu.Lock()
+	retained := player.playID == 2 && player.playing != nil
+	player.mu.Unlock()
+	if !retained {
+		t.Fatal("older voice cue cleanup erased the newer cue's cancellation owner")
+	}
+	cancelSecond()
+	select {
+	case <-secondDone:
+	case <-time.After(time.Second):
+		t.Fatal("stub cue renderer did not stop")
+	}
+}
+
+func TestCancelledVoiceCueCannotCancelAnotherCue(t *testing.T) {
+	cancelledOther := false
+	player := &cuePlayer{directory: t.TempDir(), playing: func() { cancelledOther = true }}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := player.Play(ctx, "listening"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled cue did not stop before asset/playback work: %v", err)
+	}
+	if cancelledOther {
+		t.Fatal("cancelled voice feedback interfered with another cue owner")
 	}
 }
 

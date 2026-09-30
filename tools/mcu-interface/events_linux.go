@@ -46,6 +46,7 @@ type inputEvent struct {
 	Step       string
 	Topic      string
 	OccurredAt time.Time
+	Action     string
 }
 
 type eventSource interface {

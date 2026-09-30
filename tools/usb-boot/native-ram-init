@@ -5,6 +5,9 @@
 BB=/bin/busybox
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export PATH
+if ${BB} test -f /opt/reinvoke/etc/voice-start.sh; then
+  . /opt/reinvoke/etc/voice-start.sh
+fi
 
 log() {
   echo "reInvoke: $*" > /dev/kmsg
@@ -231,6 +234,8 @@ configure_wamp_firewall() {
 stop_runtime() {
   ${BB} touch /run/reinvoke/shutdown
   log "stopping autonomous runtime with mute-first service order"
+  stop_service voice-endpoint
+  wait_service_stop voice-endpoint
   if ${BB} test -f /run/reinvoke/bluetooth-bootstrap.pid; then
     ${BB} kill \
       "$(${BB} cat /run/reinvoke/bluetooth-bootstrap.pid)" 2>/dev/null || true
@@ -267,6 +272,9 @@ start_autonomous_runtime() {
   fi
 
   . "${runtime_root}/etc/runtime.conf"
+  if command -v configure_voice_hosts >/dev/null; then
+    configure_voice_hosts
+  fi
   if [ -z "${PEER_ADDRESS:-}" ] || [ -z "${PAIR_SECONDS:-}" ]; then
     log "autonomous runtime configuration is invalid"
     return
@@ -375,6 +383,9 @@ start_autonomous_runtime() {
     else
       log "microphone capture bundle is incomplete"
     fi
+  fi
+  if command -v start_voice_endpoint >/dev/null; then
+    start_voice_endpoint
   fi
   if ! cmdline_has reinvoke.bluetooth=off; then
     supervise dbus \

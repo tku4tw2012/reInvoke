@@ -113,6 +113,75 @@ The default main output is
 
 ## Private build inputs
 
+### Optional voice candidate
+
+The installed `2.2.11` composition patches a pinned RC12 `/init`; changing the
+RAM init source alone does not change this image. These optional environment
+inputs add the same voice bundle/startup hooks to that composition:
+
+* `PILOT_VOICE_DONOR_BUNDLE` names the private unchanged donor bundle accepted
+  by `tools/voice-endpoint/build.sh`.
+* `PILOT_VOICE_CONFIG` names the private opaque voice JSON, mode `0600`.
+  Supply it together with the donor bundle.
+* `PILOT_HOSTS_FILE` names an optional private complete hosts seed.
+  It can also be used without voice.
+* `PILOT_BUILD_ID` sets the explicit candidate identity, for example
+  `reInvoke-2.3.0-20260928`.
+
+A voice build rejects the installed `2.2.11` identity. Without an override,
+ordinary non-voice builds retain their existing identity; nothing here changes
+the accepted-build record. The owner-approved next build is `2.3.0`, pending
+complete-firmware boot verification. Earlier private iterations, including
+ones labelled `2.3.1`, were experiments rather than approved releases. Their
+files are retained separately and must not be confused with the approved build.
+
+Use the current [voice endpoint configuration](../voice-endpoint/README.md)
+without the obsolete `post_ms` field, which the endpoint rejects. The packager
+copies it unchanged; backend controls determine capture and turn completion.
+For a distinct offline voice candidate, reuse the existing private base inputs
+and give the output a matching date:
+
+```bash
+export PILOT_PRIVATE_CONFIG="<private-base-build-config.json>"
+export PILOT_PERSISTENCE_CONFIG="<private-base-persistence-config.json>"
+export PILOT_BLUEDROID_CONFIG="<private-base-bluedroid-config.json>"
+export PILOT_BUILD_ID="reInvoke-2.3.0-20260928"
+export PILOT_VOICE_DONOR_BUNDLE="<private-donor-voice-bundle>"
+export PILOT_VOICE_CONFIG="<private-voice.json>"
+export PILOT_HOSTS_FILE="<private-hosts-seed>"
+tools/nand-pilot/build.sh "${REINVOKE_ARCHIVE}" \
+  "<private-output>/reinvoke-2.3.0-20260928-approved/main"
+```
+
+The default identity in [build-lib.js](build-lib.js) remains `2.2.11`.
+[build.sh](build.sh), [build-bsl.js](build-bsl.js),
+[compact-bsl.js](compact-bsl.js) and [native-bundle.js](native-bundle.js) all
+inherit it. Keep `PILOT_BUILD_ID` exported for every candidate composition step.
+This builds regular files only, not an installation. The rootfs allocation
+remains 90 MiB and the runtime tmpfs 160 MiB; measure the completed candidate
+rather than assuming its fit or device memory use. No donor voice libraries
+are installed into the global or existing audio loader families.
+
+Voice builds supplement the RC12 lights with checksum-gated original
+`L_101_c_listening.bin`, `L_104_c_thinking.bin` and
+`L_105_c_cortanaspeaking.bin`, taken from
+`<archive>/extracted/phase3/stockroot/rootfs/usr/share/lights/`.
+The three files are copied unchanged to `/opt/reinvoke/share/lights`; the
+composer records their sizes and hashes in `voice-lights-manifest.json`.
+Non-voice builds do not read this additional source.
+
+The config is installed at `/etc/reinvoke-voice/voice.json` with mode `0600`.
+Hosts remain in the existing RAM `/etc/tmpfs/hosts`, reached through
+`/etc/hosts`. The new hook reads an existing regular `/persist/hosts` after the
+existing persistence service prepares storage; it does not create or change
+that persistent file. Creating or updating the override is a separate NAND
+write, not authorized by this build. Voice starts after the capture owner and
+is stopped before MCU/capture/DSP/router teardown. See the
+[RAM build options](../usb-boot/README.md#optional-personal-voice-endpoint)
+for isolation flags and synthetic host-only integration tests.
+
+### Existing base inputs
+
 `PILOT_PRIVATE_CONFIG` names an existing private JSON file:
 
 | Field             | Requirement                                                      |

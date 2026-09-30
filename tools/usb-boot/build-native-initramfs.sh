@@ -362,6 +362,14 @@ main() {
     # Directories extracted from the donor archive keep their recorded modes
     # and are deliberately not touched here.
     find "${rootfs_dir}/opt/reinvoke" -type d -exec chmod 0755 {} +
+    if [[ -e "${rootfs_dir}/opt/reinvoke/etc/voice.json" ||
+          -e "${rootfs_dir}/opt/reinvoke/bin/reinvoke-voice" ||
+          -e "${rootfs_dir}/opt/reinvoke/voice" ||
+          -e "${rootfs_dir}/opt/reinvoke/etc/hosts" ]]; then
+      require_command node
+      node "${script_dir}/voice-build.js" install \
+        "${rootfs_dir}/opt/reinvoke" "${rootfs_dir}"
+    fi
   fi
 
   rm -f \

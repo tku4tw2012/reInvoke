@@ -68,6 +68,7 @@ Usage: build-native-runtime.sh \
   --peer-address ADDRESS --output-dir PATH [--pair-seconds 0-300] \
   [--wamp-allow-cidr IPV4_OR_CIDR]... \
   [--provision-ap-ssid-file PATH --provision-ap-psk-file PATH] \
+  [--voice-donor-bundle PATH --voice-config PATH] [--hosts-file PATH] \
   [--strip-tool PATH]
 
 Builds a deterministic runtime directory for the autonomous RAM platform.
@@ -143,6 +144,9 @@ main() {
   local pairing_agent=""
   local provision_ap_ssid_file=""
   local provision_ap_psk_file=""
+  local voice_donor_bundle=""
+  local voice_config=""
+  local hosts_file=""
   local peer_address=""
   local pair_seconds=300
   local strip_tool=""
@@ -247,6 +251,15 @@ main() {
         strip_tool="${2:-}"
         shift 2
         ;;
+      --voice-donor-bundle|--voice-config|--hosts-file)
+        [[ -n "${2:-}" ]] || err "$1 requires a path"
+        case "$1" in
+          --voice-donor-bundle) voice_donor_bundle="$2" ;;
+          --voice-config) voice_config="$2" ;;
+          --hosts-file) hosts_file="$2" ;;
+        esac
+        shift 2
+        ;;
       --output-dir)
         output_dir="${2:-}"
         shift 2
@@ -260,6 +273,12 @@ main() {
     esac
   done
 
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [[ -n "${voice_donor_bundle}${voice_config}${hosts_file}" ]]; then
+    require_command node
+    node "${script_dir}/voice-build.js" validate \
+      "${voice_donor_bundle}" "${voice_config}" "${hosts_file}"
+  fi
   [[ -d "${donor_rootfs}" ]] ||
     err "--donor-rootfs must name an extracted rootfs"
   [[ "${peer_address}" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] ||
@@ -513,6 +532,18 @@ main() {
   } >"${partial_dir}/etc/runtime.conf"
   chmod 0600 "${partial_dir}/etc/runtime.conf"
 
+  if [[ -n "${voice_donor_bundle}${hosts_file}" ]]; then
+    node "${script_dir}/voice-build.js" build \
+      "${voice_donor_bundle}" "${voice_config}" "${hosts_file}" "${partial_dir}"
+  fi
+  if [[ -n "${voice_donor_bundle}" ]]; then
+    node "${script_dir}/voice-build.js" lights \
+      "${REINVOKE_ARCHIVE:-${script_dir}/../../../reinvoke-archive}" \
+      "${partial_dir}"
+    node "${script_dir}/voice-build.js" cues \
+      "${REINVOKE_ARCHIVE:-${script_dir}/../../../reinvoke-archive}" \
+      "${partial_dir}"
+  fi
   donor_version="$(tr -d '\r\n' < "${donor_rootfs}/etc/version.txt")"
   {
     printf "runtime_version=0.1\n"
@@ -525,6 +556,12 @@ main() {
       printf "provisioning_ap=configured\n"
     else
       printf "provisioning_ap=disabled\n"
+    fi
+    if [[ -n "${voice_donor_bundle}" ]]; then
+      printf "voice_endpoint=configured; donor Hey Cortana unchanged\n"
+    fi
+    if [[ -n "${hosts_file}" ]]; then
+      printf "hosts_seed=included; existing /persist/hosts may override in RAM\n"
     fi
   } >"${partial_dir}/MANIFEST"
 

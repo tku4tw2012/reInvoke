@@ -13,10 +13,9 @@ import "os"
 // dispatched a button to one of these names depending on the state it was in.
 // docs/vendor-button-semantics.md records the recovery and its evidence grade.
 //
-// Keeping the vendor names matters because reinvoked replaces Cortana, and the
-// retail dispatch is the behaviour it will need to reproduce. Publishing them
-// now means reinvoked can subscribe and own the state machine, exactly as
-// audio-ui did, without this service having to be rebuilt.
+// The voice endpoint consumes only these resolved actions, not the raw topic.
+// The MCU's leased voice phase takes precedence over playback while a turn is
+// active; the normal local music pause remains the owner when voice is idle.
 const buttonActionTopic = "com.harman.vui.action"
 
 // Dispatch modes. Local keeps this service performing the actions it has a
@@ -54,9 +53,13 @@ func resolveButtonAction(
 	event inputEvent,
 	playbackStatusPath string,
 	readFile func(string) ([]byte, error),
+	voiceActive bool,
 ) string {
 	switch event.Name {
 	case "action":
+		if voiceActive {
+			return actionVoiceCancel
+		}
 		// The retail speaker paused only while something was playing; in every
 		// other state the short tap cancelled whatever was speaking. It never
 		// resumed from this button, so neither does this.

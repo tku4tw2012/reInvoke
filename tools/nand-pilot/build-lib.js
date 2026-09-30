@@ -22,8 +22,13 @@ const pins = {
 // date a day stale, left over from the version rename, which would have
 // stamped the device with a day it was not built on. build.sh now refuses
 // when the output directory carries a different date.
-const CANDIDATE = '2.2.11';
-const BUILD_ID = `reInvoke-${CANDIDATE}-20260921`;
+const BUILD_ID = process.env.PILOT_BUILD_ID || 'reInvoke-2.2.11-20260921';
+const identity = /^reInvoke-(2\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-(\d{4})(\d{2})(\d{2})$/.exec(BUILD_ID);
+const identityDate = identity && new Date(`${identity[2]}-${identity[3]}-${identity[4]}T00:00:00Z`);
+if (!identity || Number.isNaN(identityDate.getTime()) ||
+    identityDate.toISOString().slice(0, 10).replaceAll('-', '') !== identity.slice(2).join(''))
+  throw new Error('PILOT_BUILD_ID must be reInvoke-2.MILESTONE.ITERATION-YYYYMMDD with a real date');
+const CANDIDATE = identity[1];
 const BLUETOOTH_NAME = `reInvoke-${CANDIDATE}`;
 const BUNDLE_NAME = `83_IMAGE.reinvoke-${CANDIDATE}`;
 const BB_SHA256 = '5fc83ab6cd37841b8d73e07bf3cd8af47ae5af56c93fe085b2db91e0d1f4207b';
@@ -129,7 +134,9 @@ function elfClosure(root) {
       item.path.startsWith('system/lib/') ||
       item.path.startsWith('system/bin/');
     let dirs = ['/lib', '/usr/lib'];
-    if (modern) {
+    if (item.path.startsWith('opt/reinvoke/voice/')) {
+      dirs = ['/opt/reinvoke/voice/lib'];
+    } else if (modern) {
       dirs = ['/opt/reinvoke/lib/hostapd', '/opt/reinvoke/lib', '/lib', '/usr/lib'];
     } else if (donorRadio) {
       dirs = ['/system/lib', '/system/lib/hw',

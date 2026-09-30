@@ -186,8 +186,18 @@ func main() {
 	var inputControls inputControllerList
 	var media *dspVolumeController
 	var lights *ledPlayer
+	var actions *mediaActionController
 	var actionDone chan struct{}
 	var volumeDone chan struct{}
+	musicDuck := &voiceMusicDuck{
+		playing: func() bool { return playbackRunning(*playbackStatus, nil) },
+		open:    func() (stereoSoftvol, error) { return openSoftvol(0, "music") },
+	}
+	defer func() {
+		if err := musicDuck.Close(); err != nil {
+			log.Printf("VOICE_MUSIC_CLEANUP_FAILED: %v", err)
+		}
+	}()
 	if *microphoneControlSocket != "" {
 		media, err = newDSPVolumeController(*microphoneControlSocket)
 		if err != nil {
@@ -223,8 +233,13 @@ func main() {
 			if err != nil {
 				log.Printf("open softvol %s: %v", *softvolControl, err)
 			} else {
-				defer control.Close()
-				media.softvol = control
+				if *softvolCard == 0 && *softvolControl == "music" {
+					musicDuck.control, musicDuck.ownsFile = control, true
+					media.softvol = musicDuck
+				} else {
+					defer control.Close()
+					media.softvol = control
+				}
 			}
 		}
 		inputControls = append(inputControls, media)
@@ -259,7 +274,7 @@ func main() {
 	}
 	if *bluetoothControlCaller != "" && *playbackStatus != "" &&
 		*buttonDispatch == dispatchLocal {
-		actions := &mediaActionController{
+		actions = &mediaActionController{
 			caller: *bluetoothControlCaller, host: *routerHost, port: *routerPort,
 			realm: *realm, playbackStatus: *playbackStatus,
 			requests: make(chan struct{}, 1), logf: log.Printf,
@@ -287,13 +302,6 @@ func main() {
 	micMute.lifetime = ctx
 	inputControls = append(inputControls, micMute)
 	micMuteDone := make(chan struct{})
-	go func() {
-		defer close(micMuteDone)
-		micMute.Run(ctx)
-	}()
-	if microphoneMuted {
-		micMute.RequestReconcile()
-	}
 	indicatorLEDs := newIndicatorLEDController(bus)
 	// Device cues: the short sounds the speaker makes about itself. The donor
 	// played these from audio-ui; the asset names and the states that trigger
@@ -308,6 +316,38 @@ func main() {
 	if media != nil {
 		cues.volume = func() int { return media.displayLevel() }
 	}
+	voice := &voiceFeedbackController{
+		lifetime: ctx,
+		music:    musicDuck,
+		blocked:  micMute.VoiceBlocked,
+		logf:     log.Printf,
+	}
+	if media != nil {
+		voice.cues = cues
+	}
+	if lights != nil {
+		voice.lights = lights
+	}
+	if actions != nil {
+		actions.voiceActive = voice.Active
+	}
+	micMute.onVoiceBlocked = func() {
+		if err := voice.Reset(); err != nil {
+			log.Printf("VOICE_MUTE_CLEANUP_FAILED: %v", err)
+		}
+	}
+	go func() {
+		defer close(micMuteDone)
+		micMute.Run(ctx)
+	}()
+	if microphoneMuted {
+		micMute.RequestReconcile()
+	}
+	voiceDone := make(chan struct{})
+	go func() {
+		defer close(voiceDone)
+		voice.Run(ctx)
+	}()
 
 	appearance := newDeviceAppearanceController(bus, log.Printf)
 	if media != nil {
@@ -421,6 +461,9 @@ func main() {
 				inputControls,
 				publications,
 				log.Printf,
+				func(event inputEvent) string {
+					return resolveButtonAction(event, *playbackStatus, nil, voice.Active())
+				},
 			)
 		}()
 		source = relayedEventSource{events: publications}
@@ -436,6 +479,7 @@ func main() {
 		events:         source,
 		version:        recoveredMCUVersion,
 		micMute:        micMute,
+		voice:          voice,
 		appearance:     appearance,
 		bluetoothState: *bluetoothState,
 		playbackStatus: *playbackStatus,
@@ -472,6 +516,7 @@ func main() {
 		<-volumeDone
 	}
 	<-micMuteDone
+	<-voiceDone
 	heartbeatErr := <-heartbeatDone
 	playbackErr := <-playbackDone
 	if relayDone != nil {

@@ -4,7 +4,7 @@
 const crypto = require('crypto');
 
 const INIT_SHA256 = '2ac768600ee33b36e58f5c367e5a6b7760934fc422be29176ddb2797f1d71ca8';
-function patchRuntime(source) {
+function patchRuntime(source, { voice = false, hosts = false } = {}) {
   if (crypto.createHash('sha256').update(source).digest('hex') !== INIT_SHA256)
     throw new Error('RC12 /init hash mismatch; review a new context-pinned patch');
   let text = source.toString();
@@ -485,6 +485,22 @@ log "NAND pilot RC12 runtime dispatched; health and NAND origin require evidence
     '      return\n',
     '      pilot_failure "service-mcu-interface" \\\n' +
     '        "microphone mute state absent; continuing without it"\n');
+  if (voice || hosts) {
+    replace('export PATH\n',
+      'export PATH\n. /opt/reinvoke/etc/voice-start.sh\n');
+    replace('  pilot_persistence_start || log "Persistent settings unavailable; runtime continuing"\n',
+      '  pilot_persistence_start || log "Persistent settings unavailable; runtime continuing"\n' +
+      '  configure_voice_hosts\n');
+  }
+  if (voice) {
+    replace('  if ! cmdline_has reinvoke.bluetooth=off; then\n',
+      '  start_voice_endpoint\n' +
+      '  if ! cmdline_has reinvoke.bluetooth=off; then\n');
+    replace('  stop_service mcu-interface\n',
+      '  stop_service voice-endpoint\n' +
+      '  wait_service_stop voice-endpoint\n' +
+      '  stop_service mcu-interface\n');
+  }
   return text;
 }
 module.exports = { patchRuntime, INIT_SHA256 };

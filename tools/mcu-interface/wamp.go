@@ -102,6 +102,7 @@ type wampService struct {
 	version        string
 	flushEvents    bool
 	micMute        *microphoneMuteController
+	voice          *voiceFeedbackController
 	appearance     *deviceAppearanceController
 	bluetoothState string
 	playbackStatus string
@@ -116,6 +117,11 @@ type wampConnection struct {
 }
 
 func (service *wampService) run(ctx context.Context) error {
+	defer func() {
+		if err := service.voice.Reset(); err != nil && service.logf != nil {
+			service.logf("VOICE_SESSION_CLEANUP_FAILED: %v", err)
+		}
+	}()
 	connection, err := net.DialTimeout("tcp", service.address, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("connect WAMP router: %w", err)
@@ -254,11 +260,11 @@ func (service *wampService) run(ctx context.Context) error {
 			// Announce what the press means as well as which key it was, so a
 			// future owner of the button state machine can subscribe instead
 			// of re-deriving the mapping.
-			if action := resolveButtonAction(
-				event,
-				service.playbackStatus,
-				nil,
-			); action != "" {
+			action := event.Action
+			if action == "" {
+				action = resolveButtonAction(event, service.playbackStatus, nil, service.voice.Active())
+			}
+			if action != "" {
 				if err := client.publish(
 					buttonActionTopic,
 					[]interface{}{action, event.Name},
@@ -408,6 +414,22 @@ func (service *wampService) handleInvocation(
 	case "com.harman.extStateUpdate":
 		if !kwargsValid {
 			invocationError = errors.New("invalid argument format")
+			break
+		}
+		var state string
+		var isVoice bool
+		state, isVoice, invocationError = voiceStateReport(args, kwargs)
+		if invocationError != nil {
+			break
+		}
+		if isVoice {
+			if service.voice == nil {
+				invocationError = errors.New("voice feedback owner is unavailable")
+			} else {
+				invocationError = service.voice.Update(ctx, state)
+				result = []interface{}{voiceSubsystem}
+				resultKwargs = map[string]interface{}{"state": service.voice.State()}
+			}
 			break
 		}
 		var indicator string
