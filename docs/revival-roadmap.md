@@ -25,9 +25,11 @@ pinouts do not prevent maintaining the recovered software interfaces.
 
 ## Remaining work
 
-1. Integrate an assistant consumer of the owned capture and playback
-   interfaces. Wake-word detection and assistant protocols are not current
-   product features, and nothing in the image consumes the microphone today.
+1. Implement the host assistant behind the
+   [optional voice endpoint](../tools/voice-endpoint/README.md). The endpoint
+   reuses the donor wake detector and exchanges audio with a fixed-reply stub;
+   transcription and real answers remain host work. It is not part of the
+   installed 2.2.11 image, and building a candidate does not install it.
 2. Decide whether the implemented polled mic-mute gate meets the intended
    consumer contract before adopting the
    [synchronous design](microphone-capture.md#deferred-synchronous-mute-design).

@@ -15,6 +15,52 @@ The [native platform](native-nand-platform.md) owns normal-operation status.
 > a deliberately controlled recovery window. Success after observed failures
 > does not establish recovery from arbitrary boot-chain or whole-chip damage.
 
+## Seize-only baseline
+
+2026-09-28: **attempt 1, success**. One operator power cycle after arming
+seized and held U-Boot over USB. Nothing was flashed. The live console executed
+`echo rvad01e92c29d2feac` and returned `rvad01e92c29d2feac` as a standalone
+output line. Neither the host's `[SENT]` record nor the command editor's echo
+was counted as that response.
+
+The default acquisition path is
+[`arm-seize.sh`](../tools/usb-boot/arm-seize.sh) with the
+[fast-poll helper](../tools/usb-boot/fast-poll/README.md):
+
+* One helper and one holding console relay are running before the power cycle.
+  A live helper process and FIFO reader establish that the host is armed.
+* The helper polls `1286:8174` every 20 ms, with a 150 ms initial attach delay.
+  Recovery staging excludes `08_IMAGE`, `83_IMAGE` and `99_IMAGE`, and supplies
+  the recovery chain with a comment-only `79_IMAGE`.
+* The relay consumes telnet negotiation without replying and holds the console.
+  Acquisition does not wait for a complete printed `MV88DE3100|>` string.
+* A fresh read-only command response verifies control after attachment.
+  No continuous keystroke feeder was needed. No flash preparation, descriptor
+  watcher, competing USB owner or unrelated investigation belongs in the
+  acquisition window.
+
+First-power-cycle acquisition is the operating baseline. Count operator power
+cycles, not USB sightings, boot-chain re-enumerations or helper restarts while
+waiting. This was a first-try success, not a multi-try capture. A missed window
+calls for checking host timing and protocol handling, not assuming inherently
+inconsistent hardware from accumulated log entries.
+
+### Separate NAND flash after seizure
+
+The same held session subsequently flashed the approved `2.3.0` build after
+separate owner authorization, without reacquiring U-Boot. Seize and hold first;
+image verification and flashing are subsequent operations, not acquisition
+conditions.
+
+The 74,395,680-byte image had SHA-256
+`ddb106a274a8eccba6ec71674db62fc99fddeba6a649abaab55ea498d1fcbb50`.
+One `l2nand 83` command completed successfully at 2026-09-28 21:28:01
+(UTC-04:00). Verification covered the complete transfer, all nine records'
+vendor program/readback address sets and a fresh post-flash command response.
+The helper was then stopped and the active flash image removed from staging.
+No flash retry or automatic reboot occurred; the new build's cold boot remained
+unverified at this checkpoint.
+
 ## Verified recovery sequence
 
 The sequence follows observed file requests, not an inferred division between
@@ -48,6 +94,9 @@ The polling helper serves the bootstrap where applicable, then the requested
 `09_IMAGE`, `sysinit.img`, `bootloader.img`, `drm_erom.img` and comment-only
 `79_IMAGE`. The endpoint is a responsive U-Boot console. Neither this sequence
 nor the limited recovery directory proves NAND-independent execution.
+
+The original-helper capture workflow below is a reference, not an additional
+prerequisite for the seize-only baseline above.
 
 1. Use a known Micro-USB data cable. Charge-only cables produced false negatives.
 2. Prepare recovery-only staging: `08_IMAGE` absent, `83_IMAGE` and `99_IMAGE`

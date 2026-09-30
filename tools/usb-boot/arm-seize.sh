@@ -4,16 +4,10 @@
 #
 # Seize the U-Boot console and hold it. Nothing is written to NAND here.
 #
-# arm-flash.sh couples catching the device to writing it: its console driver
-# waits for the prompt and immediately sends `l2nand 83`. That is one operation
-# with two failure points, and the one that fails is entry, which is a dice
-# roll. Every lost entry also loses the prompt.
-#
-# This splits them, which is how the RAM-boot era worked. The helper and a
-# console relay stay armed through as many entry attempts as it takes. When
-# one finally lands, the prompt is simply held: no command is sent and nothing
-# times out. Commands go in afterwards through a FIFO, at whatever pace the
-# work needs.
+# Acquisition is a timed USB handshake. Arm the fast poller and holding relay
+# before the operator's power cycle; the 2026-09-28 baseline succeeded on
+# attempt 1. Seizing never waits for prompt-text matching or triggers a flash.
+# Commands go through the FIFO only after acquisition, as a separate action.
 #
 # Usage: arm-seize.sh STAGING_DIR EVIDENCE_DIR
 set -euo pipefail
@@ -24,9 +18,7 @@ archive="${REINVOKE_ARCHIVE:-${repo}/../reinvoke-archive}"
 staging="${1:?STAGING_DIR}"
 evidence="${2:?EVIDENCE_DIR}"
 
-# The faster-polling helper. The device presents its iROM identity briefly
-# before settling, and this is the build the sessions that caught it every
-# time were using.
+# Poll every 20 ms with a 150 ms initial attach delay to fit the iROM window.
 helper="${INVOKE_USB_BOOT_BIN:-${archive}/tools/hk-invoke-arm-flasher/fast-poll/usb_boot_arm}"
 port="${INVOKE_CONSOLE_PORT:-8141}"
 log="${evidence}/seize.log"
@@ -64,9 +56,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Both restart. The helper exits after its own device wait expires, and the
-# relay exits when the console closes at the end of a failed entry; neither is
-# a reason to stop waiting for the next attempt.
+# Supervisors preserve arming across host wait expiry or transport closure.
+# Process restarts and USB re-enumeration are not operator attempt counts.
 (
   while true; do
     python3 -u "${here}/uboot-console.py" >>"${log}" 2>&1 || true

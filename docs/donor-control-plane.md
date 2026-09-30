@@ -218,9 +218,10 @@ rediscovered.
 A duck never changes the level the user chose. Releasing every duck returns to
 that level exactly, and mute still silences regardless of ducking.
 
-It is worth stating plainly that **nothing in this runtime currently calls it**.
-`com.harman.volume.setDuck` is registered and answerable, and the behaviour
-behind it is tested, but there is no alert player and no voice agent here to
-duck for. It is working machinery waiting for a caller, which is a different
-thing from a working feature. If an alert player is ever added, this is the
-piece it will need and it will already be correct.
+The optional voice integration does not call the general
+`com.harman.volume.setDuck` path: that path's effective level reaches shared
+DSP gain and would attenuate the voice reply as well as music. Instead, the
+MCU voice owner applies the existing project soft ratio to the separate
+`music` ALSA control. It preserves the prior channel values and compares before
+restoring, leaving independently changed values alone. Voice and system
+controls, master volume and the DSP gain mapping are not changed by this duck.

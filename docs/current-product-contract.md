@@ -329,10 +329,18 @@ checksum-gated dependencies. Persistent MCU firmware remains in place and is
 never upgraded by reInvoke. Bonefish supplies compatibility, not product policy.
 
 The runtime excludes vendor `system-manager`, `audio-ui`,
-`music-source-manager`, Cortana, OTA updater, crash-dump writers and flash
+`music-source-manager`, the original Cortana application, OTA updater, crash-dump writers and flash
 utilities. Normal operation needs neither cloud services nor SSH. The donor
 Bluedroid stack is shipped and supervised; this list said otherwise until
 05.8.11, which was stale rather than a change of intent.
+
+An opt-in [voice endpoint](../tools/voice-endpoint/README.md) reuses the retained
+Cortana executable's keyword detector and original model through an isolated
+worker; the original application and cloud transport never start. The endpoint
+uses owned capture and playback, existing WAMP light controls, and an outward
+connection to a configured host. The supplied host is a fixed-reply stub, not an
+assistant. This optional build is separate from the installed 2.2.11 acceptance
+record and requires an explicit private configuration.
 
 `system-manager` is excluded because it is the vendor's service supervisor:
 it reads `/etc/podium/podium.conf` and starts the router and daemons, which

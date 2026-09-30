@@ -67,14 +67,17 @@ Treat these differently, because they were established differently.
 
 ## What this means for reInvoke
 
-Cortana was retired, so `voice-*` and `call-*` have no counterpart here. Two
-consequences follow.
+The optional [voice endpoint](../tools/voice-endpoint/README.md) consumes the
+existing `com.harman.vui.action` topic. While a voice turn is active, a short
+top press resolves to `voice-cancel`; the long press resolves to `voice-trigger`.
+The MCU remains the button and hardware owner. The connector sends the action
+only to its verified managed worker, without interpreting a raw GPIO event or
+injecting it into the backend's audio stream.
 
-The vendor routed the short tap to `music-pause` through
-`com.harman.music.pause`, which its `music-source-manager` forwarded to the
-active source. This runtime has no such router, so the equivalent call is
-`com.harman.bluetooth.pause` and `com.harman.bluetooth.resume`, which the donor
-Bluedroid stack registers directly.
+Without an active voice turn, ordinary media pause remains with the existing
+media owner. It calls source-agnostic `com.harman.music.pause`, which
+`reinvoke-source-manager` routes to the active source. The optional voice
+integration does not implement the retired call and account-dependent actions.
 
 Wi-Fi setup belongs to `btn-micmute-long`. The LED player once started
 `L_302_d_wifisetup` on `bluetooth-long`, which put the Wi-Fi setup animation

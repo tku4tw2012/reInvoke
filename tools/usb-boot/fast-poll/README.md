@@ -3,6 +3,10 @@ title: Faster USB boot helper
 description: Poll and attach timing that fits inside the measured iROM window
 ---
 
+The [2026-09-28 seize-only baseline](../../../docs/uboot-access.md#seize-only-baseline)
+used this helper: attempt 1, success, prompt held, no flashing. Arm it before
+the power cycle. USB sightings and helper restarts are not operator attempts.
+
 The pinned helper at `jryruegas92/hk-invoke-arm-flasher` commit `63444e82`
 waits for the device with a one-second poll and then pauses another second
 before its first transfer.
@@ -42,7 +46,7 @@ Build it with:
 gcc -O2 -o usb_boot_arm usb_boot_arm.c $(pkg-config --cflags --libs libusb-1.0)
 ```
 
-Point the flash wrapper at the result:
+Point the seize-only wrapper at the result:
 
 ```bash
 INVOKE_USB_BOOT_BIN=<path>/usb_boot_arm \
